@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Árbol Genealógico · Reyes Parra</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:            #dfc9a8;
+    --card-bio-m:    rgba(255,248,238,0.97);
+    --card-bio-f:    rgba(255,243,228,0.97);
+    --card-opata:    rgba(212,237,218,0.97);
+    --card-mulatto:  rgba(225,210,245,0.97);
+    --card-adopt:    rgba(255,245,208,0.97);
+    --card-collapse: rgba(248,228,208,0.97);
+    --card-ref:      rgba(240,235,225,0.70);
+    --card-family:   rgba(46,31,15,0.90);
+    --border-m:      #b07040;
+    --border-f:      #c4956a;
+    --border-opata:  #3a7a50;
+    --border-mulatto:#7040a0;
+    --border-adopt:  #9a7c18;
+    --border-collapse:#b05030;
+    --border-ref:    #a09080;
+    --ink:           #2b1608;
+    --ink2:          #5a3318;
+    --clay:          #b07040;
+    --terracotta:    #a05030;
+    --opata:         #3a7a50;
+    --mulatto:       #7040a0;
+    --adoptive:      #9a7c18;
+    --ref-text:      #806050;
+    --sand:          #f5ede0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse at 15% 15%, rgba(176,112,64,0.22) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 85%, rgba(58,122,80,0.10) 0%, transparent 50%);
+    font-family: 'Crimson Pro', Georgia, serif;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  header {
+    padding: 1.2rem 1.5rem 0.9rem;
+    background: rgba(255,248,235,0.60);
+    border-bottom: 1px solid rgba(160,100,50,0.30);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: clamp(1.1rem, 2.4vw, 1.8rem);
+    font-weight: 400;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  header h1 span { color: var(--clay); font-style: italic; }
+  header p { font-size: 0.72rem; color: var(--ink2); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .legend {
+    display: flex;
+    gap: 0.8rem 1.1rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 1.5rem;
+    background: rgba(255,248,235,0.40);
+    border-bottom: 1px solid rgba(160,100,50,0.18);
+    font-size: 0.69rem;
+    letter-spacing: 0.03em;
+    color: var(--ink2);
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+  .legend-line { width: 20px; height: 2px; border-radius: 2px; }
+  .legend-line.bio      { background: var(--clay); }
+  .legend-line.adoptive { background: transparent; border-top: 2px dashed var(--adoptive); }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .legend-dot.opata    { background: var(--opata); }
+  .legend-dot.mulatto  { background: var(--mulatto); }
+  .legend-dot.collapse { background: var(--terracotta); border: 1.5px solid var(--border-m); }
+  .legend-ref {
+    width: 20px; height: 13px;
+    border: 1.5px dashed var(--border-ref);
+    border-radius: 2px;
+    background: var(--card-ref);
+  }
+
+  #controls {
+    padding: 0.45rem 1.5rem;
+    display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+    background: rgba(255,248,235,0.28);
+    border-bottom: 1px solid rgba(160,100,50,0.13);
+  }
+  button {
+    background: rgba(176,112,64,0.10);
+    border: 1px solid rgba(176,112,64,0.40);
+    color: var(--ink);
+    padding: 0.35rem 0.8rem;
+    border-radius: 3px;
+    font-family: 'Crimson Pro', serif;
+    font-size: 0.78rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: all 0.18s;
+    min-height: 36px;
+  }
+  button:hover, button:active { background: rgba(176,112,64,0.22); border-color: var(--clay); }
+  .filter-label { font-size: 0.72rem; color: var(--ink2); }
+
+  #tree-container { width: 100%; overflow: hidden; cursor: grab; touch-action: none; }
+  #tree-container:active { cursor: grabbing; }
+  svg { display: block; }
+
+  .node rect { stroke-width: 1.5px; }
+  .node:hover rect, .node:focus rect { filter: drop-shadow(0 2px 8px rgba(100,50,10,0.28)); }
+  .node text { font-family: 'Crimson Pro', Georgia, serif; pointer-events: none; dominant-baseline: middle; }
+  .node .name     { font-weight: 400; fill: var(--ink);      font-size: 11px; }
+  .node .dates    { font-size: 9px;   fill: var(--ink2);     font-style: italic; }
+  .node .place    { font-size: 8.5px; fill: #7a5030; }
+  .node .ref-name { font-weight: 400; fill: var(--ref-text); font-size: 10px; font-style: italic; }
+  .node .ref-lbl  { font-size: 8px;   fill: var(--border-ref); }
+
+  /* Family root card text */
+  .node .fam-title { font-family: 'Playfair Display', serif; fill: var(--sand); font-size: 12px; font-weight: 600; }
+  .node .fam-sub   { fill: rgba(245,237,224,0.65); font-size: 8.5px; letter-spacing: 0.05em; }
+
+  /* FamilySearch link icon — rendered as SVG text */
+  .fs-link-icon {
+    font-size: 11px;
+    fill: rgba(160,100,50,0.55);
+    cursor: pointer;
+    pointer-events: all;
+  }
+  .fs-link-icon:hover { fill: var(--clay); }
+
+  .link { fill: none; stroke-width: 1.8px; }
+  .link.biological { stroke: var(--clay);        opacity: 0.65; }
+  .link.adoptive   { stroke: var(--adoptive);    stroke-dasharray: 6,4; opacity: 0.90; }
+  .link.ref-link   { stroke: var(--border-ref);  stroke-width: 1.3px; stroke-dasharray: 4,3; opacity: 0.60; }
+
+  /* Tooltip — always pointer-events all so links are clickable */
+  #tooltip {
+    position: fixed;
+    background: rgba(253,246,232,0.98);
+    border: 1px solid rgba(160,100,50,0.45);
+    border-radius: 5px;
+    padding: 0.7rem 1rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.14s;
+    max-width: 260px;
+    z-index: 300;
+    box-shadow: 0 3px 16px rgba(100,50,10,0.15);
+    color: var(--ink);
+  }
+  #tooltip.visible { opacity: 1; pointer-events: all; }
+  #tooltip .tt-name    { font-family: 'Playfair Display', serif; font-size: 0.9rem; color: var(--clay); margin-bottom: 0.2rem; font-weight: 600; }
+  #tooltip .tt-row     { color: var(--ink2); }
+  #tooltip .tt-pid     { color: #b09070; font-size: 0.7rem; margin-top: 0.25rem; }
+  #tooltip .tt-special { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid rgba(160,100,50,0.25); font-style: italic; font-size: 0.76rem; }
+  #tooltip .tt-opata   { color: var(--opata); }
+  #tooltip .tt-mulatto { color: var(--mulatto); }
+  #tooltip .tt-adopt   { color: var(--adoptive); }
+  #tooltip .tt-ref     { color: var(--ref-text); }
+  #tooltip .tt-collapse{ color: var(--terracotta); }
+  #tooltip .fs-link {
+    display: inline-block;
+    margin-top: 0.45rem;
+    padding: 0.25rem 0.6rem;
+    background: rgba(176,112,64,0.10);
+    border: 1px solid rgba(176,112,64,0.40);
+    border-radius: 3px;
+    color: var(--clay);
+    font-size: 0.74rem;
+    text-decoration: none;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+  }
+  #tooltip .fs-link:hover { background: rgba(176,112,64,0.22); }
+
+  .collapse-dot { fill: var(--terracotta); stroke: #fff; stroke-width: 1px; }
+
+  #tip-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    background: transparent;
+  }
+  #tip-overlay.active { display: block; }
+
+  /* Mobile hint */
+  #mobile-hint {
+    display: none;
+    text-align: center;
+    padding: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--ink2);
+    background: rgba(255,248,235,0.5);
+    border-bottom: 1px solid rgba(160,100,50,0.15);
+  }
+  @media (max-width: 600px) {
+    #mobile-hint { display: block; }
+    .legend { display: none; } /* collapse legend on small screens */
+    #show-legend-btn { display: inline-block !important; }
+  }
+  #show-legend-btn { display: none; font-size: 0.72rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Árbol Genealógico · <span>Reyes Parra</span></h1>
+    <p>Bacanora, Sonora · Hasta ~1750</p>
+  </div>
+  <div style="text-align:right">
+    <p>60 ancestros · 8 generaciones</p>
+    <p style="color:var(--opata);font-size:0.72rem;margin-top:0.1rem;font-style:italic">Linaje Mexicano y Ópata</p>
+  </div>
+</header>
+
+<div id="mobile-hint">Pellizca para hacer zoom · Toca el ícono 🔗 para abrir en FamilySearch (posiblemente necesitarás cuenta</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-line bio"></div><span>Biológica</span></div>
+  <div class="legend-item"><div class="legend-line adoptive"></div><span>Adoptiva</span></div>
+  <div class="legend-item"><div class="legend-ref"></div><span>Referencia</span></div>
+  <div class="legend-item"><div class="legend-dot opata"></div><span>Opata</span></div>
+  <div class="legend-item"><div class="legend-dot mulatto"></div><span>Mulata</span></div>
+  <div class="legend-item"><div class="legend-dot collapse"></div><span>Antepasado compartido</span></div>
+  <div class="legend-item" style="margin-left:auto"><span style="color:rgba(160,100,50,0.7);font-size:0.72rem">🔗 = ver en FamilySearch</span></div>
+</div>
+
+<div id="controls">
+  <span class="filter-label">Vista:</span>
+  <button onclick="resetZoom()">Restablecer</button>
+  <button onclick="expandAll()">Expandir todo</button>
+  <button onclick="collapseDeep()">Contraer 7–9</button>
+  <button id="show-legend-btn" onclick="document.querySelector('.legend').style.display='flex'">Leyenda</button>
+</div>
+
+<div id="tree-container"></div>
+<div id="tooltip"></div>
+<div id="tip-overlay"></div>
+
+<script>
+const FS_BASE = 'https://www.familysearch.org/en/tree/person/sources/';
+
+const raw = [
+  // Special family root — no individual PID, just a family label
+  {pid:null,        name:"Familia Reyes Parra",       gender:"Family", birth:"",        birthPlace:"",                           death:"",            deathPlace:"",                           ahn:1,   family:true},
+  // María Lucia removed from tree display — absorbed into family box
+  // Jesús and Gaudelia are now direct children of ahn:1 in the tree
+  // (we override buildNode for ahn:1 to use children 6,7 instead of 2,3)
+  {pid:"PH19-VZ3",  name:"Jesús Reyes López",         gender:"Male",   birth:"11 Oct 1929", birthPlace:"Bacanora, Sonora",        death:"21 Jun 2012", deathPlace:"Ciudad Obregón, Sonora",     ahn:6},
+  {pid:"PH1M-LMT",  name:"Gaudelia Parra Ruiz",        gender:"Female", birth:"8 Mar 1935",  birthPlace:"Bacanora, Sonora",        death:"23 Dec 2010", deathPlace:"Ciudad Obregón, Sonora",     ahn:7},
+  {pid:"G6QK-GNV",  name:"Miguel Reyes Arvayo",        gender:"Male",   birth:"",            birthPlace:"",                       death:"1978",        deathPlace:"Cajeme, Sonora",              ahn:12},
+  {pid:"G3GD-JG7",  name:"Mercedes Lopez Parra",       gender:"Female", birth:"~1910",       birthPlace:"Bacanora, Sonora",        death:"16 Feb 1985", deathPlace:"Bacanora, Sonora",            ahn:13, opata:true, adopted:true},
+  {pid:"LRVJ-V1Z",  name:"Juan de Dios Parra",         gender:"Male",   birth:"1913",        birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:14},
+  {pid:"PC42-KJC",  name:"Teresa Ruiz Tanori",         gender:"Female", birth:"12 Aug 1919", birthPlace:"Bacanora, Sonora",        death:"~1940",       deathPlace:"Bacanora, Sonora",            ahn:15},
+  {pid:"K2JV-7VR",  name:"Manuel Reyes",               gender:"Male",   birth:"~1880",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:24},
+  {pid:"K2JV-7YH",  name:"Concepcion Arvayo",          gender:"Female", birth:"~1884",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:25},
+  {pid:"G6Q2-9PZ",  name:"Rafael López Madrid",        gender:"Male",   birth:"1878",        birthPlace:"",                       death:"",            deathPlace:"",                           ahn:26, adoptiveOf:13},
+  {pid:"G6QK-JPS",  name:"Patrocinia Parra",           gender:"Female", birth:"1879",        birthPlace:"",                       death:"",            deathPlace:"",                           ahn:27, adoptiveOf:13},
+  {pid:"LRWL-D1M",  name:"Miguel Parra Romero",        gender:"Male",   birth:"~1879",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:28},
+  {pid:"KGW7-C9D",  name:"Maria Trinidad Madrid",      gender:"Female", birth:"1880",        birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:29},
+  {pid:"PC42-TGV",  name:"Juan Ruiz Arenas",           gender:"Male",   birth:"1896",        birthPlace:"",                       death:"",            deathPlace:"",                           ahn:30},
+  {pid:"PC4K-LNB",  name:"Ignacia Tanori",             gender:"Female", birth:"1882",        birthPlace:"",                       death:"",            deathPlace:"Hermosillo, Sonora",          ahn:31},
+  {pid:"27SV-CGC",  name:"Miguel Reyes",               gender:"Male",   birth:"~1860",       birthPlace:"Bacanora, Sonora",        death:"27 May 1908", deathPlace:"Hermosillo, Sonora",          ahn:48},
+  {pid:"27SV-Z7M",  name:"Abigail Olvera",             gender:"Female", birth:"~1862",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:49},
+  {pid:"2W2P-X6X",  name:"Jesus Arvayo",               gender:"Male",   birth:"1856",        birthPlace:"",                       death:"",            deathPlace:"",                           ahn:50},
+  {pid:"2W2P-XF3",  name:"Ignacia Ruiz",               gender:"Female", birth:"~1860",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:51},
+  {pid:"GXLW-LFF",  name:"José María López",           gender:"Male",   birth:"",            birthPlace:"Sonora",                 death:"bef. 1892",   deathPlace:"Sonora",                      ahn:52},
+  {pid:"GXLW-VGT",  name:"Refugio Madrid",             gender:"Female", birth:"~1840",       birthPlace:"Sonora",                 death:"",            deathPlace:"Sonora",                      ahn:53},
+  {pid:"LRWL-47T",  name:"Felipe Parra Rivera",        gender:"Male",   birth:"~1829",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:54, collapse:true},
+  {pid:"LRWL-42K",  name:"Carmen Romero",              gender:"Female", birth:"",            birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:55, collapse:true},
+  {pid:"LRWL-47T",  name:"Felipe Parra Rivera",        gender:"Male",   birth:"~1829",       birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:56, ref:true, refTo:54},
+  {pid:"LRWL-42K",  name:"Carmen Romero",              gender:"Female", birth:"",            birthPlace:"Bacanora, Sonora",        death:"",            deathPlace:"",                           ahn:57, ref:true, refTo:55},
+  {pid:"PCHH-KHN",  name:"Rafael Galindo",             gender:"Male",   birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:58},
+  {pid:"GLZK-SWZ",  name:"Biatora Madrid",             gender:"Female", birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:59},
+  {pid:"K2JB-B6F",  name:"José Ruiz",                  gender:"Male",   birth:"~1870",       birthPlace:"Santa Teresa, Sonora",   death:"bef. 1910",   deathPlace:"Santa Teresa, Sonora",        ahn:60},
+  {pid:"K2JB-BX6",  name:"Guadalupe Arenas",           gender:"Female", birth:"1871",        birthPlace:"",                       death:"",            deathPlace:"",                           ahn:61},
+  {pid:"PC4G-FQQ",  name:"Donaciano Tanori",           gender:"Male",   birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:62},
+  {pid:"PC4P-H6F",  name:"Refugio Mendivil",           gender:"Female", birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:63},
+  {pid:"GMWT-T9Z",  name:"Catarino Reyes",             gender:"Male",   birth:"~1842",       birthPlace:"",                       death:"",            deathPlace:"",                           ahn:96},
+  {pid:"GMWT-LKD",  name:"Refugia Lopez",              gender:"Female", birth:"~1828",       birthPlace:"",                       death:"",            deathPlace:"",                           ahn:97},
+  {pid:"GKZ7-CDW",  name:"Eulogio Arbayo",             gender:"Male",   birth:"1814",        birthPlace:"Bacanora, Sonora",        death:"1 Jun 1884",  deathPlace:"Bacanora, Sonora",            ahn:101},
+  {pid:"LBX7-K85",  name:"Ildelfonso Parra Gomez",     gender:"Male",   birth:"~1814",       birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:108, collapse:true},
+  {pid:"LBX7-BZ4",  name:"Tomasa Rivera Pacheco",      gender:"Female", birth:"~1814",       birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:109, collapse:true},
+  {pid:"PC4G-LSH",  name:"Manuel Romero",              gender:"Male",   birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:110, collapse:true},
+  {pid:"PC4G-G7R",  name:"Salomé Chaves",              gender:"Female", birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:111, collapse:true},
+  {pid:"GQNC-26R",  name:"Juan Arenas",                gender:"Male",   birth:"1816",        birthPlace:"Baroyeca, Sonora",        death:"",            deathPlace:"",                           ahn:122},
+  {pid:"GQNC-B4G",  name:"Luisa Barrios",              gender:"Female", birth:"1847",        birthPlace:"Sahuaripa, Sonora",       death:"",            deathPlace:"",                           ahn:123},
+  {pid:"LBX7-TL8",  name:"Ventura Parra",              gender:"Male",   birth:"~1800",       birthPlace:"Sáric, Sonora",           death:"",            deathPlace:"",                           ahn:216, collapse:true},
+  {pid:"LBX7-J7G",  name:"Angela Gomez",               gender:"Female", birth:"~1800",       birthPlace:"Sáric, Sonora",           death:"",            deathPlace:"",                           ahn:217, collapse:true},
+  {pid:"KCXN-WZX",  name:"Cipriano Rivera",            gender:"Male",   birth:"~1800",       birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:218, collapse:true},
+  {pid:"K48G-B7X",  name:"Quiteria Pacheco",           gender:"Female", birth:"~1800",       birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:219, collapse:true},
+  {pid:"GQNZ-CLF",  name:"Francisco Arenas",           gender:"Male",   birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:244},
+  {pid:"GQNZ-H96",  name:"Josefa Felix",               gender:"Female", birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:245},
+  {pid:"GXXG-VGX",  name:"José Zacarias Barrios",      gender:"Male",   birth:"4 Nov 1814",  birthPlace:"Sahuaripa, Sonora",       death:"",            deathPlace:"",                           ahn:246},
+  {pid:"G2J2-QQD",  name:"Guadalupe Peralta Lopez",    gender:"Female", birth:"",            birthPlace:"",                       death:"",            deathPlace:"",                           ahn:247},
+  {pid:"M81B-DNK",  name:"Joseph Nicolas Barrios T.",  gender:"Male",   birth:"10 Sep 1785", birthPlace:"Sonora",                 death:"",            deathPlace:"",                           ahn:492},
+  {pid:"KDS9-S8B",  name:"Josefa Arbayo",              gender:"Female", birth:"1790",        birthPlace:"Sahuaripa, Sonora",       death:"",            deathPlace:"",                           ahn:493},
+  {pid:"KD99-N9Y",  name:"Joseph Barrios",             gender:"Male",   birth:"~1750",       birthPlace:"Sahuaripa, Sonora",       death:"",            deathPlace:"",                           ahn:984},
+  {pid:"K41G-ZTR",  name:"Camila Tarazon",             gender:"Female", birth:"~1750",       birthPlace:"Sahuaripa, Sonora",       death:"",            deathPlace:"",                           ahn:985, mulatto:true},
+];
+
+const byAhn = {};
+raw.forEach(p => { byAhn[p.ahn] = p; });
+
+function buildNode(ahn) {
+  const p = byAhn[ahn];
+  if (!p) return null;
+  // Root family node: skip ahn 2,3 — connect directly to ahn 6,7
+  const childAhns = (ahn === 1) ? [6, 7] : [ahn * 2, ahn * 2 + 1];
+  const ch = childAhns.map(a => buildNode(a)).filter(Boolean);
+  return { ...p, children: ch.length ? ch : null, _children: null };
+}
+
+const treeData = buildNode(1);
+
+// ── SVG ──────────────────────────────────────────────────────────────────────
+const nodeW = 162, nodeH = 56, hGap = 24, vGap = 12;
+const W = window.innerWidth;
+const H = window.innerHeight - 130;
+
+const svg   = d3.select('#tree-container').append('svg').attr('width', W).attr('height', H);
+const zoomG = svg.append('g');
+const linkG = zoomG.append('g');
+const nodeG = zoomG.append('g');
+
+const zoom = d3.zoom().scaleExtent([0.08, 2.5]).on('zoom', e => zoomG.attr('transform', e.transform));
+svg.call(zoom);
+
+let root;
+let activeTooltipPid = null;
+
+function cardFill(d) {
+  if (d.data.family)     return 'var(--card-family)';
+  if (d.data.ref)        return 'var(--card-ref)';
+  if (d.data.opata)      return 'var(--card-opata)';
+  if (d.data.mulatto)    return 'var(--card-mulatto)';
+  if (d.data.adoptiveOf) return 'var(--card-adopt)';
+  if (d.data.collapse)   return 'var(--card-collapse)';
+  return d.data.gender === 'Female' ? 'var(--card-bio-f)' : 'var(--card-bio-m)';
+}
+function cardStroke(d) {
+  if (d.data.family)     return 'rgba(196,149,106,0.8)';
+  if (d.data.ref)        return 'var(--border-ref)';
+  if (d.data.opata)      return 'var(--border-opata)';
+  if (d.data.mulatto)    return 'var(--border-mulatto)';
+  if (d.data.adoptiveOf) return 'var(--border-adopt)';
+  if (d.data.collapse)   return 'var(--border-collapse)';
+  return d.data.gender === 'Female' ? 'var(--border-f)' : 'var(--border-m)';
+}
+function accentColor(d) {
+  if (d.data.opata)      return 'var(--border-opata)';
+  if (d.data.mulatto)    return 'var(--border-mulatto)';
+  if (d.data.adoptiveOf) return 'var(--border-adopt)';
+  if (d.data.collapse)   return 'var(--border-collapse)';
+  return d.data.gender === 'Female' ? 'var(--border-f)' : 'var(--border-m)';
+}
+function linkClass(d) {
+  if (d.source.data.adopted) return 'link adoptive';
+  if (d.target.data.ref)     return 'link ref-link';
+  return 'link biological';
+}
+
+function update() {
+  const layout = d3.tree()
+    .nodeSize([nodeH + vGap, nodeW + hGap])
+    .separation((a, b) => a.parent === b.parent ? 1.1 : 1.4);
+
+  root = d3.hierarchy(treeData);
+  root.each(d => { if (d.data._collapsed) { d._children = d.children; d.children = null; } });
+  layout(root);
+
+  const nodes = root.descendants();
+  const links = root.links();
+
+  const minX = d3.min(nodes, d => d.x);
+  const offX  = 80;
+  const offY  = H / 2 - (d3.max(nodes, d => d.x) - minX) / 2 - minX;
+
+  // ── LINKS ─────────────────────────────────────────────────────────────────
+  const ls = linkG.selectAll('.link').data(links, d => d.target.data.ahn);
+  ls.enter().append('path').attr('class', linkClass)
+    .merge(ls).attr('class', linkClass)
+    .attr('d', d => {
+      const sx = offX + d.source.y + nodeW, sy = offY + d.source.x;
+      const tx = offX + d.target.y,         ty = offY + d.target.x;
+      const mx = (sx + tx) / 2;
+      return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
+    });
+  ls.exit().remove();
+
+  // ── NODES ─────────────────────────────────────────────────────────────────
+  const ns = nodeG.selectAll('.node').data(nodes, d => d.data.ahn);
+
+  const ne = ns.enter().append('g').attr('class', 'node')
+    .attr('transform', d => `translate(${offX + d.y},${offY + d.x})`)
+    .style('cursor', 'pointer')
+    .on('click', (e, d) => {
+      // If the click is on the FS icon area, let that handler fire
+      if (e.target.classList.contains('fs-link-icon')) return;
+      if (d.data.ref || d.data.family) return;
+      if (d.children)       { d._children = d.children; d.children = null;    d.data._collapsed = true; }
+      else if (d._children) { d.children  = d._children; d._children = null;  d.data._collapsed = false; }
+      hideTip();
+      update();
+    })
+    .on('mouseover', (e, d) => { if (!isTouchDevice()) showTip(e, d.data); })
+    .on('mousemove', e => { if (!isTouchDevice()) moveTip(e); })
+    .on('mouseout',  () => { if (!isTouchDevice()) scheduledHide(); })
+    .on('touchend', (e, d) => {
+      e.preventDefault();
+      if (activeTooltipPid === d.data.ahn) { hideTip(); activeTooltipPid = null; return; }
+      showTip(e.changedTouches[0], d.data);
+      activeTooltipPid = d.data.ahn;
+    });
+
+  // Card background
+  ne.append('rect')
+    .attr('x', 0).attr('y', -nodeH / 2)
+    .attr('width', nodeW).attr('height', nodeH).attr('rx', 5)
+    .attr('filter', d => d.data.ref || d.data.family ? 'none' : 'drop-shadow(0 1px 4px rgba(100,50,10,0.13))')
+    .attr('fill',   cardFill)
+    .attr('stroke', cardStroke)
+    .attr('stroke-dasharray', d => d.data.ref ? '5,3' : 'none');
+
+  // Left accent bar (regular nodes only)
+  ne.filter(d => !d.data.ref && !d.data.family).append('rect')
+    .attr('x', 0).attr('y', -nodeH / 2)
+    .attr('width', 5).attr('height', nodeH).attr('rx', 3)
+    .attr('fill', accentColor);
+
+  // Collapse dot
+  ne.filter(d => d.data.collapse && !d.data.ref).append('circle')
+    .attr('class', 'collapse-dot')
+    .attr('cx', nodeW - 8).attr('cy', -nodeH / 2 + 8).attr('r', 4);
+
+  // ── Family root ────────────────────────────────────────────────────────────
+  ne.filter(d => d.data.family).append('text').attr('class', 'fam-title')
+    .attr('x', nodeW / 2).attr('y', -6).attr('text-anchor', 'middle').text('Familia');
+  ne.filter(d => d.data.family).append('text').attr('class', 'fam-title')
+    .attr('x', nodeW / 2).attr('y', 10).attr('text-anchor', 'middle').text('Reyes Parra');
+  ne.filter(d => d.data.family).append('text').attr('class', 'fam-sub')
+    .attr('x', nodeW / 2).attr('y', 24).attr('text-anchor', 'middle').text('Ciudad Obregón, Sonora');
+
+  // ── Regular node text ──────────────────────────────────────────────────────
+  ne.filter(d => !d.data.ref && !d.data.family).append('text').attr('class', 'name')
+    .attr('x', 13).attr('y', -10)
+    .text(d => { const n = d.data.name; return n.length > 21 ? n.slice(0, 20) + '…' : n; });
+
+  ne.filter(d => !d.data.ref && !d.data.family).append('text').attr('class', 'dates')
+    .attr('x', 13).attr('y', 4)
+    .text(d => (d.data.birth || '?') + (d.data.death ? ' – ' + d.data.death : ''));
+
+  ne.filter(d => !d.data.ref && !d.data.family).append('text').attr('class', 'place')
+    .attr('x', 13).attr('y', 17)
+    .text(d => { const p = d.data.birthPlace || d.data.deathPlace || ''; return p.length > 22 ? p.slice(0, 21) + '…' : p; });
+
+  // ── FamilySearch link icon ─────────────────────────────────────────────────
+  ne.filter(d => d.data.pid && !d.data.ref && !d.data.family).append('text')
+    .attr('class', 'fs-link-icon')
+    .attr('x', nodeW - 8)
+    .attr('y', nodeH / 2 - 6)
+    .attr('text-anchor', 'end')
+    .attr('dominant-baseline', 'auto')
+    .text('🔗')
+    .on('click', (e, d) => {
+      e.stopPropagation();
+      window.open(FS_BASE + d.data.pid, '_blank', 'noopener');
+    })
+    .on('touchend', (e, d) => {
+      e.stopPropagation();
+      e.preventDefault();
+      window.open(FS_BASE + d.data.pid, '_blank', 'noopener');
+    });
+
+  // ── Reference node text ────────────────────────────────────────────────────
+  ne.filter(d => d.data.ref).append('text').attr('class', 'ref-name')
+    .attr('x', 10).attr('y', -7)
+    .text(d => '= ' + (d.data.name.length > 18 ? d.data.name.slice(0, 17) + '…' : d.data.name));
+  ne.filter(d => d.data.ref).append('text').attr('class', 'ref-lbl')
+    .attr('x', 10).attr('y', 7).text(d => d.data.birth || '');
+  ne.filter(d => d.data.ref).append('text').attr('class', 'ref-lbl')
+    .attr('x', 10).attr('y', 20).text('↖ mismo antepasado');
+
+  // ── Badges ────────────────────────────────────────────────────────────────
+  ne.filter(d => d.data.opata).append('text')
+    .attr('x', nodeW - 22).attr('y', 4).attr('text-anchor', 'end')
+    .attr('font-size', '7.5px').attr('fill', 'var(--opata)').attr('letter-spacing', '0.08em')
+    .attr('font-family', "'Crimson Pro', serif").attr('pointer-events', 'none').text('OPATA');
+
+  ne.filter(d => d.data.adopted).append('text')
+    .attr('x', nodeW - 22).attr('y', 16).attr('text-anchor', 'end')
+    .attr('font-size', '7px').attr('fill', 'var(--adoptive)').attr('font-style', 'italic')
+    .attr('font-family', "'Crimson Pro', serif").attr('pointer-events', 'none').text('adoptada');
+
+  ne.filter(d => d.data.mulatto).append('text')
+    .attr('x', nodeW - 22).attr('y', 4).attr('text-anchor', 'end')
+    .attr('font-size', '7.5px').attr('fill', 'var(--mulatto)').attr('letter-spacing', '0.06em')
+    .attr('font-family', "'Crimson Pro', serif").attr('pointer-events', 'none').text('MULATA');
+
+  ns.merge(ne).attr('transform', d => `translate(${offX + d.y},${offY + d.x})`);
+  ns.exit().remove();
+}
+
+update();
+svg.call(zoom.transform, d3.zoomIdentity.translate(60, H / 2).scale(0.78));
+
+// ── TOOLTIP ──────────────────────────────────────────────────────────────────
+const tip = document.getElementById('tooltip');
+const overlay = document.getElementById('tip-overlay');
+let hideTimer = null;
+
+function isTouchDevice() {
+  return window.matchMedia('(hover: none)').matches;
+}
+
+// Hovering over the tooltip itself cancels the hide timer
+tip.addEventListener('mouseenter', () => { clearTimeout(hideTimer); });
+tip.addEventListener('mouseleave', () => { hideTip(); });
+
+// Overlay tap closes tooltip on mobile
+overlay.addEventListener('click', hideTip);
+overlay.addEventListener('touchend', e => { e.preventDefault(); hideTip(); });
+
+function showTip(e, d) {
+  clearTimeout(hideTimer);
+  if (d.family) { hideTip(); return; }
+
+  if (d.ref) {
+    tip.innerHTML = `
+      <div class="tt-name">${d.name}</div>
+      <div class="tt-special tt-ref">Referencia — aparece también en otra rama (Ahnentafel ${d.refTo}).<br>Felipe y Carmen son padres de Patrocinia Parra y de Miguel Parra Romero.</div>
+    `;
+    tip.classList.add('visible');
+    overlay.classList.add('active');
+    moveTip(e);
+    return;
+  }
+
+  let h = `<div class="tt-name">${d.name}</div>`;
+  if (d.birth)      h += `<div class="tt-row">🗓 ${d.birth}${d.death ? ' – ' + d.death : ''}</div>`;
+  if (d.birthPlace) h += `<div class="tt-row">📍 ${d.birthPlace}</div>`;
+  if (d.deathPlace && d.deathPlace !== d.birthPlace) h += `<div class="tt-row">✝ ${d.deathPlace}</div>`;
+  h += `<div class="tt-pid">${d.pid} · Ahnentafel ${d.ahn}</div>`;
+  if (d.opata)
+    h += `<div class="tt-special tt-opata">Origen Opata — sangre indígena pura.<br>Adoptada por la familia López Parra.</div>`;
+  if (d.mulatto)
+    h += `<div class="tt-special tt-mulatto">Registro histórico: Mulata.<br>Ascendencia africana y europea, Sahuaripa ~1750.</div>`;
+  if (d.adoptiveOf)
+    h += `<div class="tt-special tt-adopt">Padre/madre adoptivo de Mercedes Lopez Parra.</div>`;
+  if (d.collapse)
+    h += `<div class="tt-special tt-collapse">Antepasado compartido — aparece en múltiples ramas.</div>`;
+  if (d.pid)
+    h += `<a class="fs-link" href="${FS_BASE + d.pid}" target="_blank" rel="noopener">🔗 Ver en FamilySearch</a>`;
+
+  tip.innerHTML = h;
+  tip.classList.add('visible');
+  overlay.classList.add('active');
+  moveTip(e);
+}
+
+function moveTip(e) {
+  const x = (e.clientX !== undefined ? e.clientX : e.pageX) + 14;
+  const y = (e.clientY !== undefined ? e.clientY : e.pageY) - 10;
+  tip.style.left = Math.min(x, window.innerWidth  - 272) + 'px';
+  tip.style.top  = Math.min(y, window.innerHeight - 215) + 'px';
+}
+
+function hideTip() {
+  clearTimeout(hideTimer);
+  tip.classList.remove('visible');
+  overlay.classList.remove('active');
+  activeTooltipPid = null;
+}
+
+function scheduledHide() {
+  // Small delay so mouse can travel from node to tooltip without it vanishing
+  hideTimer = setTimeout(hideTip, 120);
+}
+
+// ── CONTROLS ─────────────────────────────────────────────────────────────────
+function resetZoom()    { hideTip(); svg.transition().duration(380).call(zoom.transform, d3.zoomIdentity.translate(60, H / 2).scale(0.78)); }
+function expandAll()    { hideTip(); root.each(d => { if (d._children) { d.children = d._children; d._children = null; d.data._collapsed = false; } }); update(); }
+function collapseDeep() { hideTip(); root.each(d => { if (d.depth >= 6 && d.children) { d._children = d.children; d.children = null; d.data._collapsed = true; } }); update(); }
+
+// ── MOBILE BACKGROUND TAP ─────────────────────────────────────────────────────
+// The overlay div sits behind the SVG so touch events on the canvas background
+// never reach it. Instead we listen on the SVG directly and check the target.
+document.getElementById('tree-container').addEventListener('touchend', e => {
+  // If the touch ended on a node element or inside the tooltip, ignore
+  const target = e.target;
+  if (tip.contains(target)) return;
+  if (target.closest && target.closest('.node')) return;
+  hideTip();
+}, { passive: true });
+</script>
+</body>
+</html>
