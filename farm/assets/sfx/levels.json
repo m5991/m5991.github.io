@@ -1,0 +1,170 @@
+{
+  "sampleRate": 44100,
+  "bitrate": "64k",
+  "targetRmsDb": -18,
+  "peakDb": -1,
+  "totalBytes": 95464,
+  "files": {
+    "step-1": {
+      "desc": "footstep on earth and grass",
+      "seconds": 0.122,
+      "bytes": 1461,
+      "rmsDb": -18,
+      "normGainDb": -0.9
+    },
+    "step-2": {
+      "desc": "footstep on earth and grass",
+      "seconds": 0.12,
+      "bytes": 1461,
+      "rmsDb": -18,
+      "normGainDb": -1.6
+    },
+    "step-3": {
+      "desc": "footstep on earth and grass",
+      "seconds": 0.12,
+      "bytes": 1461,
+      "rmsDb": -18,
+      "normGainDb": -1.6
+    },
+    "step-4": {
+      "desc": "footstep on earth and grass",
+      "seconds": 0.12,
+      "bytes": 1461,
+      "rmsDb": -18,
+      "normGainDb": -1.9
+    },
+    "weed": {
+      "desc": "weeds pulled: leaf rustle and a soft uprooting tug",
+      "seconds": 0.369,
+      "bytes": 3551,
+      "rmsDb": -18,
+      "normGainDb": -0.8
+    },
+    "tick": {
+      "desc": "gathering tick: a light woody tock",
+      "seconds": 0.09,
+      "bytes": 1252,
+      "rmsDb": -18,
+      "normGainDb": -7.7
+    },
+    "pop": {
+      "desc": "pickup pop: a soft rounded pop",
+      "seconds": 0.1,
+      "bytes": 1252,
+      "rmsDb": -18,
+      "normGainDb": -7.4
+    },
+    "full": {
+      "desc": "stack full: two muted wooden notes stepping down",
+      "seconds": 0.5,
+      "bytes": 4596,
+      "rmsDb": -18,
+      "normGainDb": -7.9
+    },
+    "land-wood": {
+      "desc": "a wood unit lands on a pile: hollow knock",
+      "seconds": 0.2,
+      "bytes": 2088,
+      "rmsDb": -18,
+      "normGainDb": -7.4
+    },
+    "land-stone": {
+      "desc": "a stone unit lands on a pile: dry clack",
+      "seconds": 0.12,
+      "bytes": 1461,
+      "rmsDb": -18,
+      "normGainDb": -6.7
+    },
+    "crack": {
+      "desc": "a dead branch snaps free in the tree: short dry crack",
+      "seconds": 0.31,
+      "bytes": 2924,
+      "rmsDb": -18,
+      "normGainDb": -2.1
+    },
+    "thud": {
+      "desc": "the branch lands on the ground: soft woody thud",
+      "seconds": 0.3,
+      "bytes": 2924,
+      "rmsDb": -18,
+      "normGainDb": -8.2
+    },
+    "coin-1": {
+      "desc": "a coin into the purse: small clink",
+      "seconds": 0.599,
+      "bytes": 5223,
+      "rmsDb": -18,
+      "normGainDb": -7.6
+    },
+    "coin-2": {
+      "desc": "a coin into the purse: small clink",
+      "seconds": 0.596,
+      "bytes": 5223,
+      "rmsDb": -18,
+      "normGainDb": -7.5
+    },
+    "confirm": {
+      "desc": "Confirm delivery: two marimba notes stepping up",
+      "seconds": 0.791,
+      "bytes": 6895,
+      "rmsDb": -18,
+      "normGainDb": -8.6
+    },
+    "complete": {
+      "desc": "building completes: a small kalimba arpeggio",
+      "seconds": 2.591,
+      "bytes": 21314,
+      "rmsDb": -18,
+      "normGainDb": -10.7
+    },
+    "sell": {
+      "desc": "crop sold: a soft thud into the crate, then a small coin",
+      "seconds": 0.55,
+      "bytes": 5014,
+      "rmsDb": -18,
+      "normGainDb": -1.4
+    },
+    "chirp-1": {
+      "desc": "bird chirp",
+      "seconds": 0.262,
+      "bytes": 2715,
+      "rmsDb": -18,
+      "normGainDb": -8.1
+    },
+    "chirp-2": {
+      "desc": "bird chirp",
+      "seconds": 0.392,
+      "bytes": 3760,
+      "rmsDb": -18,
+      "normGainDb": -8.1
+    },
+    "squawk": {
+      "desc": "theft squawk: a short throaty \"kraa\"",
+      "seconds": 0.3,
+      "bytes": 2924,
+      "rmsDb": -18,
+      "normGainDb": -12.2
+    },
+    "tap": {
+      "desc": "UI tap: the lightest woody tick",
+      "seconds": 0.05,
+      "bytes": 834,
+      "rmsDb": -18,
+      "normGainDb": -6.3
+    },
+    "cue": {
+      "desc": "tutorial cue: one kalimba note with a quiet octave",
+      "seconds": 1.258,
+      "bytes": 10656,
+      "rmsDb": -18,
+      "normGainDb": -6.1
+    },
+    "brush": {
+      "desc": "colour wash: one soft brush stroke across paper",
+      "seconds": 0.551,
+      "bytes": 5014,
+      "rmsDb": -18,
+      "normGainDb": -0.2
+    }
+  }
+}
