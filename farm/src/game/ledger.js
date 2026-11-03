@@ -121,8 +121,11 @@ export function houseStage(l) {
 export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
 // v0.13: the tables standing now: one, and one more per house stage, TABLES_MAX at most
 export const tables = (l) => Math.min(TABLES_MAX, 1 + houseStage(l));
-// what the tables hold at most now (six each)
-export const tableCap = (l) => TABLE_CAP * tables(l);
+// what the tables hold at most now (six each). v0.14 (captain: "I would like the last stage to
+// not have maximum on produce being left in the tables"): with all four standing there is no
+// maximum, everything she brings goes out (Infinity); a sale still sells all of it
+export const tablesUnlimited = (l) => tables(l) >= TABLES_MAX;
+export const tableCap = (l) => (tablesUnlimited(l) ? Infinity : TABLE_CAP * tables(l));
 // the goods set out on the tables
 export const tableCount = (l) => sum(l.table);
 export const tableRoom = (l) => Math.max(0, tableCap(l) - tableCount(l));
@@ -475,7 +478,7 @@ function drop(l0, r = null) {
 
 // v0.12: the crops on her head onto the yard-sale table as she walks past it, corn, sunflowers,
 // tomatoes, until it holds TABLE_CAP; what does not fit stays on her head (v0.13: until the tables
-// standing now hold six each)
+// standing now hold six each; v0.14: with four tables, all of it)
 function stock(l0) {
   if (!tableAvailable(l0)) return fail('noTable');
   if (tableFull(l0)) return fail('tableFull');
@@ -546,7 +549,7 @@ export function validateLedger(l) {
   if (!sameKeys(l.carried, RESOURCES)) e('carried keys');
   else for (const r of RESOURCES) if (!isInt(l.carried[r], 0, CAPACITY)) e(`carried ${r} outside 0..${CAPACITY}`);
   if (!sameKeys(l.yard, YARD_MATERIALS) || !YARD_MATERIALS.every((r) => isInt(l.yard[r]))) e('yard');
-  if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c])) || sum(l.table) > TABLE_CAP * TABLES_MAX) e('table');
+  if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c]))) e('table');
   else if (l.stages && sum(l.table) > tableCap(l)) e('table holds more than its tables');
   else if (sum(l.table) > 0 && !BASE_STAGES.some((id) => l.stages?.[id]?.committed)) e('table stocked before any crop plot');
   if (!isInt(l.sales)) e('sales');

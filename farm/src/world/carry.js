@@ -376,8 +376,28 @@ export function yardSlot(res, k) {
 // its top is at 0.65 m, +Z faces the camera), a little askew so they read as set out by hand
 export const TABLE_SHOWN = 6;
 const GOODS_AT = [[-0.3, -0.1], [0, -0.11], [0.3, -0.09], [-0.31, 0.13], [0.01, 0.12], [0.3, 0.14]];
+// v0.14 (captain: "the last stage to not have maximum on produce being left in the tables (either
+// it keeps piling or simply is there not rendered)"): with all four tables standing, the goods
+// keep piling: each further six on a table lie in a layer on top of the last, drawn a little
+// narrower so the heap rounds off, TABLE_LAYERS deep; any more are counted (and sold) but not drawn
+export const TABLE_LAYERS = 3;
+const LAYER_H = 0.1;
 export function tableSlot(res, k, i) {
   const [x, z] = GOODS_AT[i % GOODS_AT.length];
   const lift = res === 'S' ? 0.17 : res === 'T' ? 0.075 : 0.07;
-  return [x, 0.62 + lift, z, (i * 0.7) % 1.2 - 0.6];
+  const layer = Math.min(TABLE_LAYERS - 1, Math.floor(i / GOODS_AT.length));
+  const narrow = 1 - 0.22 * layer;
+  const j = layer ? (((i * 37) % 11) / 11 - 0.5) * 0.04 : 0; // a hand-set jitter on the heap
+  return [x * narrow + j, 0.62 + lift + layer * LAYER_H, z * narrow - j * 0.5, (i * 0.7) % 1.2 - 0.6];
 }
+// where the i-th good set out (in table order) lies when `n` tables stand: the table it is on and
+// its place there. Six to a table across all the tables, then (four tables only) the next layer
+// across them again; null when it is past what is drawn
+export function tableSpot(i, n, unlimited = false) {
+  const layerSize = TABLE_SHOWN * n;
+  const layer = Math.floor(i / layerSize);
+  if (layer >= (unlimited ? TABLE_LAYERS : 1)) return null;
+  const w = i % layerSize;
+  return { k: Math.floor(w / TABLE_SHOWN), i: layer * TABLE_SHOWN + (w % TABLE_SHOWN) };
+}
+export const tableDrawn = (n, unlimited = false) => TABLE_SHOWN * n * (unlimited ? TABLE_LAYERS : 1);

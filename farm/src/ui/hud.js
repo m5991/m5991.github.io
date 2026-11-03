@@ -139,7 +139,10 @@ export function createHud(root = document) {
     get noteFolded() { return folded; },
     triggerDiy() { if (!diy.hidden && !buildbar.hidden) diyHandler?.(); },
     // v0.12: the Yard Sale button, shown while the table is full
-    setSale(on, handler = null) { saleHandler = handler; sale.hidden = !on; },
+    // v0.14 (captain: "yard sale button should also go yellow"): like the DIY button, flower
+    // yellow and pulsing once a tap sells (six out and she is at the tables); away from them it
+    // keeps the paper-and-ink look, and a tap says where to go (main.js)
+    setSale(on, handler = null, here = true) { saleHandler = handler; sale.hidden = !on; sale.classList.toggle('away', on && !here); },
     get saleShown() { return !sale.hidden; },
     triggerSale() { if (!sale.hidden) saleHandler?.(); },
     setProgress(text) {

@@ -282,7 +282,7 @@ async function boot() {
           }
           const n = l.table.C + l.table.S + l.table.T;
           const cap6 = tableCap(l);
-          hud.announce(n >= 6 ? `${n} out of ${cap6}: time for a yard sale` : `On the table: ${n} of 6`);
+          hud.announce(n >= 6 ? `${n} out${Number.isFinite(cap6) ? ` of ${cap6}` : ''}: time for a yard sale` : `On the table: ${n} of 6`);
           if (n >= 6 && !data.session.firstSaleSeen) hud.toast('The table is full! Tap Yard Sale, or the table, to sell it all.', 4200);
           break;
         }
@@ -383,7 +383,7 @@ async function boot() {
               world.sync(data.ledger, true); // the new table pops up in dust
               sfx.cue('thud');
               const n = tables(data.ledger);
-              hud.toast(n >= 4 ? 'The big yard sale! A fourth table, and two neighbours set up stalls of their own.' : `More neighbours are coming: a ${n === 2 ? 'second' : 'third'} yard-sale table.`, 4200);
+              hud.toast(n >= 4 ? 'The big yard sale! A fourth table, room for everything, and at every sale two neighbours bring stalls of their own.' : `More neighbours are coming: a ${n === 2 ? 'second' : 'third'} yard-sale table.`, 4200);
             }
             if (e.stage === 'H4') finale.start(); // H4 is saved; last, the drawing gets its colour (P25-2)
           });
@@ -571,7 +571,7 @@ async function boot() {
     const bar = finale.active || opening.active ? null : buildBar(data.ledger, site?.id ?? null);
     diyState = diyHint.update(dt, bar && !hammering.active ? bar : null);
     hud.setBuild(bar, bar?.ready ? (bar.here ? () => doDiy(bar.stage) : () => diyAway(bar)) : null);
-    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale);
+    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale, atTheTable()); // v0.14: yellow at the tables
     // at the tools: the explicit way to take the one the next job needs (P25-4)
     const tools = ctxTargets.find((x) => x.kind === 'tools');
     if (tools && toolCtx.want && inReach(heroXZ, tools)) {
@@ -603,7 +603,9 @@ async function boot() {
       if (table) {
         const n = data.ledger.table.C + data.ledger.table.S + data.ledger.table.T;
         const capN = tableCap(data.ledger);
-        text = saleShowing ? 'Yard sale!' : n >= capN ? 'The tables are full: tap Yard Sale' : n >= 6 ? `Yard-sale tables · ${n} of ${capN}. Tap Yard Sale, or bring more.` : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
+        // v0.14: with all four tables there is no maximum, so no "of"
+        const of = Number.isFinite(capN) ? ` of ${capN}` : ' out';
+        text = saleShowing ? 'Yard sale!' : n >= capN ? 'The tables are full: tap Yard Sale' : n >= 6 ? `Yard-sale tables · ${n}${of}. Tap Yard Sale, or bring more.` : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
       }
       const near = ctxTargets.filter((x) => ['node', 'stick', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
       for (const n of near) {

@@ -167,7 +167,8 @@ export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her 
 // v0.13 (captain's v0.12 playtest: "as your house is growing more people come and more tables
 // appear (the only minimum is 6 produce items always), but the maximum keeps increasing"; answer 3
 // "1 table per stage"): one table at the start and one more with each house stage, four at most
-// (by the roof, H3); a sale always needs SALE_MIN on the tables and holds up to six per table.
+// (by the roof, H3); a sale always needs SALE_MIN on the tables and holds up to six per table
+// (v0.14: once all four stand there is no maximum, `tableCap` in ledger.js).
 // Buyers come in a crowd that grows with the tables (BUYERS[tables - 1], [least, most]).
 export const SALE_MIN = 6;
 export const TABLES_MAX = 4;

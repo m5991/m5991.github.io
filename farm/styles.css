@@ -82,6 +82,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 @keyframes diy-ready { 0%, 100% { transform: rotate(-2deg) scale(1); } 50% { transform: rotate(-2deg) scale(1.05); } }
 #btn-sale { pointer-events: auto; min-height: 56px; padding: 6px 18px; white-space: nowrap; background: var(--paper); color: #b53e36; border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 24px; transform: rotate(1.5deg); animation: diy-ready 1.6s ease-in-out infinite; }
 #btn-sale.coach-pulse, #btn-diy.coach-pulse { animation: coach-pulse 1.4s ease-out infinite; }
+/* v0.14: the Yard Sale button goes yellow like DIY once a tap sells; away from the tables, paper */
+#btn-sale:not(.away) { background: var(--flower, #e6b83e); color: var(--ink); }
+#btn-sale:not(.away), #btn-sale.coach-pulse:not(.away) { animation: sale-ready 1.6s ease-in-out infinite, diy-pulse 1.4s ease-out infinite; }
+@keyframes sale-ready { 0%, 100% { transform: rotate(1.5deg) scale(1); } 50% { transform: rotate(1.5deg) scale(1.05); } }
+#btn-sale.away { background: var(--paper); color: #b53e36; }
 /* v0.13: the DIY button pulses as soon as she has everything; away from the part it is the
    paper-and-ink way there (a press shows the arrow) */
 #btn-diy, #btn-diy.coach-pulse { animation: diy-ready 1.6s ease-in-out infinite, diy-pulse 1.4s ease-out infinite; }
@@ -95,7 +100,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #diy-sparkle .twinkle { transform-origin: 30px 30px; animation: twinkle 1.8s ease-in-out infinite; }
 @keyframes twinkle { 0%, 100% { transform: scale(0.6); opacity: 0.55; } 50% { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #diy-sparkle .twinkle { animation: none; } }
-@media (prefers-reduced-motion: reduce) { #btn-diy, #btn-sale, #btn-diy.coach-pulse { animation: none; } #btn-diy { border-width: 4px; } }
+@media (prefers-reduced-motion: reduce) { #btn-diy, #btn-sale, #btn-diy.coach-pulse, #btn-sale:not(.away), #btn-sale.coach-pulse:not(.away) { animation: none; } #btn-diy, #btn-sale:not(.away) { border-width: 4px; } }
 #context { pointer-events: auto; max-width: min(60vw, 320px); min-height: 56px; background: var(--navy); color: var(--paper); border-color: var(--navy); font-weight: 600; }
 #context.coach-pulse, dialog#card button.coach-pulse { animation: coach-pulse 1.4s ease-out infinite; }
 @keyframes coach-pulse { 0% { box-shadow: 0 0 0 0 rgba(40, 100, 189, 0.6); } 70%, 100% { box-shadow: 0 0 0 14px rgba(40, 100, 189, 0); } }

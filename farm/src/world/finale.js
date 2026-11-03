@@ -78,20 +78,27 @@ export class Finale {
 
   // the walk: where she is at finale time t, her gait and her heading (WALK in walk.js)
   walkDone(t) { return !this.walk || t >= WALK.start + this.walk.ms; }
+  // v0.14: every frame from the first moves her and her clips on, so she never stands frozen
+  // while the camera eases: she turns onto her way within a few frames instead of snapping, and
+  // once there (before the settle beat) she stands in her idle until the pose
   stepWalk(dtMs) {
     const w = this.walk;
     if (!w || this.settled || this.t < WALK.start) return;
     const h = this.hero;
-    const k = Math.min(1, (this.t - WALK.start) / w.ms);
+    const k = w.ms > 0 ? Math.min(1, (this.t - WALK.start) / w.ms) : 1;
     const at = walkAt(w, k);
     h.view.position.set(at.x, 0, at.z);
     h.body.position.set(at.x, h.body.position.y, at.z);
     h.body.velocity.set(0, 0, 0);
     if (k < 1) {
-      h.yaw = at.yaw; h.view.rotation.y = at.yaw;
-      h.anim.play(at.gait, 0.2, at.rate);
-      h.anim.update(dtMs / 1000);
-    }
+      const d = Math.atan2(Math.sin(at.yaw - h.yaw), Math.cos(at.yaw - h.yaw));
+      h.yaw += d * (1 - Math.exp(-dtMs / 45));
+      h.view.rotation.y = h.yaw;
+      const cur = h.anim.current;
+      const swap = (cur === 'walk' && at.gait === 'run') || (cur === 'run' && at.gait === 'walk');
+      h.anim.play(at.gait, 0.2, at.rate, swap ? h.anim.phase() : null); // a swap keeps the step
+    } else h.anim.play('idle', 0.25);
+    h.anim.update(dtMs / 1000);
   }
 
   // checks only (?debug=1): show the frame at t ms without ending; `held` keeps it there
