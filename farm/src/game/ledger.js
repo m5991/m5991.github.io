@@ -1,10 +1,14 @@
 // The game-owned ledger (code-reuse annex §D.1): pure, deterministic, no three.js, no DOM.
 // Every accepted transaction returns a new ledger plus events; the caller saves the new
 // ledger before any presentation starts (spec §12). Views only present this state.
+// v0.11 (captain 2026-11-02): wood and stone she drops at the material pile by the house wait
+// there (`yard`) and builds take from her head first, then from the pile; the first crop patch
+// she rakes is her free first crop (`crop`, permanent: it also themes the cards and menus); the
+// other two base crops open after her first harvest (`harvested`).
 import {
-  CAPACITY, CROPS, MATERIALS, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES, PILES, PRICES, RESOURCES,
-  ROCKS, ROCK_IDS, SPOTS, STAGES, STAGE_ORDER, STONE_REQUIRED, TOOLS, U2_FIRST_READY_MS, UPGRADES, WEEDS,
-  WEED_PLOT,
+  BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, MATERIALS, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES,
+  PILES, PRICES, RESOURCES, ROCKS, ROCK_IDS, ROUTE, SPOTS, STAGES, STAGE_ORDER, STONE_REQUIRED, TOOLS,
+  U2_FIRST_READY_MS, UPGRADES, WEEDS, WEED_PLOT, YARD_MATERIALS,
 } from './data.js';
 
 const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
@@ -12,6 +16,9 @@ const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
 export function createLedger() {
   return {
     carried: zeroRes(),
+    yard: { W: 0, R: 0 }, // the material pile by the house (v0.11): no cap
+    crop: null, // her first crop: null until she rakes a crop patch, then 'C', 'S' or 'T' for good
+    harvested: false, // her first crop unit is picked: the other two base crops open
     purse: 0,
     lifetimeCoins: 0,
     sold: { C: 0, S: 0, T: 0 },
@@ -36,41 +43,70 @@ const fail = (reason) => ({ ok: false, reason });
 
 // ---------- derived state ----------
 export const isCommitted = (l, id) => l.stages[id]?.committed === true;
+// her first crop's stage (C0, S0 or T0), or null before she has raked a crop patch
+export const firstStage = (l) => (l.crop ? BASE_STAGE[l.crop] : null);
+export const isFirstCrop = (l, id) => !!l.crop && BASE_STAGE[l.crop] === id;
+// a stage's prerequisites on this ledger: 'first' is her first crop's stage
+function prereqsOf(l, id) {
+  return STAGES[id].prereq.map((p) => (p === 'first' ? firstStage(l) ?? 'first' : p));
+}
+export const plotsPlanted = (l) => BASE_STAGES.filter((id) => isCommitted(l, id)).length;
+// prerequisites not yet met: stage ids, 'first' (no crop chosen yet), 'second' (no second crop
+// plot yet) or 'harvest' (a base crop that is not her first waits for her first harvest)
+export function missingPrereqs(l, id) {
+  const s = STAGES[id];
+  const out = prereqsOf(l, id).filter((p) => (p === 'first' ? true : p === 'second' ? plotsPlanted(l) < 2 : !isCommitted(l, p)));
+  if (s.afterHarvest && !isFirstCrop(l, id) && !l.harvested) out.unshift('harvest');
+  return out;
+}
 export function stageState(l, id) {
   if (isCommitted(l, id)) return 'COMMITTED';
-  const s = STAGES[id];
-  const prereqsDone = s.prereq.every((p) => isCommitted(l, p));
-  const weedsDone = (s.weeds ?? []).every((w) => l.weeds[w]);
-  return prereqsDone && weedsDone ? 'OPEN' : 'LOCKED';
+  // only her first crop's free commit waits for its weeds; another plot's clumps and coins come
+  // in either order, and its spots open for the shovel when both are done (P27-5)
+  const weedsDone = !isFirstCrop(l, id) || (STAGES[id].weeds ?? []).every((w) => l.weeds[w]);
+  return !missingPrereqs(l, id).length && weedsDone ? 'OPEN' : 'LOCKED';
 }
 export function lockedReason(l, id) {
   const s = STAGES[id];
-  const weeds = (s.weeds ?? []).filter((w) => !l.weeds[w]);
-  const prereq = s.prereq.filter((p) => !isCommitted(l, p));
+  const weeds = isFirstCrop(l, id) ? (s.weeds ?? []).filter((w) => !l.weeds[w]) : [];
+  const prereq = missingPrereqs(l, id);
+  if (prereq.includes('harvest')) return { kind: 'harvest' };
+  if (prereq.includes('first')) return { kind: 'first' };
+  if (prereq.includes('second')) return { kind: 'second', stages: prereq.filter((p) => p !== 'second') };
   if (prereq.length) return { kind: 'stage', stages: prereq };
   if (weeds.length) return { kind: 'weeds', weeds };
   return null;
+}
+// What a stage costs on this ledger: her first crop's patch is free (v0.11).
+export function recipe(l, id) {
+  const s = STAGES[id];
+  if (isFirstCrop(l, id)) return { coins: 0, W: 0, R: 0 };
+  return { coins: s.coins, W: s.W, R: s.R };
 }
 export function houseStage(l) {
   let n = 0;
   for (const h of ['H1', 'H2', 'H3', 'H4']) if (isCommitted(l, h)) n++;
   return n;
 }
-export const crateAvailable = (l) => isCommitted(l, 'C0');
+// the market crate appears when her first crop's patch is planted (its stage commits)
+export const crateAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
 export const mainComplete = (l) => isCommitted(l, 'H4');
 
 export function stillNeeded(l, id) {
-  const s = STAGES[id];
+  const s = recipe(l, id);
   const d = l.stages[id].deposited;
   return { coins: s.coins - d.coins, W: s.W - d.W, R: s.R - d.R };
 }
-// Shortage = required - deposited - carried (or purse), clamped at 0 (spec §11.2).
+// wood or stone she has for building: on her head plus at the pile
+export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
+// Shortage = required - deposited - what she has (purse; carried plus the pile), clamped at 0
+// (spec §11.2): what the card says is still "to go".
 export function shortage(l, id) {
   const need = stillNeeded(l, id);
   return {
     coins: Math.max(0, need.coins - l.purse),
-    W: Math.max(0, need.W - l.carried.W),
-    R: Math.max(0, need.R - l.carried.R),
+    W: Math.max(0, need.W - onHand(l, 'W')),
+    R: Math.max(0, need.R - onHand(l, 'R')),
   };
 }
 export const fullyFunded = (l, id) => {
@@ -100,10 +136,18 @@ export function nodeEstablished(l, id) {
 // opening clumps are there from the start. Cleared clumps never come back.
 export function weedPresent(l, id) {
   const plot = WEED_PLOT[id];
-  if (!plot || plot === 'C0') return true;
-  return STAGES[plot].prereq.every((p) => isCommitted(l, p));
+  if (!plot || STAGES[plot].base) return true; // the three crop patches' weeds: from the start
+  return prereqsOf(l, plot).every((p) => isCommitted(l, p));
 }
-export const weedOpen = (l, id) => l.weeds[id] === false && weedPresent(l, id);
+// A patch's weeds can be raked when the patch is hers to work: any crop patch before she has
+// chosen (raking one chooses it), her first crop's patch, and another patch once it is unlocked
+// (the other base crops after her first harvest, C1 and S1 after their prerequisites). Weeds on
+// a patch that is not open yet just wait there.
+export function patchWorkable(l, stage) {
+  if (STAGES[stage].base && (l.crop === null || isFirstCrop(l, stage))) return true;
+  return !missingPrereqs(l, stage).length;
+}
+export const weedOpen = (l, id) => l.weeds[id] === false && weedPresent(l, id) && patchWorkable(l, WEED_PLOT[id]);
 export const openWeeds = (l) => WEEDS.filter((id) => weedOpen(l, id));
 // the plot weeds that must be raked before a stage's spots can be dug
 export const plotWeeds = (stage) => WEEDS.filter((w) => WEED_PLOT[w] === stage);
@@ -129,13 +173,13 @@ export const owns = (l, item) => l.owned?.[item] === true;
 // carried and in uncommitted escrow must always cover the stone still required. -> missing units
 // (0 when it holds); a save that breaks it gets the recovery rock.
 export function stoneOnHand(l) {
-  let n = l.carried.R;
+  let n = l.carried.R + (l.yard?.R ?? 0);
   for (const id of ROCK_IDS) n += l.rocks[id];
   for (const id of STAGE_ORDER) if (!isCommitted(l, id)) n += l.stages[id].deposited.R;
   return n;
 }
 export function stoneStillRequired(l) {
-  return STAGE_ORDER.reduce((n, id) => n + (isCommitted(l, id) ? 0 : STAGES[id].R), 0);
+  return ROUTE.reduce((n, id) => n + (isCommitted(l, id) ? 0 : STAGES[id].R), 0);
 }
 export const stoneShortfall = (l) => Math.max(0, stoneStillRequired(l) - stoneOnHand(l));
 export { STONE_REQUIRED };
@@ -146,7 +190,7 @@ export { STONE_REQUIRED };
 export function autoTxs(l) {
   const out = [];
   for (const id of STAGE_ORDER) {
-    const s = STAGES[id];
+    const s = recipe(l, id);
     if (s.coins + s.W + s.R === 0 && stageState(l, id) === 'OPEN') out.push({ t: 'commitFree', stage: id });
   }
   if (toolIdle(l)) out.push({ t: 'returnTool' });
@@ -172,7 +216,7 @@ export function settle(l0) {
 // tx: { t: 'tick', ms } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'depositMat', stage, r }
 //   | { t: 'depositCoins', stage } | { t: 'refund', stage } | { t: 'sell', crop }
 //   | { t: 'takeTool', tool } | { t: 'returnTool' } | { t: 'dig', id } | { t: 'commitFree', stage }
-//   | { t: 'buy', item }
+//   | { t: 'buy', item } | { t: 'drop', r }
 export function apply(l0, tx) {
   switch (tx?.t) {
     case 'tick': return tick(l0, tx.ms);
@@ -183,6 +227,7 @@ export function apply(l0, tx) {
     case 'dig': return dig(l0, tx.id);
     case 'commitFree': return commitFree(l0, tx.stage);
     case 'buy': return buy(l0, tx.item);
+    case 'drop': return drop(l0, tx.r ?? null);
     case 'depositMat': return depositMat(l0, tx.stage, tx.r);
     case 'depositCoins': return depositCoins(l0, tx.stage);
     case 'refund': return refund(l0, tx.stage);
@@ -219,10 +264,18 @@ function clearWeed(l0, id) {
   if (!(id in l0.weeds)) return fail('unknownWeed');
   if (l0.weeds[id]) return fail('alreadyCleared');
   if (!weedPresent(l0, id)) return fail('notPresent');
+  if (!patchWorkable(l0, WEED_PLOT[id])) return fail('patchLocked');
   if (l0.tool !== 'rake') return fail('needRake');
   const l = clone(l0);
   l.weeds[id] = true;
-  return { ok: true, l, events: [{ type: 'weedCleared', id }] };
+  const events = [{ type: 'weedCleared', id }];
+  // the first crop patch she rakes is her crop, for good (v0.11)
+  const crop = CROP_OF_STAGE[WEED_PLOT[id]];
+  if (l.crop === null && crop) {
+    l.crop = crop;
+    events.push({ type: 'cropChosen', crop, stage: WEED_PLOT[id] });
+  }
+  return { ok: true, l, events };
 }
 
 // take a tool from its lean (or swap: the held one goes back as she takes the other)
@@ -279,6 +332,18 @@ function buy(l0, item) {
   return { ok: true, l, events: [{ type: 'bought', item, coins: u.coins }] };
 }
 
+// everything of wood and stone on her head onto the material pile by the house, in one step
+// (v0.11 P27-1); `r` limits it to one material
+function drop(l0, r = null) {
+  if (r !== null && !YARD_MATERIALS.includes(r)) return fail('notAccepted');
+  const kinds = r ? [r] : YARD_MATERIALS;
+  if (!kinds.some((k) => l0.carried[k] > 0)) return fail('noStock');
+  const l = clone(l0);
+  const n = {};
+  for (const k of kinds) { n[k] = l.carried[k]; l.yard[k] += n[k]; l.carried[k] = 0; }
+  return { ok: true, l, events: [{ type: 'dropped', n: { W: n.W ?? 0, R: n.R ?? 0 }, yard: { ...l.yard } }] };
+}
+
 function pick(l0, src) {
   const res = sourceResource(src);
   if (!res) return fail('unknownSource');
@@ -308,6 +373,7 @@ function pick(l0, src) {
     const n = l.nodes[src];
     n.remaining -= 1;
     if (n.remaining === 0) n.readyAt = l.activeMs + NODE_RENEW_MS[res];
+    if (!l.harvested) { l.harvested = true; events.push({ type: 'firstHarvest', res }); }
   }
   events.push({ type: 'picked', src, res });
   if (l.carried[res] === CAPACITY) events.push({ type: 'full', res });
@@ -327,11 +393,13 @@ function depositMat(l0, stage, r) {
   if (why) return fail(why);
   if (!MATERIALS.includes(r)) return fail('notAccepted'); // crops are sold first, never delivered
   if (stillNeeded(l0, stage)[r] <= 0) return fail('notNeeded');
-  if (l0.carried[r] <= 0) return fail('noStock');
+  if (onHand(l0, r) <= 0) return fail('noStock');
   const l = clone(l0);
-  l.carried[r] -= 1;
+  // from her head first, then from the material pile (v0.11)
+  const from = l.carried[r] > 0 ? 'carried' : 'yard';
+  if (from === 'carried') l.carried[r] -= 1; else l.yard[r] -= 1;
   l.stages[stage].deposited[r] += 1;
-  return commitIfFunded(l, stage, [{ type: 'deposited', stage, r, n: 1 }]);
+  return commitIfFunded(l, stage, [{ type: 'deposited', stage, r, n: 1, from }]);
 }
 
 // One atomic deposit of min(purse, coins still needed) (spec §6.1).
@@ -362,8 +430,9 @@ function commitIfFunded(l, stage, events) {
   return { ok: true, l, events };
 }
 
-// Return deposited resources: free while incomplete; coins in full; W/R only into free
-// per-type capacity, the excess stays in escrow (spec §6.1, AC05).
+// Return deposited resources: free while incomplete; coins in full to the purse; v0.11: wood and
+// stone go back onto the material pile, which has no cap (so `kept` is always zero now; the field
+// stays for the card and older tests).
 function refund(l0, stage) {
   if (!(stage in STAGES)) return fail('unknownStage');
   if (isCommitted(l0, stage)) return fail('committed');
@@ -375,9 +444,9 @@ function refund(l0, stage) {
   l.purse += dep.coins;
   dep.coins = 0;
   for (const r of MATERIALS) {
-    const n = Math.min(dep[r], CAPACITY - l.carried[r]);
-    l.carried[r] += n;
-    dep[r] -= n;
+    const n = dep[r];
+    l.yard[r] += n;
+    dep[r] = 0;
     back[r] = n;
   }
   return { ok: true, l, events: [{ type: 'refunded', stage, back, kept: { W: dep.W, R: dep.R } }] };
@@ -406,23 +475,31 @@ export function validateLedger(l) {
   if (!l || typeof l !== 'object') return ['not an object'];
   if (!sameKeys(l.carried, RESOURCES)) e('carried keys');
   else for (const r of RESOURCES) if (!isInt(l.carried[r], 0, CAPACITY)) e(`carried ${r} outside 0..${CAPACITY}`);
+  if (!sameKeys(l.yard, YARD_MATERIALS) || !YARD_MATERIALS.every((r) => isInt(l.yard[r]))) e('yard');
+  if (!(l.crop === null || CROPS.includes(l.crop))) e('crop');
+  if (typeof l.harvested !== 'boolean') e('harvested');
   if (!isInt(l.purse)) e('purse must be an integer >= 0');
   if (!isInt(l.lifetimeCoins)) e('lifetimeCoins');
   if (!sameKeys(l.sold, CROPS) || !CROPS.every((c) => isInt(l.sold[c]))) e('sold');
   if (!isInt(l.activeMs)) e('activeMs');
   if (!sameKeys(l.stages, STAGE_ORDER)) e('stage keys');
   else {
+    const cropOk = l.crop === null || CROPS.includes(l.crop);
     for (const id of STAGE_ORDER) {
       const st = l.stages[id];
-      const s = STAGES[id];
       if (typeof st?.committed !== 'boolean') { e(`${id} committed flag`); continue; }
       if (!sameKeys(st.deposited, ['coins', 'W', 'R'])) { e(`${id} deposited keys`); continue; }
+      if (!cropOk) continue;
+      const s = recipe(l, id);
       for (const k of ['coins', 'W', 'R']) if (!isInt(st.deposited[k], 0, s[k])) e(`${id} deposited ${k} exceeds recipe`);
       if (st.committed) {
-        for (const p of s.prereq) if (!l.stages[p]?.committed) e(`${id} committed before ${p}`);
+        for (const p of prereqsOf(l, id)) {
+          if (p === 'second' ? plotsPlanted(l) < 2 : !l.stages[p]?.committed) e(`${id} committed before ${p}`);
+        }
         for (const k of ['coins', 'W', 'R']) if (st.deposited[k] !== s[k]) e(`${id} committed but not fully funded`);
       }
     }
+    if (l.crop === null && BASE_STAGES.some((id) => l.stages[id].committed)) e('a crop patch is planted but no first crop is chosen');
     const committed = STAGE_ORDER.filter((id) => l.stages[id].committed);
     if (!Array.isArray(l.paymentEvents) || l.paymentEvents.length !== committed.length
       || new Set(l.paymentEvents).size !== l.paymentEvents.length

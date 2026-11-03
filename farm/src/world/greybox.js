@@ -273,6 +273,43 @@ export function sketch(root) {
   });
   return ink(root, FOLIAGE_INK);
 }
+// v0.11 (P27-1): the yard pile's place by the house, a trodden-earth patch about 1.0 x 0.7 m with
+// a faint ink edge, always drawn (empty, it shows where the pile goes); the world's UnitPile
+// stacks the dropped logs and stones on it (carry.js yardSlot).
+export function yardPatch() {
+  const g = group('YardPile');
+  const soil = at(new THREE.Mesh(new THREE.CircleGeometry(0.5, 32), lam(0xe0cfa6, { flat: 1, grain: 1 })), 0, 0.007, 0, -Math.PI / 2);
+  soil.scale.set(1, 0.7, 1);
+  soil.receiveShadow = true;
+  const pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    const w = 1 + 0.035 * Math.sin(a * 5 + 1.3); // a hand-drawn wobble
+    pts.push(new THREE.Vector3(Math.cos(a) * 0.5 * w, 0.012, Math.sin(a) * 0.35 * w));
+  }
+  const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: PALETTE.ink, transparent: true, opacity: 0.38 }));
+  edge.name = 'edge';
+  // two flat boards the logs rest on, so the crib reads as stacked, not dropped
+  const board = (z) => at(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.025, 0.07), lam(PALETTE.wood)), -0.22, 0.013, z);
+  g.add(soil, edge, board(-0.16), board(0.16));
+  g.traverse((m) => { m.userData.noFit = true; if (m.isMesh && m !== soil) m.castShadow = true; });
+  soil.userData.noOutline = true;
+  return addOutline(g, 0.01);
+}
+
+// v0.11 (P27-3): the hammer she builds with. Origin at her grip near the end of the handle,
+// handle up +Y, the head across the top with its striking face toward +Z.
+export function hammer() {
+  const g = group('Hammer');
+  const handle = at(new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.017, 0.34, 8), lam(PALETTE.wood, { hatch: 1 })), 0, 0.12, 0);
+  const head = at(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.15), lam(PALETTE.charcoal)), 0, 0.29, 0.01);
+  const face = at(new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.02, 10), lam(PALETTE.charcoal)), 0, 0.29, 0.09, Math.PI / 2);
+  const claw = at(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.07), lam(PALETTE.charcoal)), 0, 0.3, -0.09, -0.35);
+  const grip = at(new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.09, 8), lam(PALETTE.tool)), 0, -0.01, 0);
+  g.add(handle, head, face, claw, grip);
+  return shadows(addOutline(g, 0.008));
+}
+
 // Construction / station mat: flat pad, ink border, fill ring showing deposited / required.
 export function mat() {
   const g = group('Mat');

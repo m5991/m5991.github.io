@@ -7,14 +7,18 @@
 // at the tools takes the one the next tool job needs (0.5 s; a swap puts the other back). With
 // the wrong tool at a job no work starts (`toolBlocked`); with `Tools come to me` on, the needed
 // tool comes to her hand at the job instead, in the same 0.5 s.
-import { CAPACITY, CROPS, NODES, TIMING, U1_WEED_MS, U2_DIG_MS, WEEDS } from './data.js';
+// v0.11: coming within YARD_REACH_M of the material pile by the house (`yard`) with wood or
+// stone on her head drops it all there at once, moving or not; and Build (an armed mat) takes
+// wood then stone from her head first and then from the pile, then the coins.
+import { CAPACITY, CROPS, NODES, TIMING, U1_WEED_MS, U2_DIG_MS, WEEDS, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, nodeEstablished, owns, sourceResource, stageState, stillNeeded, toolJobs, weedOpen,
+  available, digOpen, nodeEstablished, onHand, owns, sourceResource, stageState, stillNeeded, toolJobs, weedOpen,
 } from './ledger.js';
 
 export const REACH_M = 0.9; // 1.5 Vanessa collision diameters with the 0.6 m base hero sphere
 export const STILL_SPEED_MS = 0.05; // m/s: the stillness clock runs only below this (P23-6.12)
 export const HIGHLIGHT_RANGE_M = 3.5; // the ground ring marks the nearest collectible this close
+export const YARD_REACH_M = 1.2; // P27-1: within about 1.2 m of the pile her load drops
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const WORK_KINDS = new Set(['weed', 'pile', 'spot', 'rock', 'node', 'dig', 'tools']);
@@ -138,6 +142,14 @@ export function pickContextTarget(hero, targets) {
   return c[0] ?? null;
 }
 
+// she carries something the pile takes
+export const hasLoad = (l) => YARD_MATERIALS.some((r) => l.carried[r] > 0);
+// close enough to the material pile for her load to drop
+export function atYard(hero, targets) {
+  const y = targets.find((t) => t.kind === 'yard');
+  return !!y && inReach(hero, y, YARD_REACH_M);
+}
+
 export function createInteraction({ getLedger, commit, timing = TIMING }) {
   const s = {
     stillMs: 0,
@@ -161,7 +173,7 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
 
   function nextMaterial(l, stage) {
     const need = stillNeeded(l, stage);
-    for (const r of ['W', 'R']) if (need[r] > 0 && l.carried[r] > 0) return r; // wood, then stone
+    for (const r of ['W', 'R']) if (need[r] > 0 && onHand(l, r) > 0) return r; // wood, then stone
     return null;
   }
 
@@ -232,7 +244,7 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
 
   function shortageOf(l, stage) {
     const need = stillNeeded(l, stage);
-    return { coins: Math.max(0, need.coins - l.purse), W: Math.max(0, need.W - l.carried.W), R: Math.max(0, need.R - l.carried.R) };
+    return { coins: Math.max(0, need.coins - l.purse), W: Math.max(0, need.W - onHand(l, 'W')), R: Math.max(0, need.R - onHand(l, 'R')) };
   }
 
   return {
@@ -253,7 +265,13 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
         stepArmed(dtMs, ctx, events);
         return events.filter(Boolean);
       }
-      const l = getLedger();
+      let l = getLedger();
+      // the material pile: walking past it drops her whole load, moving or not (v0.11)
+      if (hasLoad(l) && atYard(ctx.hero, ctx.targets)) {
+        const res = commit({ t: 'drop' });
+        events.push({ type: 'drop', result: res });
+        l = getLedger();
+      }
       if (isMoving(ctx)) {
         s.stillMs = 0;
         stopWork(events, 'moved');

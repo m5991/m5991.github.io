@@ -171,7 +171,9 @@ export class CarryStack {
 
   // A unit just left the ledger's carried count: fly it from the stack to `toWorld`. Resolves
   // when it lands. `carried` is the count after the transfer.
-  send(res, toWorld, carried) {
+  // `delayMs` (the yard drop, P27-1: one unit every 60 ms) keeps the unit riding her stack until
+  // its turn, then launches it from where it is then.
+  send(res, toWorld, carried, delayMs = 0) {
     const want = stackUnits(carried, this.cap);
     this.hidden = want.hidden;
     let obj;
@@ -183,12 +185,19 @@ export class CarryStack {
       const top = slotHeights(this.units.map((u) => u.res));
       obj.position.set(0, top.length ? top.at(-1) : 0, 0);
     }
-    this.worldRoot.attach(obj); // keeps its world transform
-    const from = obj.position.clone();
     const to = toWorld.clone();
-    const ctrl = from.clone().lerp(to, 0.5);
-    ctrl.y = Math.max(from.y, to.y) + 0.6;
-    return new Promise((done) => this.outgoing.push(this.flight({ obj, t: 0, dur: FLY_OUT_MS, from, ctrl, to, done, local: false })));
+    if (delayMs > 0) {
+      return new Promise((done) => this.outgoing.push({ obj, t: -delayMs, dur: FLY_OUT_MS, from: null, ctrl: null, to, done, local: false, pending: true }));
+    }
+    return new Promise((done) => this.outgoing.push(this.launch({ obj, t: 0, dur: FLY_OUT_MS, to, done, local: false })));
+  }
+  // detach an outgoing unit into the world and aim its arc from where it is now
+  launch(f) {
+    this.worldRoot.attach(f.obj); // keeps its world transform
+    const from = f.obj.position.clone();
+    const ctrl = from.clone().lerp(f.to, 0.5);
+    ctrl.y = Math.max(from.y, f.to.y) + 0.6;
+    return this.flight({ ...f, from, ctrl, pending: false });
   }
 
   // under reduced motion an outgoing flight becomes a fade at its destination (V8)
@@ -260,9 +269,10 @@ export class CarryStack {
       }
     }
     for (let i = this.outgoing.length - 1; i >= 0; i--) {
-      const f = this.outgoing[i];
+      let f = this.outgoing[i];
       f.t += dtMs;
       if (f.t < 0) continue;
+      if (f.pending) { f = this.outgoing[i] = this.launch(f); }
       const t = Math.min(1, f.t / f.dur);
       // reduced motion: at its destination, fading in (into the badge: in and out)
       if (f.fade) setFade(f.obj, f.local ? Math.sin(Math.PI * t) : t);
@@ -346,6 +356,32 @@ export function matSlot(res, k) {
   }
   return [0.0, 0.012 + k * 0.022, 0.4, k * 0.4]; // coins
 }
+// v0.11 (P27-1): the yard pile by the house. Logs crib-stacked on the left in crossing layers of
+// four (24 drawn: six layers), stones in a low cairn on the right (18 drawn: a ring of eight round
+// one, then five, two and one on top), each hand-placed with a slight jitter (V3). Pile space:
+// the patch is about 1.0 x 0.7 m, +Z faces the camera.
+const CAIRN = [
+  [0, 0, 0], ...Array.from({ length: 8 }, (_, i) => [Math.cos(i * 0.785 + 0.3) * 0.15, Math.sin(i * 0.785 + 0.3) * 0.11, 0]),
+  [0, 0, 1], ...Array.from({ length: 5 }, (_, i) => [Math.cos(i * 1.257) * 0.075, Math.sin(i * 1.257) * 0.055, 1]),
+  [0.04, 0.0, 2], [-0.04, 0.01, 2], [0, 0, 3],
+];
+export function yardSlot(res, k) {
+  const j = (n) => (((k * 37 + n * 11) % 13) / 13 - 0.5);
+  if (res === 'W') {
+    const layer = Math.floor(k / 4);
+    const i = (k % 4) - 1.5;
+    const y = 0.065 + layer * 0.072;
+    return layer % 2 === 0
+      ? [-0.22 + i * 0.105 + j(1) * 0.012, y, j(2) * 0.03, Math.PI / 2 + j(3) * 0.08] // along Z
+      : [-0.22 + j(1) * 0.03, y, i * 0.105 + j(2) * 0.012, j(3) * 0.08]; // across, along X
+  }
+  if (res === 'R') {
+    const [x, z, layer] = CAIRN[k % CAIRN.length];
+    return [0.28 + x + j(1) * 0.015, 0.05 + layer * 0.075 + Math.floor(k / CAIRN.length) * 0.3, z + j(2) * 0.015, k * 1.7];
+  }
+  return [0, 0, 0, 0];
+}
+
 // The crate: crops laid in a 4 x 3 grid on its top, in layers (crate space; top at 0.5 m).
 export const CRATE_SHOWN = 12;
 export function crateSlot(res, k, i) {

@@ -94,6 +94,32 @@ export function migratePreV09(d0) {
   return d;
 }
 
+// ---------- saves from a build before v0.11 (pile, free first crop) ----------
+// Still schema v5 (only test saves exist). A save without the material pile gets an empty one;
+// the house mat's weed is gone (its clump is simply dropped); a farm that had started on the
+// corn patch (a corn weed raked or C0 planted: v0.10 had only corn first) keeps corn as its first
+// crop, and its theme; the first harvest counts as done if anything was ever sold or crops are
+// carried. Returns a new payload; one that already has the v0.11 shape is returned as is.
+export function isPreV011(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && !('yard' in l);
+}
+export function migratePreV011(d0) {
+  if (!isPreV011(d0)) return d0;
+  const d = structuredClone(d0);
+  const l = d.ledger;
+  l.yard = { W: 0, R: 0 };
+  l.weeds = Object.fromEntries(WEEDS.map((id) => [id, l.weeds?.[id] === true]));
+  const cornStarted = l.weeds.wC1 || l.weeds.wC2 || l.stages?.C0?.committed === true;
+  l.crop = cornStarted ? 'C' : null;
+  const sold = Object.values(l.sold ?? {}).reduce((n, x) => n + (x || 0), 0);
+  const carriedCrops = ['C', 'S', 'T'].reduce((n, c) => n + (l.carried?.[c] ?? 0), 0);
+  l.harvested = sold + carriedCrops > 0 || l.stages?.H1?.committed === true;
+  // a free first crop keeps nothing in escrow
+  if (l.crop && l.stages?.C0?.deposited) l.stages.C0.deposited = { coins: 0, W: 0, R: 0 };
+  return d;
+}
+
 // The stone invariant (§6.6 point 1): if the stone in the rocks, carried and in escrow no longer
 // covers the stone still required, the recovery rock RX at R1's place gets the missing units.
 // -> { data, added } (a new payload when it changed)
@@ -114,7 +140,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.9
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSettingDefaults(migratePreV09(d));
+  return withSettingDefaults(migratePreV011(migratePreV09(d)));
 }
 
 // `mainComplete` derives from H4 even if endingSeen is false (spec §12).
@@ -144,7 +170,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d);
+    const migrated = isPreV09(d) || isPreV011(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

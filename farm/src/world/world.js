@@ -18,13 +18,13 @@
 // The finale's colour (P25-2: grass from her feet, blue sky, yellow sun) is set here too.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { NODES, PILES, SPOTS, STAGES } from '../game/data.js';
-import { crateAvailable, digOpen, stageState, stillNeeded } from '../game/ledger.js';
+import { HOUSE_STAGES, NODES, PILES, SPOTS, STAGES, YARD_SHOWN } from '../game/data.js';
+import { crateAvailable, digOpen, isCommitted, missingPrereqs, recipe, stageState, stillNeeded } from '../game/ledger.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, STEPPING, SUNFLOWERS } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, STEPPING, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
-import { CRATE_SHOWN, crateSlot, matSlot, UnitPile } from './carry.js';
+import { CRATE_SHOWN, crateSlot, matSlot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { BLUEPRINT_FADE_MS, FINALE_COLOURS, PARTS, partLook, partsColouredBy, REDUCED_FADE_MS, WASH_MS } from '../game/reveal.js';
@@ -38,6 +38,27 @@ const FADE_TAU_MS = 90;
 const ray = new THREE.Raycaster();
 const tmpV = new THREE.Vector3();
 export const REDUCED_FLIGHT_MS = 150; // reduced motion: a unit fades, never arcs (V8)
+
+// a station model's own scale: mats sized to their reach, the bed's weeds a little smaller,
+// the yard pile drawn large enough to read on a phone
+export function stationScale(def) {
+  if (def.kind === 'mat') return def.r / 0.62;
+  if (def.bed) return 0.8;
+  if (def.kind === 'yard') return 1.25;
+  return 1;
+}
+
+// v0.11: which station mats show on this ledger. A mat shows while its stage is not built and is
+// one she can work toward now: the house shows its next stage (locked or not), any other
+// station once its prerequisites are met (it may still wait for its weeds). Her first crop's
+// plot costs nothing and has no mat.
+export function matShown(l, id) {
+  if (isCommitted(l, id)) return false;
+  const r = recipe(l, id);
+  if (r.coins + r.W + r.R === 0) return false;
+  if (HOUSE_STAGES.includes(id)) return HOUSE_STAGES.find((h) => !isCommitted(l, h)) === id;
+  return !missingPrereqs(l, id).length;
+}
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -139,6 +160,32 @@ export class World {
     bed.add(bedPlants);
     this.addBox(bed, 2.4, 1.1, 1);
     this.addPart('tomatoes', { model: bedPlants.getObjectByName('D19_TomatoStems'), outlineBefore: true });
+    this.bed = bed;
+    this.nodeViews = {}; // crop node id -> { dig, units: Group of its ripe units (or null) }
+    bed.updateMatrixWorld(true);
+    const soilY = 0.37; // the bed's soil, bed space (props.js BED.h - 0.05)
+    this.bedAt = (id, lift = 0) => bed.localToWorld(new THREE.Vector3(TOMATO_NODES[id][0], soilY + lift, TOMATO_NODES[id][1]));
+    for (const id of Object.keys(TOMATO_NODES)) {
+      const at = this.bedAt(id);
+      const dig = G.digSpot();
+      dig.position.copy(at);
+      dig.scale.setScalar(0.8);
+      dig.visible = false;
+      this.root.add(dig);
+      // its ripe tomatoes hang on the stem, one per unit
+      const units = new THREE.Group(); units.name = `tomatoes:${id}`;
+      for (let k = 0; k < NODES[id].yield; k++) {
+        const t = G.unitMesh('T');
+        t.position.set((k - 0.5) * 0.11, 0.26 + k * 0.07, 0.05);
+        t.scale.setScalar(1.05);
+        units.add(t);
+      }
+      units.position.copy(at);
+      this.root.add(units);
+      const ground = at.clone().setY(0);
+      this.nodeViews[id] = { dig, units };
+      this.stations[id] = { def: { id, kind: 'node', r: 0.3, label: 'tomatoes' }, obj: units, pos: ground };
+    }
     // the tools at their drawn lean; `home` is where each returns (P25-4)
     this.tools = {};
     for (const [id, kind] of [['D13', 'shovel'], ['D14', 'rake']]) {
@@ -173,6 +220,7 @@ export class World {
         dig.visible = false;
         this.root.add(dig);
         this.corn[c.node] = { holder, outline, live, dig, cobs: live.getObjectByName('cobs') };
+        this.nodeViews[c.node] = { dig, units: live.getObjectByName('cobs') };
         this.stations[c.node] = { def: { id: c.node, kind: 'node', r: 0.3, label: 'corn' }, obj: holder, pos: holder.position.clone() };
         this.root.add(holder);
         this.addPart(c.node, { model: live, before: [outline] });
@@ -195,6 +243,14 @@ export class World {
       f.scale.setScalar(sfProbe.scale.x);
       this.root.add(f);
       this.addPart(`sf${i}`, { model: f, outlineBefore: true });
+      // v0.11: each plant is a crop node dug with the shovel (s1, s2 at S0; s3, s4 at S1)
+      const node = SUNFLOWER_NODES[i];
+      const dig = G.digSpot();
+      dig.position.copy(f.position);
+      dig.visible = false;
+      this.root.add(dig);
+      this.nodeViews[node] = { dig, units: null };
+      this.stations[node] = { def: { id: node, kind: 'node', r: 0.3, label: 'sunflowers' }, obj: f, pos: f.position.clone() };
     }
     this.addPart('sfPlot', { before: [this.addOutlineQuad([[77, 72], [95, 72], [95, 60], [77, 60]], 'D16_Sunflower_Footprint')] });
 
@@ -389,14 +445,18 @@ export class World {
       case 'rock': obj = G.looseRock(Number(def.id.slice(1)) || 9); break;
       case 'tools': obj = new THREE.Group(); break; // the tools themselves are D13/D14
       case 'mat': obj = G.mat(); break;
+      case 'yard': obj = G.yardPatch(); break;
       case 'crate': obj = G.crate(); obj.visible = false; break;
       default: throw new Error(def.kind);
     }
     obj.position.copy(pos);
+    if (def.bed) { obj.position.copy(this.bedAt(def.bed)).add(new THREE.Vector3(0, 0, 0.06)); pos.copy(obj.position).setY(0); }
     obj.name = `${def.kind}:${def.id}`;
     this.root.add(obj);
     this.stations[def.id] = { def, obj, pos };
     if (def.kind === 'mat') this.piles[def.id] = new UnitPile(obj, matSlot);
+    if (def.kind === 'yard') this.piles.yard = new UnitPile(obj, yardSlot, 1.4);
+    obj.scale.setScalar(stationScale(def));
     if (def.kind === 'crate') this.piles.crate = new UnitPile(obj, crateSlot, 1.3);
     if (def.kind === 'crate') {
       this.crateBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.43, 0.3, 0.31)) });
@@ -409,8 +469,8 @@ export class World {
     const out = [];
     for (const [id, s] of Object.entries(this.stations)) {
       if (s.def.kind === 'crate' && !crateAvailable(l)) continue;
-      if (s.def.kind === 'mat' && stageState(l, id) === 'COMMITTED') continue; // a built stage's mat is gone
-      if (s.def.kind === 'node' && !this.corn[id]) continue;
+      if (s.def.kind === 'mat' && !matShown(l, id)) continue; // built, or not reachable yet
+      if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
       const kind = s.def.kind === 'node' && digOpen(l, id) ? 'dig' : s.def.kind;
       const t = { id, kind, x: s.pos.x, z: s.pos.z, r: s.def.r, label: s.def.label };
@@ -428,7 +488,7 @@ export class World {
       if (kind === 'weed') {
         const gone = l.weeds[id];
         if (gone && s.obj.visible && animate && !this.revealing?.has(id)) this.shrinkAway(id);
-        else if (!this.revealing?.has(id)) { s.obj.visible = !gone; s.obj.scale.setScalar(1); }
+        else if (!this.revealing?.has(id)) { s.obj.visible = !gone; s.obj.scale.setScalar(stationScale(s.def)); }
       } else if (kind === 'pile') {
         showUnits(s.obj, l.piles[id]);
         s.obj.getObjectByName('patch').visible = l.piles[id] > 0; // a starter pile never returns
@@ -445,15 +505,27 @@ export class World {
         if (n > 0) s.seen = true; // a rock that had stone fades when emptied; an empty one never shows
       } else if (kind === 'mat') {
         const st = stageState(l, id);
+        const shown = matShown(l, id);
+        const base = s.def.r / 0.62;
         if (st === 'COMMITTED' && s.obj.visible && animate && !this.revealing?.has(`mat:${id}`)) this.retireMat(id);
-        else if (!this.revealing?.has(`mat:${id}`)) { s.obj.visible = st !== 'COMMITTED'; s.obj.scale.setScalar(1); }
+        else if (shown && !s.obj.visible && animate && !this.revealing?.has(`mat:${id}`) && !this.playHidden) this.popMat(id);
+        else if (!this.revealing?.has(`mat:${id}`)) { s.obj.visible = shown; s.obj.scale.setScalar(base); }
         const dep = l.stages[id].deposited;
         const n = (r, cap = Infinity) => Math.max(0, Math.min(cap, dep[r] - this.inFlight(id, r)));
-        this.piles[id].set([...Array(n('W')).fill('W'), ...Array(n('R')).fill('R'), ...Array(n('coins', 12)).fill('coins')], { pop: animate });
-        const total = STAGES[id].coins + STAGES[id].W + STAGES[id].R;
+        const units = [...Array(n('W')).fill('W'), ...Array(n('R')).fill('R'), ...Array(n('coins', 12)).fill('coins')];
+        // a built stage's units go into the part as she hammers (feedPart)
+        const fed = st === 'COMMITTED' ? this.fed?.[id] ?? 0 : 0;
+        this.piles[id].set(units.slice(0, Math.round(units.length * (1 - fed))), { pop: animate });
+        const rc = recipe(l, id);
+        const total = rc.coins + rc.W + rc.R;
         const need = stillNeeded(l, id);
         G.setMatFill(s.obj, total ? 1 - (need.coins + need.W + need.R) / total : 0);
         s.obj.getObjectByName('border').material.color.set(st === 'LOCKED' ? 0x9a9a9a : G.PALETTE.cap);
+      } else if (kind === 'yard') {
+        // the pile: what she has dropped, each unit appearing as its flight lands (P27-1)
+        const n = (r) => Math.max(0, Math.min(YARD_SHOWN[r], l.yard[r] - this.inFlight('yard', r)));
+        this.piles.yard.set([...Array(n('W')).fill('W'), ...Array(n('R')).fill('R')], { pop: animate });
+        this.yardHidden = Math.max(0, l.yard.W - YARD_SHOWN.W) + Math.max(0, l.yard.R - YARD_SHOWN.R);
       } else if (kind === 'crate') {
         if (crateAvailable(l) && !s.obj.visible && !this.revealing?.has('crate')) s.obj.visible = true;
         const shown = [];
@@ -464,13 +536,12 @@ export class World {
     }
     this.lastLedger = l;
     if (this.finished) for (const s of Object.values(this.stations)) if (s.def.kind === 'rock') s.obj.visible = false; // never return (P25-6)
-    for (const id of ['c1', 'c2', 'c3', 'c4']) {
-      const c = this.corn[id];
-      if (!c) continue;
+    for (const [id, c] of Object.entries(this.nodeViews)) {
       const committed = l.stages[NODES[id].stage].committed;
       const dug = l.nodes[id].dug;
-      if (!this.revealing?.has(id)) c.dig.visible = committed && !dug; // an open dig spot (P25-4)
-      showUnits(c.cobs, l.nodes[id].remaining);
+      // an open dig spot (P25-4), once the weed on it is raked (v0.11 P27-4)
+      if (!this.revealing?.has(id)) c.dig.visible = committed && !dug;
+      if (c.units) showUnits(c.units, l.nodes[id].remaining);
     }
     this.syncTool(l.tool, animate);
     this.applyParts(l);
@@ -573,19 +644,22 @@ export class World {
   // takes its colour in a 0.5 s wash. Reduced motion: no build motion, a fade of 150 ms or less.
   async reveal(stage, ms, l = this.lastLedger) {
     this.revealing ??= new Set();
-    if (stage === 'C0') {
-      // v0.9: C0 is free and dug, not built: its commit opens the two dig spots and the crate
-      const spots = ['c1', 'c2'].map((id) => this.corn[id].dig);
-      this.revealing.add('crate');
-      for (const d of spots) { d.visible = true; d.scale.setScalar(0.01); }
+    if (STAGES[stage].crop) {
+      // a crop plot is dug, not built: its commit opens its two dig spots, and the first plot
+      // brings the market crate (v0.11: whichever crop she chose)
+      const spots = Object.keys(NODES).filter((id) => NODES[id].stage === stage && this.nodeViews[id]).map((id) => this.nodeViews[id].dig);
       const crate = this.stations.crate.obj;
-      crate.visible = true;
-      crate.scale.setScalar(0.01);
+      const withCrate = !crate.visible;
+      if (withCrate) this.revealing.add('crate');
+      const base = spots.map((d) => d.scale.x);
+      for (const d of spots) { d.visible = true; d.scale.setScalar(0.01); }
+      if (withCrate) { crate.visible = true; crate.scale.setScalar(0.01); }
       await this.tweens.run(500, (t) => {
         const k = Math.max(0.01, t);
-        spots.forEach((d) => d.scale.setScalar(k));
-        crate.scale.setScalar(k);
+        spots.forEach((d, i) => d.scale.setScalar(k * base[i]));
+        if (withCrate) crate.scale.setScalar(k);
       }, ease.outBack);
+      spots.forEach((d, i) => d.scale.setScalar(base[i]));
       this.revealing.delete('crate');
     }
     // the parts this commit finishes (a crop plant waits for its digging: revealDig)
@@ -596,7 +670,7 @@ export class World {
   // P25-1); a part that waits for several spots (the rest of the corn patch, the tomatoes)
   // washes in when its last one is dug
   async revealDig(id, l = this.lastLedger) {
-    const c = this.corn[id];
+    const c = this.nodeViews[id];
     if (c) c.dig.visible = false;
     const ids = Object.keys(this.parts).filter((p) => PARTS[p].dug?.includes(id) && partLook(l, p) === 'colour');
     await this.washParts(ids, WASH_MS + (this.reducedMotion() ? 0 : 600));
@@ -655,16 +729,16 @@ export class World {
   setPlayHidden(k) {
     this.playHidden = k;
     for (const s of Object.values(this.stations)) {
-      if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock'].includes(s.def.kind)) continue;
+      if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock', 'yard'].includes(s.def.kind)) continue;
       if (k >= 1) s.obj.visible = false;
-      s.obj.scale.setScalar(Math.max(0.01, 1 - k));
+      s.obj.scale.setScalar(stationScale(s.def) * Math.max(0.01, 1 - k));
     }
     if (k > 0) this.marker.obj.visible = false;
     if (k === 0) {
       for (const s of Object.values(this.stations)) {
-        if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock'].includes(s.def.kind)) continue;
-        s.obj.scale.setScalar(1);
-        if (s.def.kind === 'pile' || s.def.kind === 'spot') s.obj.visible = true; // sync shows their units
+        if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock', 'yard'].includes(s.def.kind)) continue;
+        s.obj.scale.setScalar(stationScale(s.def));
+        if (['pile', 'spot', 'yard'].includes(s.def.kind)) s.obj.visible = true; // sync shows their units
       }
       if (this.lastLedger) this.sync(this.lastLedger); // weeds, mats, crate and rocks by the ledger
     }
@@ -937,6 +1011,55 @@ export class World {
   }
   // where the k-th delivered unit of `res` sits on a mat, and the i-th sold crop in the crate
   matSlotWorld(id, res, k) { return this.piles[id].slotWorld(res, k, k); }
+  // the yard pile (v0.11): where its k-th unit of `res` sits, and the top one when the pile
+  // holds `n` (a Build takes it from there)
+  yardSlotWorld(res, k) { return this.piles.yard.slotWorld(res, Math.min(k, YARD_SHOWN[res] - 1), k); }
+  yardTopWorld(res, n) { return this.yardSlotWorld(res, Math.max(0, Math.min(n, YARD_SHOWN[res] - 1))).setY(0.3); }
+
+  // the point of a build she hammers at (spec v0.11 §10.10): the house's front, or the part
+  // beside its station
+  buildPoint(stage, out = new THREE.Vector3()) {
+    const st = this.stations[stage];
+    if (HOUSE_STAGES.includes(stage)) return out.copy(this.objects.D01.position).lerp(st.pos, 0.35).setY(0.6);
+    this.buildPts ??= {};
+    if (!this.buildPts[stage]) {
+      const part = { G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11' }[stage];
+      const root = part && this.parts[part]?.model?.root;
+      let c = st.pos.clone();
+      if (root) {
+        const b = new THREE.Box3().setFromObject(root);
+        const centre = b.getCenter(new THREE.Vector3());
+        // the nearest point of the part to its station, so she hammers what is beside her
+        const near = b.clampPoint(st.pos.clone().setY(centre.y), new THREE.Vector3());
+        if (near.distanceTo(st.pos) < 3) c = near;
+      }
+      this.buildPts[stage] = c.setY(0.3);
+    }
+    return out.copy(this.buildPts[stage]);
+  }
+  // the units a mat shows for its deposits, before any are fed into the part
+  matUnits(stage) {
+    const d = this.lastLedger?.stages[stage].deposited;
+    return d ? d.W + d.R + Math.min(12, d.coins) : 0;
+  }
+  // in time with the strikes, the units on a built stage's mat fly into the part: `share` 0..1 of
+  // them are in (presentation only; the stage is committed already)
+  feedPart(stage, share) {
+    const pile = this.piles[stage];
+    if (!pile) return;
+    this.fed ??= {};
+    if (share <= (this.fed[stage] ?? 0)) return;
+    this.fed[stage] = share;
+    const slots = pile.slots;
+    const keep = Math.min(slots.length, Math.round(this.matUnits(stage) * (1 - share)));
+    const to = this.buildPoint(stage);
+    for (let i = slots.length - 1; i >= keep; i--) {
+      const sl = slots[i];
+      const from = sl.obj.getWorldPosition(new THREE.Vector3());
+      this.flight(sl.res, from, to.clone().add(new THREE.Vector3((i % 3 - 1) * 0.15, 0.1, 0)), 280);
+    }
+    pile.set(slots.slice(0, keep).map((x) => x.res), { pop: false });
+  }
   crateSlotWorld(i) { return this.piles.crate.slotWorld('C', 0, Math.min(CRATE_SHOWN - 1, i)); }
   updatePiles(dtMs, reducedMotion) { for (const p of Object.values(this.piles)) p.update(dtMs, reducedMotion); }
 
@@ -947,9 +1070,23 @@ export class World {
     this.revealing.add(key);
     for (let waited = 0; waited < 800 && ['W', 'R', 'coins'].some((r) => this.inFlight(id, r) > 0); waited += 50) await this.tweens.wait(50);
     const o = this.stations[id].obj;
-    await this.tweens.run(320, (t) => o.scale.setScalar(Math.max(0.01, 1 - t)), ease.inOut);
+    const base = this.stations[id].def.r / 0.62;
+    await this.tweens.run(320, (t) => o.scale.setScalar(base * Math.max(0.01, 1 - t)), ease.inOut);
     o.visible = false;
-    o.scale.setScalar(1);
+    o.scale.setScalar(base);
+    this.revealing.delete(key);
+    if (this.lastLedger) this.sync(this.lastLedger, true); // the house's next stage mat comes up
+  }
+  // a station that has just opened: its mat comes up (v0.11)
+  async popMat(id) {
+    this.revealing ??= new Set();
+    const key = `mat:${id}`;
+    this.revealing.add(key);
+    const o = this.stations[id].obj;
+    const base = this.stations[id].def.r / 0.62;
+    o.visible = true;
+    await this.tweens.run(this.reducedMotion() ? 150 : 420, (t) => o.scale.setScalar(base * Math.max(0.01, this.reducedMotion() ? 1 : ease.outBack(t))), ease.out);
+    o.scale.setScalar(base);
     this.revealing.delete(key);
   }
 
@@ -958,10 +1095,12 @@ export class World {
     this.revealing ??= new Set();
     this.revealing.add(id);
     const o = this.stations[id].obj;
-    await this.tweens.run(300, (t) => { o.scale.setScalar(Math.max(0.01, 1 - t)); o.position.y = -0.1 * t; }, ease.out);
+    const y0 = o.position.y;
+    const k0 = o.scale.x;
+    await this.tweens.run(300, (t) => { o.scale.setScalar(k0 * Math.max(0.01, 1 - t)); o.position.y = y0 - 0.1 * t; }, ease.out);
     o.visible = false;
-    o.position.y = 0;
-    o.scale.setScalar(1);
+    o.position.y = y0;
+    o.scale.setScalar(k0);
     this.revealing.delete(id);
   }
 

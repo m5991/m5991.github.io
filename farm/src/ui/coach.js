@@ -37,14 +37,36 @@ export function createCoach(root = document) {
   const demo = $('coach-demo');
   const context = $('context');
   const toggle = (el, on) => { if (el.classList.contains('on') !== on) el.classList.toggle('on', on); };
+  // v0.11: the crop choice shows three arrows at once, one per patch in its crop's colour; the
+  // extra two are copies of the guide's arrow, made on first use
+  const all = [arrow];
+  const arrowEl = (i) => {
+    while (all.length <= i) {
+      const c = arrow.cloneNode(true);
+      c.removeAttribute('id');
+      c.classList.remove('on');
+      arrow.after(c);
+      all.push(c);
+    }
+    return all[i];
+  };
+  const place = (el, a) => {
+    toggle(el, !!a);
+    if (!a) return;
+    el.style.transform = `translate(${a.x.toFixed(1)}px, ${a.y.toFixed(1)}px) rotate(${a.angle.toFixed(3)}rad)`;
+    el.classList.toggle('edge', a.edge);
+    const path = el.querySelector('path');
+    const fill = a.colour ?? '';
+    if (path.style.fill !== fill) path.style.fill = fill;
+    el.classList.toggle('crop', !!a.colour);
+  };
 
   return {
     // placement from arrowPlacement, or null to hide
-    arrow(a) {
-      toggle(arrow, !!a);
-      if (!a) return;
-      arrow.style.transform = `translate(${a.x.toFixed(1)}px, ${a.y.toFixed(1)}px) rotate(${a.angle.toFixed(3)}rad)`;
-      arrow.classList.toggle('edge', a.edge);
+    arrow(a) { this.arrows(a ? [a] : []); },
+    // several placements at once (each may carry a `colour`); the rest hide
+    arrows(list) {
+      for (let i = 0; i < Math.max(list.length, all.length); i++) place(arrowEl(i), list[i] ?? null);
     },
     // prompt text or null; `raised` lifts it above a visible progress label
     tip(text, raised = false) {

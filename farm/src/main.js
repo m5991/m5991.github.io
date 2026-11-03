@@ -18,12 +18,24 @@
 // opening, any later tap or key skips, and it ends on the play start set up by start(). There
 // is no title or menu screen (S26-02): a save notice is a paper card before play, and New farm
 // and Watch the opening are in Pause.
+// Spec v0.11 (captain 2026-11-02): wood and stone she walks past the yard pile with drop there
+// and builds take from it; every station has a Build card and Vanessa hammers each build up
+// herself with a "DIY time!" (world/build.js, ui/burst.js); the weeds sit on the three crop
+// patches and the first one she rakes is her free first crop, which themes every card and menu
+// for good (ui/theme.js).
 import * as THREE from 'three';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { CAPACITY, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER, UPGRADES } from './game/data.js';
-import { apply, autoTxs, stageState, stillNeeded, available, sourceResource, mainComplete, plotWeeds } from './game/ledger.js';
+import { BASE_STAGE, CAPACITY, HAMMERED, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER, UPGRADES } from './game/data.js';
+import {
+  apply, autoTxs, stageState, stillNeeded, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop,
+} from './game/ledger.js';
+import { PATCH_NAME, toGoText } from './game/guide.js';
+import { Hammering } from './world/build.js';
+import { createBurst } from './ui/burst.js';
+import { applyTheme } from './ui/theme.js';
+import * as G from './world/greybox.js';
 import { createPrefs } from './game/prefs.js';
 import { Finale } from './world/finale.js';
 import { Opening } from './world/opening.js';
@@ -58,7 +70,7 @@ outlines.enabled = params.get('outline') !== '0';
 const DEBUG = params.has('debug');
 const SPEED = params.has('speed') ? Number(params.get('speed')) : RUN_SPEED;
 // arrow tip height above each kind of target, metres
-const ARROW_H = { weed: 0.75, pile: 0.8, spot: 0.8, rock: 0.75, node: 2.1, mat: 0.35, crate: 0.95, tools: 1.9 };
+const ARROW_H = { weed: 0.75, pile: 0.8, spot: 0.8, rock: 0.75, node: 2.1, mat: 0.35, crate: 0.95, tools: 1.9, yard: 0.7 };
 const $ = (id) => document.getElementById(id);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
@@ -93,6 +105,10 @@ async function boot() {
   world.build();
   const hero = new Hero({ registry, world, scene, speed: SPEED });
   world.setHand(hero.view.getObjectByName('Hand_R_Tool'), hero.view); // the held rake or shovel follows it
+  // she builds it herself (spec v0.11 §10.10): the hammer from her bib pocket, the strikes
+  const hammering = new Hammering({ hammer: G.hammer(), hand: hero.view.getObjectByName('Hand_R_Tool'), body: hero.view, root: world.root });
+  const burst = createBurst();
+  let burstHeld = false; // test hook (?debug=1): hold the burst's frame for a screenshot
   const rig = new CameraRig(proj);
   world.heroPos = () => hero.position; // flat parts wash outward from where she works
 
@@ -106,6 +122,7 @@ async function boot() {
   const prefersReduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   const reducedMotion = () => prefersReduced || data.settings.reducedMotion;
   world.reducedMotion = reducedMotion; // unit flights fade in place instead of arcing (V8)
+  hammering.reducedMotion = reducedMotion;
   hero.reducedMotion = reducedMotion; // the stack: no sway or spring, flights fade (V8)
   const getLedger = () => data.ledger;
 
@@ -180,6 +197,29 @@ async function boot() {
         case 'weedCleared':
           hud.announce('Weeds cleared');
           break;
+        case 'cropChosen':
+          // her first crop, for good: it themes every card and menu (P27-7)
+          applyTheme(e.crop);
+          hud.announce(`Your first crop: ${PATCH_NAME[e.crop]}`);
+          hud.toast(`${cap(PATCH_NAME[e.crop])} it is! This patch is free: rake its other weeds, then dig it with the shovel.`, 4500);
+          break;
+        case 'firstHarvest':
+          hud.toast('First harvest! The other two crop patches open now: rake their weeds whenever you like.', 4500);
+          break;
+        case 'dropped': {
+          // the load comes off her stack top first, one every 60 ms, into the pile (P27-1)
+          let i = 0;
+          for (const r of ['R', 'W']) {
+            for (let k = 0; k < e.n[r]; k++, i++) {
+              const slot = Math.min(e.yard[r] - e.n[r] + k, r === 'W' ? 23 : 17);
+              world.expect('yard', r);
+              hero.stack.send(r, world.yardSlotWorld(r, slot), l.carried, i * 60).then(() => { world.landed('yard', r); if (k % 3 === 0) sfx.cue(LAND_CUE[r]); });
+            }
+          }
+          hud.bump('W'); hud.bump('R');
+          hud.announce(`Left at the pile: ${l.yard.W} wood, ${l.yard.R} stone`);
+          break;
+        }
         case 'toolTaken':
           hud.announce(`${cap(e.tool)} in hand`);
           break;
@@ -208,17 +248,25 @@ async function boot() {
           } else {
             const k = l.stages[e.stage].deposited[e.r] - 1;
             world.expect(e.stage, e.r);
-            hero.stack.send(e.r, world.matSlotWorld(e.stage, e.r, k), l.carried).then(() => { world.landed(e.stage, e.r); sfx.cue(LAND_CUE[e.r]); });
+            const to = world.matSlotWorld(e.stage, e.r, k);
+            const land = () => { world.landed(e.stage, e.r); sfx.cue(LAND_CUE[e.r]); };
+            // from her head, or (v0.11) from the yard pile, across the farm to the station
+            if (e.from === 'yard') world.flight(e.r, world.yardTopWorld(e.r, l.yard[e.r]), to, 520).then(land);
+            else hero.stack.send(e.r, to, l.carried).then(land);
           }
           break;
         case 'committed': {
           const s = STAGES[e.stage];
-          hud.announce(`${cap(s.label)} saved`);
-          hero.celebrate(1200);
+          const first = BASE_STAGE[data.ledger.crop] === e.stage;
+          if (HAMMERED.includes(e.stage) && world.stations[e.stage]) startBuilding(e.stage);
+          else hero.celebrate(1200);
+          hud.announce(HAMMERED.includes(e.stage) ? `DIY time! Vanessa builds the ${s.label}.` : `${cap(s.label)} saved`);
           world.reveal(e.stage, s.workMs, data.ledger).then(() => {
             sfx.cue('complete');
-            if (e.stage === 'C0') hud.toast('The corn plot is clear: dig its two spots with the shovel. The market crate is open: corn sells for 2 coins.', 4800);
-            if (e.stage === 'H1') hud.toast('Foundation laid! That is the end of this test build.', 5000);
+            if (s.crop && first) hud.toast(`The ${s.label} is clear: dig its two spots with the shovel. The market crate is open: sell your ${PATCH_NAME[data.ledger.crop]} there for coins.`, 4800);
+            else if (s.crop) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel.`, 4200);
+            if (s.hire) hud.toast('The first elf archer is hired. Archers and birds come in a later build.', 5000);
+            if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, another crop plot and the walls.', 5000);
             if (e.stage === 'H4') finale.start(); // H4 is saved; last, the drawing gets its colour (P25-2)
           });
           break;
@@ -237,12 +285,18 @@ async function boot() {
         }
         case 'refunded': {
           const b = e.back;
-          // the units lift off the mat where they lay and fly back onto the stack, one by one
+          // the units lift off the mat where they lay and fly back to the yard pile (v0.11)
           let d = 0;
-          for (const r of ['W', 'R']) for (let k = 0; k < b[r]; k++, d += 70) hero.stack.receive(r, world.matSlotWorld(e.stage, r, k), l.carried, d);
+          for (const r of ['W', 'R']) {
+            for (let k = 0; k < b[r]; k++, d += 70) {
+              world.expect('yard', r);
+              const from = world.matSlotWorld(e.stage, r, k);
+              const to = world.yardSlotWorld(r, Math.min(l.yard[r] - b[r] + k, r === 'W' ? 23 : 17));
+              world.tweens.wait(d).then(() => world.flight(r, from, to, 520)).then(() => world.landed('yard', r));
+            }
+          }
           for (let i = 0; i < Math.min(6, b.coins); i++) world.flight('coin', matTop(e.stage), hero.position.clone().setY(1.2), 300 + i * 40).then(() => sfx.cue('coin'));
-          const kept = e.kept.W + e.kept.R;
-          hud.toast(`Returned ${b.coins} coins, ${b.W} wood, ${b.R} stone.${kept ? ` ${e.kept.W} wood and ${e.kept.R} stone stay on the mat: no room to carry them.` : ''}`, 4500);
+          hud.toast(`Took back ${b.coins} coins to your purse and ${b.W} wood, ${b.R} stone to the pile.`, 4500);
           break;
         }
         default:
@@ -251,6 +305,30 @@ async function boot() {
   }
 
   const ix = createInteraction({ getLedger, commit });
+
+  // ---------- she builds it herself (spec v0.11 §10.10, P27-3) ----------
+  // The stage is committed and saved already; this is presentation. The rake or shovel goes back
+  // to its lean first, the hammer comes out of her pocket, she faces the part and strikes it while
+  // it goes together in ink, the burst pops up at the first strike, and moving away stops her.
+  function startBuilding(stage) {
+    if (hammering.active) hammering.stop();
+    world.showHeldTool(false);
+    hammering.start(stage, STAGES[stage].workMs);
+    hammering.faceTo = world.buildPoint(stage);
+  }
+  hammering.onStrike = (i, n) => {
+    sfx.cue('tock');
+    if (i === 0) {
+      // beside her, on the side away from the screen's centre
+      tmpP.copy(hero.position).project(rig.camera);
+      burst.show(tmpP.x < 0 ? -1 : 1);
+    }
+    const st = hammering.stage;
+    world.feedPart(st, (i + 1) / n); // the units on the mat fly into the part, in time with the strikes
+    const hit = world.buildPoint(st).project(rig.camera);
+    burst.tick({ x: ((hit.x + 1) / 2) * view.w, y: ((1 - hit.y) / 2) * view.h }, reducedMotion());
+  };
+  hammering.onEnd = (stage) => { world.showHeldTool(true); world.feedPart(stage, 1); };
 
   // ---------- loop with the world-pause gate ----------
   let frozen = false; // test hook (?debug=1): hold world time while the page keeps rendering
@@ -285,8 +363,10 @@ async function boot() {
     for (const e of evs) handleIxEvent(e);
     const working = ix.working;
     const armedT = ix.armed && ctxTargets.find((t) => t.id === ix.armed.id);
-    const faceTo = working ? working : armedT ?? null;
-    hero.update(dt, { working: !!working, faceTo });
+    if (hammering.active && hero.moving) hammering.stop(); // moving away never undoes the build
+    const faceTo = working ? working : armedT ?? (hammering.active ? hammering.faceTo : null);
+    hero.update(dt, { working: !!working || hammering.active, faceTo });
+    hammering.update(dt); // after her pose, so the hammer sits in her fist
     if (!debugCarried) hero.setCounts(data.ledger.carried);
     world.updateHeldTool();
     world.updatePiles(dt, reducedMotion());
@@ -333,7 +413,7 @@ async function boot() {
     tut.phase = step?.phase ?? null;
     const ctxT = pickContextTarget(heroXZ, ctxTargets);
     // the hand points at the context button: the house-foundation mat's (deliver, v0.9) or the crate's (sell, P24-4b)
-    const atMat = !ix.armed && ((step?.phase === 'deliver' && ctxT?.id === TUTORIAL_STAGE && stageState(l, TUTORIAL_STAGE) === 'OPEN')
+    const atMat = !ix.armed && ((step?.phase === 'build' && ctxT?.id === TUTORIAL_STAGE && stageState(l, TUTORIAL_STAGE) === 'OPEN')
       || (step?.phase === 'sell' && ctxT?.kind === 'crate'));
     const here = highlight?.inReach ? kindOf(highlight.target.id, l) : null;
     coachState = {
@@ -353,15 +433,11 @@ async function boot() {
       else if (e.reason === 'nothingToSell') hud.toast('Nothing to sell yet — harvest corn first.');
       else if (e.reason === 'movedAway') hud.toast(`Selling paused after ${e.units} crops. Come back and sell again to continue.`);
     } else if (e.reason === 'movedAway') {
-      hud.toast('Delivery paused. Come back to the mat and confirm to continue.');
+      hud.toast('Building paused: what went in stays. Come back and tap Build to go on.');
     } else if (e.reason === 'shortage') {
       const m = e.missing;
-      const parts = [];
-      if (m.coins) parts.push(`${m.coins} coins`);
-      if (m.W) parts.push(`${m.W} wood`);
-      if (m.R) parts.push(`${m.R} stone`);
-      hud.toast(`${cap(STAGES[e.id].label)} · Need ${parts.join(', ')}.${m.coins ? ' Sell crops at the market crate.' : ''}`, 4500);
-      hud.announce(`Delivery stopped. Still needed: ${parts.join(', ')}`);
+      hud.toast(`${cap(STAGES[e.id].label)} · ${toGoText(m)}.${m.coins ? ' Sell crops at the market crate.' : ''} What went in stays here.`, 4500);
+      hud.announce(`${cap(STAGES[e.id].label)}: ${toGoText(m)}`);
     }
     if (e.reason !== 'committed') hud.render(l);
   }
@@ -369,10 +445,9 @@ async function boot() {
   function updateContext(heroXZ) {
     if (ix.armed) {
       const a = ix.armed;
-      hud.setContext(a.kind === 'crate' ? 'Stop selling' : 'Stop delivery', () => { ix.disarm('stopped'); hud.setProgress(null); });
+      hud.setContext(a.kind === 'crate' ? 'Stop selling' : 'Stop', () => { ix.disarm('stopped'); hud.setProgress(null); });
       if (a.kind === 'mat') {
-        const need = stillNeeded(data.ledger, a.id);
-        lastProgress = `Delivering to ${STAGES[a.id].label} · still needed: ${need.coins} coins, ${need.W} wood, ${need.R} stone`;
+        lastProgress = `${STAGES[a.id].hire ? 'Hiring' : 'Building'}: ${STAGES[a.id].label} · ${toGoText(stillNeeded(data.ledger, a.id))}`;
       } else {
         lastProgress = `Selling… ${a.units} sold, +${a.coins} coins`;
       }
@@ -382,7 +457,8 @@ async function boot() {
     const t = pickContextTarget(heroXZ, ctxTargets);
     if (t?.kind === 'mat') {
       const locked = stageState(data.ledger, t.id) === 'LOCKED';
-      hud.setContext(locked ? `${cap(STAGES[t.id].label)} (locked)` : `Review ${STAGES[t.id].label} delivery`, () => openRecipe(t.id));
+      const s = STAGES[t.id];
+      hud.setContext(locked ? `${cap(s.label)} (locked)` : s.hire ? `Hire the ${s.label}` : `Build the ${s.label}`, () => openRecipe(t.id));
     } else if (t?.kind === 'crate') {
       hud.setContext('Open market crate', openCrate);
     } else {
@@ -402,9 +478,17 @@ async function boot() {
       else if (w.kind === 'weed') text = 'Clearing weeds…';
       else if (w.kind === 'dig') text = 'Digging…';
       else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}`;
+    } else if (hammering.active) {
+      text = `DIY time! Building the ${STAGES[hammering.stage].label}…`;
     } else {
       const need = data.settings.toolsComeToMe ? null : toolBlocked(data.ledger, heroXZ, ctxTargets);
       if (need) text = `You need the ${need}. It leans by the house.`;
+      // a weed on a patch that is not open yet (P27-4)
+      const waiting = !text && ctxTargets.find((x) => x.kind === 'weed' && inReach(heroXZ, x) && !data.ledger.weeds[x.id] && weedPresent(data.ledger, x.id) && !weedOpen(data.ledger, x.id));
+      if (waiting) text = 'Opens after your first harvest';
+      // the yard pile, inspected (P27-1)
+      const yard = !text && ctxTargets.find((x) => x.kind === 'yard' && inReach(heroXZ, x, 1.2));
+      if (yard) text = `Yard pile · ${data.ledger.yard.W} wood, ${data.ledger.yard.R} stone. Build takes from here.`;
       const near = ctxTargets.filter((x) => ['node', 'spot', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
       for (const n of near) {
         if (text) break;
@@ -433,15 +517,15 @@ async function boot() {
     return { hero: { x: hero.body.position.x, z: hero.body.position.z }, targets: world.targets(data.ledger) };
   }
   function openRecipe(stage) {
-    const coached = stage === TUTORIAL_STAGE && tutorialStep(data.ledger, { moved: true })?.phase === 'deliver';
+    const coached = stage === TUTORIAL_STAGE && tutorialStep(data.ledger, { moved: true })?.phase === 'build';
     withCard((done) => cards.recipe({
       l: data.ledger,
       stage,
       coach: coached,
-      onConfirm: () => {
+      onBuild: () => {
         const r = ix.arm('mat', stage, null, ctxNow());
         if (r.ok) sfx.cue('confirm');
-        if (!r.ok) hud.toast(r.reason === 'notInReach' ? 'Stand on the mat to deliver.' : 'This mat is locked.');
+        if (!r.ok) hud.toast(r.reason === 'notInReach' ? 'Stand at the station to build.' : 'This station is locked.');
       },
       onReturn: () => {
         const r = commit({ t: 'refund', stage });
@@ -526,6 +610,9 @@ async function boot() {
     rig.wholeBlend = 0;
     world.sync(data.ledger);
     world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from H4 (P25-2)
+    applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
+    if (hammering.active) hammering.stop();
+    burst.hide();
     $('btn-replay').hidden = !mainComplete(data.ledger);
     hud.render(data.ledger);
     hud.setGoal(nextGoal(data.ledger).text);
@@ -820,21 +907,37 @@ async function boot() {
     badge.style.transform = `translate(${(((tmpP.x + 1) / 2) * view.w).toFixed(1)}px, ${(((1 - tmpP.y) / 2) * view.h).toFixed(1)}px)`;
   }
 
+  // "+N" over the yard pile when it holds more than it draws (P27-1)
+  const yardBadge = $('yard-badge');
+  function placeYardBadge() {
+    const n = world.yardHidden ?? 0;
+    const show = n > 0 && session.playing && !finale.active && !opening.active && rig.mode !== 'whole';
+    yardBadge.hidden = !show;
+    if (!show) return;
+    tmpP.copy(world.stations.yard.pos).setY(0.75).project(rig.camera);
+    yardBadge.textContent = `+${n}`;
+    yardBadge.style.transform = `translate(${(((tmpP.x + 1) / 2) * view.w).toFixed(1)}px, ${(((1 - tmpP.y) / 2) * view.h).toFixed(1)}px)`;
+  }
+
   function updateCoach() {
     if (loop.paused || rig.mode === 'whole' || !session.playing || !coachState) { coach.hideAll(); badge.hidden = true; return; }
+    if (hammering.active) { coach.hideAll(); return; } // nothing over the build
     const { step, prompt, atMat } = coachState;
-    let a = null;
-    const st = step?.target && world.stations[step.target];
-    if (st && !atMat) {
+    // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
+    const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : step?.target ? [{ id: step.target }] : [];
+    const arrows = [];
+    for (const aim of aims) {
+      const st = world.stations[aim.id];
+      if (!st || atMat) continue;
       const hp = hero.body.position;
       const atTarget = Math.hypot(st.pos.x - hp.x, st.pos.z - hp.z) - st.def.r <= 0.9;
-      if (!atTarget) {
-        tmpP.copy(st.pos).setY(ARROW_H[st.def.kind] ?? 0.6).project(rig.camera);
-        const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
-        a = arrowPlacement(pt, { left: 0, right: view.w, top: live.hudBottom, bottom: live.ctlTop });
-      }
+      if (atTarget) continue;
+      tmpP.copy(st.pos).setY(st.obj.position.y + (ARROW_H[st.def.kind] ?? 0.6)).project(rig.camera);
+      const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
+      const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.hudBottom, bottom: live.ctlTop });
+      arrows.push(aim.colour ? { ...a, colour: aim.colour } : a);
     }
-    coach.arrow(a);
+    coach.arrows(arrows);
     coach.tip(prompt, !$('progress').hidden);
     placeStackBadge();
     coach.demo(step?.phase === 'move' && input.mode !== 'keyboard' && !input.stickActive); // not while she is already dragging
@@ -857,6 +960,11 @@ async function boot() {
     world.updateSky(rig.camera);
     if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints()); updateStackCap(performance.now()); }
     updateCoach();
+    if (burst.active || hammering.active) {
+      tmpP.copy(hero.position).setY(1.75).project(rig.camera);
+      burst.update(burstHeld ? 0 : dt, { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h }, { w: view.w, top: live.hudBottom, bottom: live.ctlTop || view.h }, reducedMotion());
+    }
+    placeYardBadge();
     // under the opening's paper nothing 3D is seen: draw only to take the drawing's still
     if (opening.coversCanvas && !paper.needsCapture) { if (DEBUG) debugReadout(); return; }
     renderer.render(scene, rig.camera);
@@ -944,7 +1052,7 @@ async function boot() {
       // presentation check only: show given carried counts without a transaction (never saved)
       showCarried(c) { debugCarried = c; hero.setCounts(c); hud.render({ ...data.ledger, carried: c }); },
       // build stages through the real transactions, funding them from nothing first (a cheat
-      // for checks only: the stages past H1 have no mats in this build). Missing prerequisites,
+      // for checks only). Missing prerequisites,
       // weeds (with the rake) and the stage's dig spots (with the shovel) are done too.
       // -> the stages committed, in order
       build(...stages) {
@@ -952,7 +1060,14 @@ async function boot() {
         const rake = (ids) => { for (const w of ids) if (!data.ledger.weeds[w]) { if (data.ledger.tool !== 'rake') commit({ t: 'takeTool', tool: 'rake' }); commit({ t: 'clearWeed', id: w }); } };
         const one = (st) => {
           if (data.ledger.stages[st].committed) return;
-          for (const p of STAGES[st].prereq) one(p);
+          for (const p of STAGES[st].prereq) {
+            if (p === 'first') one(data.ledger.crop ? BASE_STAGE[data.ledger.crop] : 'C0'); // corn unless chosen
+            else if (p === 'second') {
+              if (['C0', 'S0', 'T0'].filter((b) => data.ledger.stages[b].committed).length < 2) one(['C0', 'S0', 'T0'].find((b) => !data.ledger.stages[b].committed));
+            } else one(p);
+          }
+          // a crop plot that waits for the first harvest: the cheat marks it harvested
+          if (STAGES[st].afterHarvest && !isFirstCrop(data.ledger, st) && data.ledger.crop && !data.ledger.harvested) data.ledger = { ...data.ledger, harvested: true };
           rake(STAGES[st].weeds ?? []);
           const need = stillNeeded(data.ledger, st);
           const c = data.ledger.carried;
@@ -974,7 +1089,8 @@ async function boot() {
         for (const st of stages.length ? stages : STAGE_ORDER) one(st);
         return done;
       },
-      finale, prefs, toggleBlueprint, opening, paper,
+      finale, prefs, toggleBlueprint, opening, paper, hammering, burst,
+      holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),
     };
   }

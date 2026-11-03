@@ -1,4 +1,4 @@
-// Economy and station data copied from specification v0.9 §6 (all numbers are P / proposed,
+// Economy and station data copied from specification v0.9 §6, changed by the v0.11 build brief (all numbers are P / proposed,
 // unplaytested). The ledger reads only this table, so later tuning edits data, ledger tests
 // and saves together (spec §6.4 "Update recipes, ledger, saves and tests together").
 
@@ -32,18 +32,37 @@ export const TOOLS = ['rake', 'shovel'];
 export const TOOL_NAMES = { rake: 'rake', shovel: 'shovel' };
 
 // Weed clumps. They yield nothing and never come back.
-// - The three opening clumps (§6.1): two at the corn approach, one on the house mat. The two
-//   corn-approach clumps are the corn plot's weeds (C0 commits, free, once they are cleared); the
-//   house-mat clump gates the house mat.
-// - P25-4b (Q25-2, approved): two clumps on each new crop plot, growing when its stage unlocks
-//   and raked before its spots can be dug. The ids keep the stage in them (wS0a = S0's first).
-export const WEEDS = ['wC1', 'wC2', 'wH', 'wS0a', 'wS0b', 'wT0a', 'wT0b', 'wC1a', 'wC1b', 'wS1a', 'wS1b'];
-// the crop plot each weed belongs to (null: the house mat's clump)
+// v0.11 (captain 2026-11-02: "Weeds should be where the crops are goint to grow"): the opening's
+// weeds sit on the three crop patches, two each, right where the first two plants of each will
+// grow: corn (wC1, wC2), sunflowers (wS0a, wS0b) and the tomatoes in the raised bed (wT0a,
+// wT0b). The first patch she rakes is her free first crop (FIRST_CROP below). The house mat has
+// no weed any more. P25-4b (Q25-2) is kept for the two expansions: C1 and S1 each grow two
+// clumps when they unlock. The ids keep the stage in them (wS0a = S0's first).
+export const WEEDS = ['wC1', 'wC2', 'wS0a', 'wS0b', 'wT0a', 'wT0b', 'wC1a', 'wC1b', 'wS1a', 'wS1b'];
+// the crop plot each weed belongs to
 export const WEED_PLOT = {
-  wC1: 'C0', wC2: 'C0', wH: null,
-  wS0a: 'S0', wS0b: 'S0', wT0a: 'T0', wT0b: 'T0', wC1a: 'C1', wC1b: 'C1', wS1a: 'S1', wS1b: 'S1',
+  wC1: 'C0', wC2: 'C0', wS0a: 'S0', wS0b: 'S0', wT0a: 'T0', wT0b: 'T0', wC1a: 'C1', wC1b: 'C1', wS1a: 'S1', wS1b: 'S1',
 };
-export const OPENING_WEEDS = ['wC1', 'wC2', 'wH'];
+// the weeds on the three crop patches, there from the start
+export const OPENING_WEEDS = ['wC1', 'wC2', 'wS0a', 'wS0b', 'wT0a', 'wT0b'];
+
+// v0.11: the free first crop (captain: "We want liberty to start weeding corn or tomatoes or
+// sunflowers and planting after that"). Each crop has one base patch; the first one she rakes is
+// her crop: it costs nothing and commits as soon as its two weeds are raked, and it themes every
+// card and menu for good. The other two open after her first harvest, in any order, and cost
+// their coins at their station.
+export const BASE_STAGE = { C: 'C0', S: 'S0', T: 'T0' };
+export const CROP_OF_STAGE = { C0: 'C', S0: 'S', T0: 'T' };
+export const BASE_STAGES = Object.values(BASE_STAGE);
+
+// v0.11 (captain: "resources accumilate next to the house"): the material pile by the house's
+// side wall. Walking past it with wood or stone on her head drops them there, one unit every
+// once, all of it (one saved step; the units fly off her stack DROP_MS apart); building takes
+// from her head first, then from the pile. Crops are never dropped (they are sold at the crate).
+// The pile has no cap: CAPACITY limits only what she carries in one trip.
+export const YARD_MATERIALS = ['W', 'R'];
+export const DROP_MS = 60;
+export const YARD_SHOWN = { W: 24, R: 18 }; // the pile draws this many; more shows as +N
 
 // Starter fallen-branch piles (§6.1): two piles of 4W, branches that have already fallen.
 export const PILES = {
@@ -88,33 +107,42 @@ export const NODES = {
   t2: { res: 'T', yield: 2, stage: 'T0' },
 };
 
-// Stage recipes, prerequisites and work seconds (§6.3). `weeds` are clumps that must be cleared
-// before the stage opens (C0's two corn-approach clumps; the house-mat clump for H1). The crop
-// stages (`crop: true`) cost coins only (A25-5, S25-01): no wood or stone; their work is digging
-// their spots (2 x 1.5 s), which replaces the old 3 s stage animation. C0 costs nothing, has no
-// mat and commits as soon as its two weeds are cleared (`commitFree`).
+// Stage recipes, prerequisites and work seconds (§6.3). `weeds` are a base crop plot's two
+// clumps: raked, they commit her first crop free (another plot's clumps only gate its digging). The crop stages (`crop: true`) cost coins only (A25-5, S25-01); their
+// work is digging their spots. v0.11: the base crop she starts first costs nothing (its `coins`
+// apply only when it is not her first crop, `recipe` in ledger.js) and commits as soon as its two
+// weeds are raked; the other two base crops open after her first harvest (`afterHarvest`), in any
+// order (spec v0.11 P27-5: corn 8, sunflowers 8, tomatoes 14 when not chosen first). 'first' in
+// a prereq list means her first crop's stage, 'second' any second crop plot. Every build that
+// takes wood or stone is hammered up by Vanessa herself (`workMs`, the hammering); A1 is hired
+// with the same card (`hire`): the archer itself is not built yet, so it arrives later.
 export const STAGES = {
-  C0: { label: 'corn plot', prereq: [], weeds: ['wC1', 'wC2'], coins: 0, W: 0, R: 0, workMs: 0, crop: true },
-  H1: { label: 'house foundation', prereq: ['C0'], weeds: ['wH'], coins: 10, W: 4, R: 4, workMs: 3000 },
+  C0: { label: 'corn patch', prereq: [], weeds: ['wC1', 'wC2'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'C', afterHarvest: true },
+  S0: { label: 'sunflower patch', prereq: [], weeds: ['wS0a', 'wS0b'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'S', afterHarvest: true },
+  T0: { label: 'tomato bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 14, W: 0, R: 0, workMs: 0, crop: true, base: 'T', afterHarvest: true },
+  H1: { label: 'house foundation', prereq: ['first'], coins: 10, W: 4, R: 4, workMs: 3000 },
   G1: { label: 'path', prereq: ['H1'], coins: 6, W: 0, R: 3, workMs: 2000 },
-  S0: { label: 'sunflowers', prereq: ['H1'], coins: 8, W: 0, R: 0, workMs: 0, crop: true },
-  H2: { label: 'walls', prereq: ['S0', 'H1'], coins: 16, W: 4, R: 2, workMs: 4000 },
-  A1: { label: 'first elf archer', prereq: ['H2', 'S0'], coins: 12, W: 2, R: 0, workMs: 3000 },
-  T0: { label: 'tomato bed', prereq: ['A1'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
+  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 16, W: 4, R: 2, workMs: 4000 },
+  A1: { label: 'first elf archer', prereq: ['H2'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
   C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
-  S1: { label: 'sunflower expansion', prereq: ['C1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
+  S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   G2: { label: 'bench', prereq: ['H1'], coins: 10, W: 4, R: 0, workMs: 2000 },
   G3: { label: 'stepping stones', prereq: ['H1'], coins: 8, W: 0, R: 3, workMs: 2000 },
   G4: { label: 'tree-border stones', prereq: ['H1'], coins: 8, W: 0, R: 4, workMs: 2000 },
   H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 26, W: 2, R: 2, workMs: 4000 },
   H4: { label: 'home', prereq: ['H3', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
 };
-// Recommended order of the goal card (§6.3 table order).
-export const STAGE_ORDER = ['C0', 'H1', 'G1', 'S0', 'H2', 'A1', 'T0', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4'];
+// Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
+export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4'];
+// the stages the farm needs (all of them)
+export const ROUTE = STAGE_ORDER;
 export const HOUSE_STAGES = ['H1', 'H2', 'H3', 'H4'];
 export const CROP_STAGES = STAGE_ORDER.filter((id) => STAGES[id].crop);
+// stages Vanessa hammers up herself: the house and the property builds (crop plots are dug, A1
+// is hired)
+export const HAMMERED = ROUTE.filter((id) => STAGES[id].W + STAGES[id].R > 0 && !STAGES[id].hire);
 // stone the main route needs in all (18): the stone invariant's right-hand side (§6.6 point 1)
-export const STONE_REQUIRED = STAGE_ORDER.reduce((n, id) => n + STAGES[id].R, 0);
+export const STONE_REQUIRED = ROUTE.reduce((n, id) => n + STAGES[id].R, 0);
 
 // Optional upgrades at the market crate's Buy tab (§6.5), opened after the first sale. Coins
 // only, never required, never refunded. v0.9 (A25-8 answer 6, P25-7): they speed the tools' own
@@ -127,6 +155,3 @@ export const U1_WEED_MS = 500;
 export const U2_DIG_MS = 750;
 export const U2_FIRST_READY_MS = 3000;
 
-// Stages this slice presents in the world (code-reuse report §10 step 4). The ledger knows
-// every stage so the §6.4 route replay can run as a unit test.
-export const SLICE_STAGES = ['C0', 'H1'];

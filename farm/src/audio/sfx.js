@@ -34,6 +34,8 @@ export const CUES = {
   crack: { files: ['crack'], gain: 0.34, gapMs: 800, pitch: 1, vol: 0.1 },
   thud: { files: ['thud'], gain: 0.42, gapMs: 800, pitch: 1, vol: 0.1 },
   brush: { files: ['brush'], gain: 0.4, gapMs: 400, pitch: 1, vol: 0.15 }, // a colour wash (spec v0.9 §10.9)
+  // a hammer strike as Vanessa builds (spec v0.11 §10.10): the wood knock, lower and softer
+  tock: { files: ['land-wood'], gain: 0.5, gapMs: 200, pitch: 0.6, vol: 0.12 },
 };
 
 // the cue for a unit arriving on a pile, by resource code (W wood, R stone; a crop landing in the

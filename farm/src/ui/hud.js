@@ -1,5 +1,5 @@
 // DOM HUD (annex §D.9; spec §11.1): carried counters with names, icons and the plain count, the
-// coin purse, the goal line, one contextual action, a nonmodal progress label and a polite live
+// coin purse (v0.11: wood and stone include the yard pile), the goal line, one contextual action, a nonmodal progress label and a polite live
 // region. It only presents ledger and controller state. Counters show just the number (captain,
 // 2026-11-01): the 12-unit cap is told at the refusal moment (toast and status), not here.
 import { RESOURCE_NAMES } from '../game/data.js';
@@ -52,9 +52,11 @@ export function createHud(root = document) {
   return {
     render(l) {
       for (const k of ['W', 'R', 'C', 'S', 'T']) {
-        const n = l.carried[k];
+        // v0.11 (P27-1): wood and stone count the yard pile plus her head
+        const pile = l.yard?.[k] ?? 0;
+        const n = l.carried[k] + pile;
         cells[k].querySelector('.count').textContent = counterText(n);
-        cells[k].setAttribute('aria-label', `${NAMES[k]} ${n}`);
+        cells[k].setAttribute('aria-label', pile ? `${NAMES[k]} ${n}: ${l.carried[k]} carried, ${pile} in the pile` : `${NAMES[k]} ${n}`);
       }
       cells.coins.querySelector('.count').textContent = counterText(l.purse);
       cells.coins.setAttribute('aria-label', `Coins ${l.purse}`);

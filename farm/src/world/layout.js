@@ -54,16 +54,49 @@ export const ROCK_PLACES = {
   R5: { u: 62, v: 62 }, R6: { u: 74, v: 56 }, R7: { u: 94, v: 84 }, R8: { u: 50, v: 93 },
   RX: { u: 30.5, v: 51.5 },
 };
+// v0.11 (captain 2026-11-02): the weeds sit where the crops will grow, two on each crop patch
+// right in front of the first two plants (corn c1/c2, sunflowers s1/s2, the tomato stems in the
+// raised bed: `bed` places them on the bed's soil at that stem); C1 and S1 keep their two each.
+// Every build has a station: the house (H1-H4 share the house mat; the next stage shows), the
+// path, the bench, the stepping stones, the tree border, and a station per crop patch for the
+// crops that cost coins. `yard` is the material pile by the house's side wall, beside the tools.
+export const SUNFLOWER_NODES = ['s1', 's2', 's3', 's4']; // at SUNFLOWERS[i]
+const SUNFLOWERS_UV = (i) => ({ u: SUNFLOWERS[i].u, v: SUNFLOWERS[i].v });
+export const TOMATO_NODES = { t1: [0.45, 0.08], t2: [0.8, -0.16] }; // stems in the bed (bed space)
+export const TOMATO_UV = { t1: { u: 72.5, v: 81.5 }, t2: { u: 75, v: 80.5 } }; // approximate, for route timing
+// each weed sits on a dig spot (`on`): raking it uncovers the spot (spec v0.11 P27-4)
 export const STATIONS = [
-  { id: 'wC1', kind: 'weed', u: 56, v: 56.5, r: 0.3, label: 'weeds' },
-  { id: 'wC2', kind: 'weed', u: 63.5, v: 56.5, r: 0.3, label: 'weeds' },
-  { id: 'wH', kind: 'weed', u: 44, v: 55, r: 0.3, label: 'weeds' },
+  { id: 'wC1', kind: 'weed', on: 'c1', u: 57.5, v: 48.5, r: 0.3, label: 'weeds' },
+  { id: 'wC2', kind: 'weed', on: 'c2', u: 64, v: 48.5, r: 0.3, label: 'weeds' },
+  { id: 'wS0a', kind: 'weed', on: 's1', ...SUNFLOWERS_UV(0), r: 0.3, label: 'weeds' },
+  { id: 'wS0b', kind: 'weed', on: 's2', ...SUNFLOWERS_UV(1), r: 0.3, label: 'weeds' },
+  { id: 'wT0a', kind: 'weed', on: 't1', ...TOMATO_UV.t1, bed: 't1', r: 0.3, label: 'weeds' },
+  { id: 'wT0b', kind: 'weed', on: 't2', ...TOMATO_UV.t2, bed: 't2', r: 0.3, label: 'weeds' },
+  { id: 'wC1a', kind: 'weed', on: 'c3', u: 71.5, v: 48.5, r: 0.3, label: 'weeds' },
+  { id: 'wC1b', kind: 'weed', on: 'c4', u: 78.5, v: 48.2, r: 0.3, label: 'weeds' },
+  { id: 'wS1a', kind: 'weed', on: 's3', ...SUNFLOWERS_UV(2), r: 0.3, label: 'weeds' },
+  { id: 'wS1b', kind: 'weed', on: 's4', ...SUNFLOWERS_UV(3), r: 0.3, label: 'weeds' },
   { id: 'pW1', kind: 'pile', u: 32, v: 59, r: 0.35, label: 'fallen branch' },
   { id: 'pW2', kind: 'pile', u: 35, v: 62.5, r: 0.35, label: 'fallen branch' },
   { id: 'sW', kind: 'spot', u: 29, v: 61.5, r: 0.35, label: 'fallen branch' },
   ...Object.entries(ROCK_PLACES).map(([id, p]) => ({ id, kind: 'rock', ...p, r: 0.35, label: 'loose rocks' })),
   { id: 'tools', kind: 'tools', u: 43, v: 47.4, r: 0.3, label: 'tools' },
-  { id: 'H1', kind: 'mat', u: 41, v: 52, r: 0.62, label: 'house foundation' },
+  // P27-1 (anchor about (44.5,45.5), to tune in play): just right of the leaning tools, so the
+  // tools never hide it, against the house's right wall and short of the stepping stones
+  { id: 'yard', kind: 'yard', u: 45.8, v: 47.2, r: 0.5, label: 'yard pile' },
+  ...['H1', 'H2', 'H3', 'H4'].map((id) => ({ id, kind: 'mat', u: 41, v: 52.5, r: 0.62, label: 'house', house: true })),
+  // property-build mats at the spec's P anchors (§3): path bend, bench, stepping stones, border gap
+  { id: 'G1', kind: 'mat', u: 39, v: 62, r: 0.55, label: 'path' },
+  { id: 'G2', kind: 'mat', u: 23, v: 72, r: 0.55, label: 'bench' },
+  { id: 'G3', kind: 'mat', u: 50, v: 46, r: 0.5, label: 'stepping stones' },
+  { id: 'G4', kind: 'mat', u: 28, v: 80, r: 0.5, label: 'tree-border stones' },
+  // A1: the archer's post beside the path between the crop approaches (§7)
+  { id: 'A1', kind: 'mat', u: 66, v: 66, r: 0.5, label: 'archer post' },
+  { id: 'C0', kind: 'mat', u: 60.5, v: 54, r: 0.5, label: 'corn patch' },
+  { id: 'C1', kind: 'mat', u: 80.5, v: 53, r: 0.5, label: 'corn expansion' },
+  { id: 'S0', kind: 'mat', u: 79, v: 75, r: 0.5, label: 'sunflower patch' },
+  { id: 'S1', kind: 'mat', u: 90.5, v: 75, r: 0.5, label: 'sunflower expansion' },
+  { id: 'T0', kind: 'mat', u: 80, v: 82.5, r: 0.5, label: 'tomato bed' },
   { id: 'crate', kind: 'crate', u: 47, v: 59, r: 0.5, label: 'market crate' },
 ];
 
