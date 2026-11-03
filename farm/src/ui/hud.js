@@ -1,6 +1,7 @@
 // DOM HUD (annex §D.9; spec §11.1): carried counters with names, icons and the plain count, the
-// coin purse (v0.11: wood and stone include the yard pile), the goal line, one contextual action, a nonmodal progress label and a polite live
-// region. It only presents ledger and controller state. Counters show just the number (captain,
+// coin purse (v0.11: wood and stone include the yard pile), the goal line, one contextual action,
+// a nonmodal progress label and a polite live region. v0.12: the build line at the bottom (the
+// next build's needs counting down, then its DIY button) and the Yard Sale button. It only presents ledger and controller state. Counters show just the number (captain,
 // 2026-11-01): the 12-unit cap is told at the refusal moment (toast and status), not here.
 import { RESOURCE_NAMES } from '../game/data.js';
 
@@ -34,6 +35,13 @@ export function createHud(root = document) {
   const progress = $('progress');
   const live = $('live');
   const toast = $('toast');
+  const buildbar = $('buildbar');
+  const need = buildbar.querySelector('.need');
+  const diy = $('btn-diy');
+  const sale = $('btn-sale');
+  let diyHandler = null;
+  let saleHandler = null;
+  let buildKey = '';
   let contextHandler = null;
   let lastAnnounce = '';
   let announceTimer = 0;
@@ -48,6 +56,8 @@ export function createHud(root = document) {
     toastTimer = setTimeout(() => { toastQueue.shift(); showNext(); }, toastQueue.length > 1 ? Math.min(q.ms, 2200) : q.ms);
   }
   context.addEventListener('click', () => contextHandler?.());
+  diy.addEventListener('click', () => diyHandler?.());
+  sale.addEventListener('click', () => saleHandler?.());
 
   return {
     render(l) {
@@ -69,6 +79,37 @@ export function createHud(root = document) {
       context.hidden = false;
     },
     triggerContext() { if (!context.hidden) contextHandler?.(); },
+    // v0.12: the build line. bar: null, or { label, short, ready, here, verb, text } (guide.js
+    // buildBar); `onDiy` runs when its DIY button is pressed (shown only when ready and here)
+    setBuild(bar, onDiy = null) {
+      diyHandler = onDiy;
+      const key = bar ? JSON.stringify([bar.label, bar.short, bar.ready, bar.here, bar.verb]) : '';
+      if (key === buildKey) return;
+      buildKey = key;
+      buildbar.hidden = !bar;
+      if (!bar) return;
+      const button = bar.ready && bar.here;
+      diy.hidden = !button;
+      need.hidden = button;
+      need.classList.toggle('go', bar.ready && !bar.here);
+      if (button) {
+        diy.querySelector('.verb').textContent = bar.verb === 'DIY' ? 'DIY!' : bar.verb;
+        diy.querySelector('.what').textContent = bar.label;
+        diy.setAttribute('aria-label', `${bar.verb}: ${bar.label}`);
+        return;
+      }
+      const cap = bar.label[0].toUpperCase() + bar.label.slice(1);
+      if (bar.ready) { need.textContent = bar.text; return; }
+      const items = [['W', bar.short.W], ['R', bar.short.R], ['coins', bar.short.coins]].filter(([, n]) => n > 0);
+      need.innerHTML = `<span class="label">${cap}:</span>${items.map(([k, n]) => `<span class="item">${ICONS[k]}${n}</span>`).join('')}`;
+      need.setAttribute('aria-label', bar.text);
+    },
+    get diyShown() { return !diy.hidden && !buildbar.hidden; },
+    triggerDiy() { if (!diy.hidden && !buildbar.hidden) diyHandler?.(); },
+    // v0.12: the Yard Sale button, shown while the table is full
+    setSale(on, handler = null) { saleHandler = handler; sale.hidden = !on; },
+    get saleShown() { return !sale.hidden; },
+    triggerSale() { if (!sale.hidden) saleHandler?.(); },
     setProgress(text) {
       if (!text) { progress.hidden = true; return; }
       if (progress.textContent !== text) progress.textContent = text;

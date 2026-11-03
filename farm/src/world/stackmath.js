@@ -8,7 +8,8 @@
 
 export const STACK_ORDER = ['W', 'R', 'C', 'S', 'T']; // bottom to top: materials, then crops
 // height each unit adds, metres (the BASE default dy was 0.12 at its own scale)
-export const UNIT_DY = { W: 0.09, R: 0.1, C: 0.085, S: 0.06, T: 0.11 };
+// (v0.12: a sunflower stands upright, so each adds its head's height and they rise in a column)
+export const UNIT_DY = { W: 0.09, R: 0.1, C: 0.085, S: 0.2, T: 0.11 };
 // The stack sits on the top of her head and rises above it ("over your head", captain), so at
 // the follow camera it never covers her face or body, whichever way she runs. carry.js rides
 // the head-top bone; these are the standing values (the cap estimate uses the height).

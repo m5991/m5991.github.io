@@ -1,6 +1,6 @@
 // What Vanessa carries, shown the ad's way (captain, 2026-11-01): one tall stack of the actual
-// unit models rising from the top of her head, units flying in from piles and out to mats and
-// the market crate, and the paid-in units piling up where they were delivered. A readable port
+// unit models rising from the top of her head, units flying in from piles and out to the yard
+// pile and the yard-sale table, where they pile up or are set out. A readable port
 // of the BASE patterns, no captured code: the metastack `Do` (summed unit heights, gap closing,
 // a refusal when full), the hero's stack on its back (`nl`, stacks child at the upper back), and
 // the flights `th`/`dl` (a curve from the unit's place through a point raised above the
@@ -15,7 +15,7 @@ import {
 } from './stackmath.js';
 
 const FLY_IN_MS = 340; // pile -> stack (the BASE flight time was 300 ms)
-const FLY_OUT_MS = 330; // stack -> mat or crate
+const FLY_OUT_MS = 330; // stack -> the yard pile or the table
 // reduced motion (V8): no arc and no travel; a unit fades in where it lands within this time
 export const REDUCED_FADE_MS = 150;
 const inOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
@@ -34,7 +34,8 @@ function makeUnit(res) {
   if (res === 'coins') m = unitMesh('coins');
   else {
     m = unitMesh(res);
-    if (res === 'S') m.rotation.set(-Math.PI / 2 * 0.8, 0, 0); // a flower head facing up
+    // v0.12: a sunflower stands upright, its face to the camera (update turns it), so they stack
+    // in a tall column like the captain asked
   }
   g.add(m);
   addOutline(g, 0.008);
@@ -208,6 +209,10 @@ export class CarryStack {
     return { ...f, dur: Math.min(f.dur, REDUCED_FADE_MS), fade: true };
   }
 
+  // a unit's turn about the stack's axis: its small hand-placed twist; a sunflower (v0.12) turns
+  // against her facing so its face stays toward the camera, whichever way she runs
+  spin(u) { return u.res === 'S' ? -(this.yaw ?? 0) + u.jitter * 0.25 : u.jitter; }
+
   // world position of the stack's top (for the count badge)
   topWorld(target = new THREE.Vector3()) {
     const h = slotHeights(this.units.map((u) => u.res));
@@ -218,6 +223,7 @@ export class CarryStack {
   // dtMs; vx, vz: her world velocity (m/s); yaw: her facing
   update(dtMs, { vx = 0, vz = 0, yaw = 0, reducedMotion = false } = {}) {
     const dt = dtMs / 1000;
+    this.yaw = yaw;
     this.reduced = reducedMotion;
     // sway: a damped spring in world space trailing her velocity, read in the stack's space
     if (reducedMotion) Object.assign(this.sway, { x: 0, z: 0, vx: 0, vz: 0 });
@@ -244,7 +250,7 @@ export class CarryStack {
         const t = Math.min(1, u.fly.t / u.fly.dur);
         if (u.fly.fade) { // reduced motion: in its slot, fading in
           u.obj.position.copy(end);
-          u.obj.rotation.set(0, u.jitter, 0);
+          u.obj.rotation.set(0, this.spin(u), 0);
           setFade(u.obj, t);
           if (t >= 1) { clearFade(u.obj); u.fly = null; u.y = heights[i]; this.onLand?.(u.res); }
           continue;
@@ -252,7 +258,7 @@ export class CarryStack {
         const ctrl = this.tmp2.copy(u.fly.from).lerp(end, 0.5);
         ctrl.y = Math.max(u.fly.from.y, end.y) + 1.2;
         bezier(u.fly.from, ctrl, end, inOut(t), u.obj.position);
-        u.obj.rotation.set(0, u.jitter + (1 - t) * 4, 0);
+        u.obj.rotation.set(0, this.spin(u) + (1 - t) * 4, 0);
         if (t >= 1) { u.fly = null; u.y = heights[i]; u.pop = 0; this.onLand?.(u.res); }
         continue;
       }
@@ -261,7 +267,7 @@ export class CarryStack {
       u.obj.position.set(this.local.x * bb, u.y + half, this.local.y * bb);
       // each unit tilts with the bend (its slope), plus a small hand-placed twist
       const slope = 1.6 * (bb / Math.max(0.05, u.y + half));
-      u.obj.rotation.set(this.local.y * slope * 0.6, u.jitter, -this.local.x * slope * 0.6);
+      u.obj.rotation.set(this.local.y * slope * 0.6, this.spin(u), -this.local.x * slope * 0.6);
       if (u.pop >= 0) {
         u.pop += dt;
         u.obj.scale.setScalar(this.scale * (reducedMotion ? 1 : popScale(u.pop)));
@@ -290,7 +296,7 @@ export class CarryStack {
   }
 }
 
-// ---------- piles of delivered units: on a mat, in the market crate ----------
+// ---------- piles of units: the yard pile, the yard-sale table's goods ----------
 // slotAt(res, k, i) -> [x, y, z, rotY] in the pile's space for the k-th unit of `res`, the
 // i-th overall. `set` shows a list of unit types, popping in the ones that are new.
 export class UnitPile {
@@ -340,22 +346,6 @@ export class UnitPile {
   }
 }
 
-// A mat's pile, kept toward the pad's rim so Vanessa standing on the mat hides little of it:
-// wood logs crossing in layers on the left, stones heaped on the right, a coin tower at the
-// front, nearest the camera (units in mat space; the pad has radius 0.62, +Z faces the camera).
-const STONE_AT = [[0.32, 0.06], [0.44, -0.08], [0.3, -0.14], [0.42, 0.16], [0.36, 0.0], [0.26, 0.2]];
-export function matSlot(res, k) {
-  if (res === 'W') {
-    const layer = Math.floor(k / 2);
-    const side = (k % 2) - 0.5;
-    return layer % 2 === 0 ? [-0.36, 0.05 + layer * 0.075, side * 0.15, Math.PI / 2] : [-0.36 + side * 0.15, 0.05 + layer * 0.075, 0, 0];
-  }
-  if (res === 'R') {
-    const [x, z] = STONE_AT[k % STONE_AT.length];
-    return [x, 0.07 + Math.floor(k / STONE_AT.length) * 0.1, z, k * 1.3];
-  }
-  return [0.0, 0.012 + k * 0.022, 0.4, k * 0.4]; // coins
-}
 // v0.11 (P27-1): the yard pile by the house. Logs crib-stacked on the left in crossing layers of
 // four (24 drawn: six layers), stones in a low cairn on the right (18 drawn: a ring of eight round
 // one, then five, two and one on top), each hand-placed with a slight jitter (V3). Pile space:
@@ -382,10 +372,12 @@ export function yardSlot(res, k) {
   return [0, 0, 0, 0];
 }
 
-// The crate: crops laid in a 4 x 3 grid on its top, in layers (crate space; top at 0.5 m).
-export const CRATE_SHOWN = 12;
-export function crateSlot(res, k, i) {
-  const layer = Math.floor(i / 12);
-  const j = i % 12;
-  return [-0.27 + (j % 4) * 0.18, 0.56 + layer * 0.08, -0.16 + Math.floor(j / 4) * 0.16, (j % 3) * 0.3];
+// v0.12: the yard-sale table's goods, laid out on its cloth in two rows of three (table space;
+// its top is at 0.65 m, +Z faces the camera), a little askew so they read as set out by hand
+export const TABLE_SHOWN = 6;
+const GOODS_AT = [[-0.3, -0.1], [0, -0.11], [0.3, -0.09], [-0.31, 0.13], [0.01, 0.12], [0.3, 0.14]];
+export function tableSlot(res, k, i) {
+  const [x, z] = GOODS_AT[i % GOODS_AT.length];
+  const lift = res === 'S' ? 0.17 : res === 'T' ? 0.075 : 0.07;
+  return [x, 0.62 + lift, z, (i * 0.7) % 1.2 - 0.6];
 }

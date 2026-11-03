@@ -49,7 +49,8 @@ export const PARTS = {
   sf3: { d: 'D16', what: 'sunflower 4', stage: 'S1', dug: ['s4'], before: 'outline' },
   sfPlot: { d: 'D16', what: 'dashed sunflower plot border', stage: 'S1', dug: ['s3', 's4'], before: 'ghost' },
   D17: { d: 'D17', what: 'Vanessa', stage: null },
-  D18: { d: 'D18', what: 'raised bed', stage: null },
+  // v0.12 (P28-7): the bed's board frame is built with sticks at T0, an outline until then
+  D18: { d: 'D18', what: 'raised bed', stage: 'T0', before: 'outline' },
   // D19: greens, beet, herbs and the Who-Knows plant from the start; the tomato plants at T0
   D19: { d: 'D19', what: 'greens, beet, herbs, Who-Knows plant', stage: null },
   tomatoes: { d: 'D19', what: 'the two tomato plants', stage: 'T0', dug: ['t1', 't2'], before: 'outline' },
@@ -57,7 +58,7 @@ export const PARTS = {
   // never in the blueprint; the rocks hide in the finale and never return
   rocks: { d: '-', what: 'loose rocks R1-R8 and the recovery rock', stage: null },
   weeds: { d: '-', what: 'opening and plot weeds', stage: null },
-  sources: { d: '-', what: 'wood piles and spot, falling branches, dig spots', stage: null },
+  sources: { d: '-', what: 'wood piles, sticks and falling branches, dig spots', stage: null },
   D20: { d: 'D20', what: 'grass sprouts', stage: 'finale', before: 'ink' },
   D21: { d: 'D21', what: 'sky birds', stage: 'never', before: 'ink' },
   D22: { d: 'D22', what: 'sun', stage: 'finale', before: 'ink' },
@@ -74,7 +75,12 @@ export function partLook(l, id, { finished = mainComplete(l) } = {}) {
   if (p.stage === null) return 'colour';
   if (p.stage === 'never') return p.before;
   if (p.stage === 'finale') return finished ? 'colour' : p.before;
-  return isCommitted(l, p.stage) && (p.dug ?? []).every((n) => l.nodes[n]?.dug) ? 'colour' : p.before;
+  // v0.12: a plant that wilted under weeds goes back to its outline until it is replanted, but a
+  // part that waits for several spots (the rest of the corn, a plot border, the tomato plants)
+  // keeps its colour: only the one plant wilts
+  const dug = p.dug ?? [];
+  const ok = (n) => l.nodes[n]?.dug || (dug.length > 1 && l.wilted?.[n]);
+  return isCommitted(l, p.stage) && dug.every(ok) ? 'colour' : p.before;
 }
 
 // Parts that take their colour through `stage` (at its commit, or as its spots are dug).

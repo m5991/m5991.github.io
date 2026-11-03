@@ -40,6 +40,9 @@ export const SKY = {
   D21: { u: 9, v: 19.5, wu: 9 },
 };
 
+// v0.12: where sticks drop around the tree (u, v)
+export const STICK_PLACES = [[29, 61.5], [25, 59], [21.5, 62], [26.5, 64.5], [30.5, 66.5], [22, 57.5], [18, 60.5], [32.5, 67.5]];
+
 // Slice stations (P placements, spec §3/§6.1): weeds, starter piles, the wood spot, rocks, the
 // tools, mats and the crate. Wood sits right of the tree's canopy (playtest fix, captain phone
 // test 2026-11-01): at the gameplay camera the old spots (u 23-28.5) lay behind the canopy,
@@ -78,26 +81,34 @@ export const STATIONS = [
   { id: 'wS1b', kind: 'weed', on: 's4', ...SUNFLOWERS_UV(3), r: 0.3, label: 'weeds' },
   { id: 'pW1', kind: 'pile', u: 32, v: 59, r: 0.35, label: 'fallen branch' },
   { id: 'pW2', kind: 'pile', u: 35, v: 62.5, r: 0.35, label: 'fallen branch' },
-  { id: 'sW', kind: 'spot', u: 29, v: 61.5, r: 0.35, label: 'fallen branch' },
+  // v0.12: the slots around the tree where sticks drop (STICK_SLOTS), right of and below the
+  // canopy where the play camera sees them, clear of the path, the bench and the border ring
+  ...STICK_PLACES.map(([u, v], i) => ({ id: `k${i + 1}`, kind: 'stick', u, v, r: 0.3, label: 'stick' })),
   ...Object.entries(ROCK_PLACES).map(([id, p]) => ({ id, kind: 'rock', ...p, r: 0.35, label: 'loose rocks' })),
   { id: 'tools', kind: 'tools', u: 43, v: 47.4, r: 0.3, label: 'tools' },
   // P27-1 (anchor about (44.5,45.5), to tune in play): just right of the leaning tools, so the
   // tools never hide it, against the house's right wall and short of the stepping stones
   { id: 'yard', kind: 'yard', u: 45.8, v: 47.2, r: 0.5, label: 'yard pile' },
-  ...['H1', 'H2', 'H3', 'H4'].map((id) => ({ id, kind: 'mat', u: 41, v: 52.5, r: 0.62, label: 'house', house: true })),
-  // property-build mats at the spec's P anchors (§3): path bend, bench, stepping stones, border gap
-  { id: 'G1', kind: 'mat', u: 39, v: 62, r: 0.55, label: 'path' },
-  { id: 'G2', kind: 'mat', u: 23, v: 72, r: 0.55, label: 'bench' },
-  { id: 'G3', kind: 'mat', u: 50, v: 46, r: 0.5, label: 'stepping stones' },
-  { id: 'G4', kind: 'mat', u: 28, v: 80, r: 0.5, label: 'tree-border stones' },
+  // v0.12 (answer 3, "No spots at all"): every build has a site, but nothing marks it: the part's
+  // own blueprint outline shows where it goes, and the DIY button works within reach of the site.
+  // The house (H1-H4 share the house front; the next stage shows), the path bend, the bench, the
+  // stepping stones, the border gap, the archer's post, the crop plots that cost coins, and the
+  // raised bed (T0, built with sticks).
+  ...['H1', 'H2', 'H3', 'H4'].map((id) => ({ id, kind: 'site', u: 41, v: 52.5, r: 0.9, label: 'house', house: true })),
+  { id: 'G1', kind: 'site', u: 39, v: 62, r: 0.7, label: 'path' },
+  { id: 'G2', kind: 'site', u: 23, v: 72, r: 0.7, label: 'bench' },
+  { id: 'G3', kind: 'site', u: 50, v: 46, r: 0.6, label: 'stepping stones' },
+  { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
-  { id: 'A1', kind: 'mat', u: 66, v: 66, r: 0.5, label: 'archer post' },
-  { id: 'C0', kind: 'mat', u: 60.5, v: 54, r: 0.5, label: 'corn patch' },
-  { id: 'C1', kind: 'mat', u: 80.5, v: 53, r: 0.5, label: 'corn expansion' },
-  { id: 'S0', kind: 'mat', u: 79, v: 75, r: 0.5, label: 'sunflower patch' },
-  { id: 'S1', kind: 'mat', u: 90.5, v: 75, r: 0.5, label: 'sunflower expansion' },
-  { id: 'T0', kind: 'mat', u: 80, v: 82.5, r: 0.5, label: 'tomato bed' },
-  { id: 'crate', kind: 'crate', u: 47, v: 59, r: 0.5, label: 'market crate' },
+  { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
+  { id: 'C0', kind: 'site', u: 60.5, v: 54, r: 0.7, label: 'corn patch' },
+  { id: 'C1', kind: 'site', u: 80.5, v: 53, r: 0.7, label: 'corn expansion' },
+  { id: 'S0', kind: 'site', u: 79, v: 75, r: 0.7, label: 'sunflower patch' },
+  { id: 'S1', kind: 'site', u: 90.5, v: 75, r: 0.7, label: 'sunflower expansion' },
+  { id: 'T0', kind: 'site', u: 68.5, v: 87.5, r: 0.8, label: 'raised bed' },
+  // the yard-sale table (v0.12), where the market crate stood: beside the path bend, on the way
+  // between the crops and the house
+  { id: 'table', kind: 'table', u: 47, v: 59, r: 0.5, label: 'yard-sale table' },
 ];
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)

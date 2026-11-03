@@ -70,12 +70,17 @@ export const PILES = {
   pW2: { res: 'W', units: 4 },
 };
 
-// The renewable wood spot (§6.2): first batch 20 s of active time after both starter piles are
-// emptied; each depleted batch returns 20 s after its last unit. Each batch arrives as a dead
-// branch falling from the tree (A25-6, P25-5); wood is unlimited (A25-8 answer 5).
-export const SPOTS = {
-  sW: { res: 'W', batch: 4, renewMs: 20000, after: ['pW1', 'pW2'] },
-};
+// v0.12 (captain 2026-11-02: "the sticks appear more randomly around the tree, if you dont go
+// pick them up quick enough you can lose them"): after the two starter piles, wood comes as sticks
+// (fallen branches of STICK.units) that drop from the tree onto one of the free STICK_SLOTS around
+// it, one every STICK.everyMs of active time while fewer than STICK.max lie there. The slot
+// is chosen by a seeded hash of a counter in the ledger, so it looks random but replays the same.
+// A stick left STICK.lifeMs after it lands is gone (a small fade). Wood stays unlimited, so this
+// never softlocks; Help me finish keeps the sticks from going.
+// (spec v0.12 P28-5 defaults: a 4-unit branch every 20 s while fewer than two lie, from the
+// house foundation on; one left 45 s fades; the two starter piles never fade)
+export const STICK = { units: 4, after: 'H1', everyMs: 20000, max: 2, lifeMs: 45000 };
+export const STICK_SLOTS = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7', 'k8'];
 
 // Loose rocks (A25-7, P25-6): stone is finite. Eight rocks of 3R around the map, 24R against the
 // 18R the route needs; they never renew. R1 and R2 are the opening's 6R (the former rubble piles).
@@ -90,8 +95,8 @@ export const ROCK_IDS = Object.keys(ROCKS);
 export const STONE_IN_ROCKS = Object.values(ROCKS).reduce((n, r) => n + r.units, 0); // 24
 
 // Crop nodes (§6.2): a stage commit opens each new node as a dig spot (P25-4); digging it with
-// the shovel plants it, first ready 5 s later (3 s with U2); each node renews after its last unit
-// is collected (corn/sunflower 15 s, tomato 20 s).
+// the shovel plants it, first ready 5 s later; each node renews after its last unit is collected
+// (corn/sunflower 15 s, tomato 20 s).
 export const NODE_FIRST_READY_MS = 5000;
 export const NODE_RENEW_MS = { C: 15000, S: 15000, T: 20000 };
 export const NODES = {
@@ -108,18 +113,24 @@ export const NODES = {
 };
 
 // Stage recipes, prerequisites and work seconds (§6.3). `weeds` are a base crop plot's two
-// clumps: raked, they commit her first crop free (another plot's clumps only gate its digging). The crop stages (`crop: true`) cost coins only (A25-5, S25-01); their
-// work is digging their spots. v0.11: the base crop she starts first costs nothing (its `coins`
+// clumps: raked, they commit her first crop free (another plot's clumps only gate its digging).
+// The crop stages (`crop: true`) cost coins only (A25-5, S25-01); their work is digging their
+// spots. v0.11: the base crop she starts first costs nothing (its `coins`
 // apply only when it is not her first crop, `recipe` in ledger.js) and commits as soon as its two
 // weeds are raked; the other two base crops open after her first harvest (`afterHarvest`), in any
 // order (spec v0.11 P27-5: corn 8, sunflowers 8, tomatoes 14 when not chosen first). 'first' in
 // a prereq list means her first crop's stage, 'second' any second crop plot. Every build that
 // takes wood or stone is hammered up by Vanessa herself (`workMs`, the hammering); A1 is hired
-// with the same card (`hire`): the archer itself is not built yet, so it arrives later.
+// (`hire`): the archer itself is not built yet, so it arrives later. v0.12: nothing is paid in
+// part any more; a stage is built in one go, with its DIY button, once she has all of it (on her
+// head, at the yard pile and in her purse) and stands at it.
 export const STAGES = {
   C0: { label: 'corn patch', prereq: [], weeds: ['wC1', 'wC2'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'C', afterHarvest: true },
   S0: { label: 'sunflower patch', prereq: [], weeds: ['wS0a', 'wS0b'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'S', afterHarvest: true },
-  T0: { label: 'tomato bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 14, W: 0, R: 0, workMs: 0, crop: true, base: 'T', afterHarvest: true },
+  // v0.12 (captain: "el lugar donde cultivas tomates deberia tambien de ser construido con sticks"):
+  // the tomato plot is the raised bed, built with 4 wood (sticks) by DIY before its tomatoes are
+  // dug; its coins only when tomatoes are not her first crop (spec v0.12 P28-7)
+  T0: { label: 'raised bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 14, W: 4, R: 0, workMs: 2000, crop: true, base: 'T', afterHarvest: true },
   H1: { label: 'house foundation', prereq: ['first'], coins: 10, W: 4, R: 4, workMs: 3000 },
   G1: { label: 'path', prereq: ['H1'], coins: 6, W: 0, R: 3, workMs: 2000 },
   H2: { label: 'walls', prereq: ['H1', 'second'], coins: 16, W: 4, R: 2, workMs: 4000 },
@@ -138,20 +149,31 @@ export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1'
 export const ROUTE = STAGE_ORDER;
 export const HOUSE_STAGES = ['H1', 'H2', 'H3', 'H4'];
 export const CROP_STAGES = STAGE_ORDER.filter((id) => STAGES[id].crop);
-// stages Vanessa hammers up herself: the house and the property builds (crop plots are dug, A1
-// is hired)
+// stages Vanessa hammers up herself: the house, the property builds and the raised bed (other
+// crop plots are dug, A1 is hired)
 export const HAMMERED = ROUTE.filter((id) => STAGES[id].W + STAGES[id].R > 0 && !STAGES[id].hire);
 // stone the main route needs in all (18): the stone invariant's right-hand side (§6.6 point 1)
 export const STONE_REQUIRED = ROUTE.reduce((n, id) => n + STAGES[id].R, 0);
 
-// Optional upgrades at the market crate's Buy tab (§6.5), opened after the first sale. Coins
-// only, never required, never refunded. v0.9 (A25-8 answer 6, P25-7): they speed the tools' own
-// jobs and cost 10 coins each. No optional item costs stone (the §6.6 stone invariant).
-export const UPGRADES = {
-  U1: { label: 'wide rake head', coins: 10, effect: 'Weeding takes 0.5 s per clump instead of 1 s.' },
-  U2: { label: 'sharpened shovel', coins: 10, effect: 'Digging takes 0.75 s per spot instead of 1.5 s, and a newly dug plant is first ready in 3 s instead of 5 s.' },
-};
-export const U1_WEED_MS = 500;
-export const U2_DIG_MS = 750;
-export const U2_FIRST_READY_MS = 3000;
+// v0.12 (captain 2026-11-02: "remove the enhancements on rake and shovel, not needed"): the wide
+// rake head and the sharpened shovel are gone, and with them the market crate's Buy tab.
 
+// v0.12 yard sale (captain: "she puts the goods on the table and accumulates, then she puts the
+// sign and when she has a certain amount people come and the goods disappear"): walking past the
+// yard-sale table with crops on her head sets them out on it, up to TABLE_CAP; when it is full a
+// Yard Sale button appears (tapping the stand works too), and the sale pays PRICES per item.
+export const TABLE_CAP = 6;
+export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her crops go onto it
+
+// v0.12 (captain: "weeds keep appearing even over planted crops, you remove them because if not
+// you can lose the crop"; answer 1 "One plant wilts"): from the house foundation until the home
+// (H4), a weed creeps onto one planted crop spot every REGROW.everyMs of active time, one at a
+// time. It grows for REGROW.growMs (a first warning at warnMs, a second as it is grown and choking
+// the plant); raked (the rake, 1 s) it is gone; left REGROW.wiltMs in all, the one plant under it
+// wilts and its spot is a dig spot again (`Replant`, free with the shovel). Help me finish turns
+// it off and clears an open one. (Spec v0.12 P28-4 defaults, as firstmate relayed them.)
+export const REGROW = { after: 'H1', until: 'H4', everyMs: 120000, warnMs: 20000, growMs: 60000, wiltMs: 120000 };
+// a regrowth weed's id: `wr-` and the crop node it covers
+export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
+export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
+export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null;

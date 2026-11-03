@@ -1,7 +1,6 @@
 // Direction-C props (spec §10.8, P24-7 pass 2), authored in code against the drawing and the
 // §10.3 swatches in the same hand as hand.js: the broken slatted bench D10, the board raised
-// bed D18, the blue shovel D13 and fan rake D14, the market crate with its hand-lettered tag and
-// coin tin, the carried / delivered / sold units (cob, sunflower head, tomato, coin), the
+// bed D18, the blue shovel D13 and fan rake D14, the yard-sale table, its sign and buyers (v0.12), the carried / delivered / sold units (cob, sunflower head, tomato, coin), the
 // scattered border stones D11, the stepping-stone outlines D12, and the sky's spiral sun D22,
 // check-mark birds D21 and the irregular horizon D23 drawn as pen strokes. Built edges stay
 // crisp (wood, boards, tools); organic forms are smooth. Static parts merge per material.
@@ -125,58 +124,152 @@ export function tool(kind) {
   return mergeByMaterial(g, kind === 'shovel' ? 'D13_Shovel' : 'D14_Rake');
 }
 
-// ---------------- the market crate (A22 / P): slatted, hand-lettered tag, coin tin ----------------
-// 0.85 x 0.5 x 0.6 m; sold crops rest on a bed of straw at the brim (carry.js crateSlot).
-let tagTex = null;
-function tagTexture() {
-  if (tagTex) return tagTex;
-  const c = document.createElement('canvas'); c.width = 256; c.height = 140;
+// ---------------- v0.12 the yard-sale table, its sign and the buyers ----------------
+// (captain 2026-11-02: "yard sale. she puts the goods on the table and accumulates, then she puts
+// the sign and when she has a certain amount people come and the goods disappear")
+// A small trestle table, 1.0 x 0.55 m and 0.62 m high, in the drawing's hand: two crossed-leg
+// trestles, three top boards with pen lines between them and a cream cloth with a red hand-drawn
+// check draped over the front edge. The goods sit on the cloth (carry.js tableSlot).
+export const TABLE = { w: 1.0, d: 0.55, h: 0.62 };
+let clothTex = null;
+function clothTexture() {
+  if (clothTex) return clothTex;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
   const x = c.getContext('2d');
-  x.fillStyle = '#fff7e5'; x.fillRect(0, 0, 256, 140);
-  x.strokeStyle = '#253347'; x.lineWidth = 6; x.lineJoin = 'round';
-  x.beginPath(); x.moveTo(8, 10); x.lineTo(247, 6); x.lineTo(250, 131); x.lineTo(6, 134); x.closePath(); x.stroke();
-  x.beginPath(); x.arc(28, 30, 9, 0, Math.PI * 2); x.stroke(); // the string hole
-  x.fillStyle = '#253347';
-  x.font = 'italic 600 54px "Segoe Print", "Comic Neue", "Bradley Hand", "Marker Felt", cursive';
-  x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.save(); x.translate(136, 82); x.rotate(-0.05); x.fillText('For sale', 0, 0); x.restore();
-  tagTex = new THREE.CanvasTexture(c);
-  tagTex.colorSpace = THREE.SRGBColorSpace;
-  tagTex.anisotropy = 4;
-  return tagTex;
-}
-export function crate() {
-  const g = new THREE.Group();
-  const W = 0.85; const H = 0.5; const D = 0.6;
-  const r = rng(13);
-  const slat = PAL.woodLight; const post = PAL.wood;
-  for (let k = 0; k < 3; k++) {
-    const y = 0.07 + k * 0.165;
-    for (const z of [D / 2 - 0.012, -D / 2 + 0.012]) g.add(at(mesh(box(W - 0.06, 0.11, 0.024), slat), 0, y + (r() - 0.5) * 0.008, z, 0, 0, (r() - 0.5) * 0.012));
-    for (const x of [W / 2 - 0.012, -W / 2 + 0.012]) g.add(at(mesh(box(0.024, 0.11, D - 0.06), slat), x, y + (r() - 0.5) * 0.008, 0));
+  x.fillStyle = '#f6ead0'; x.fillRect(0, 0, 128, 128);
+  x.strokeStyle = 'rgba(181, 62, 54, 0.55)'; x.lineWidth = 5;
+  for (let i = 8; i < 128; i += 26) {
+    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 2, 128); x.stroke();
+    x.beginPath(); x.moveTo(0, i); x.lineTo(128, i - 2); x.stroke();
   }
-  for (const x of [-W / 2 + 0.03, W / 2 - 0.03]) for (const z of [-D / 2 + 0.03, D / 2 - 0.03]) g.add(at(mesh(box(0.06, H, 0.06), post), x, H / 2, z));
-  g.add(at(mesh(box(W - 0.05, 0.025, D - 0.05), post), 0, 0.012, 0)); // floor
-  const straw = lumpy(new THREE.BoxGeometry(W - 0.08, 0.08, D - 0.08, 8, 1, 6), 0.012, 20, 2);
-  g.add(at(mesh(straw, mix(PAL.flower, PAL.wood, 0.45)), 0, H - 0.06, 0));
-  // coin tin on the near-left corner of the brim, three coins showing
-  const tinC = mix(PAL.cap, PAL.stone, 0.35);
-  g.add(at(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.07, 18), tinC), -0.27, H + 0.035, 0.12));
-  g.add(at(mesh(new THREE.TorusGeometry(0.075, 0.008, 6, 18), mix(tinC, PAL.ink, 0.3)), -0.27, H + 0.07, 0.12, Math.PI / 2, 0, 0));
-  for (let k = 0; k < 3; k++) g.add(at(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.008, 12), PAL.coin), -0.29 + k * 0.022, H + 0.072 + k * 0.004, 0.11 + (k % 2) * 0.02, 0.2, 0, 0.15 * k));
-  const merged = mergeByMaterial(g, 'MarketCrate');
-  // the paper tag hangs on a string from the front rim, a little askew
-  const tag = new THREE.Group(); tag.name = 'tag';
-  const card = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.13), new THREE.MeshBasicMaterial({ map: tagTexture() }));
-  card.position.set(0, -0.08, 0.004); card.userData.noOutline = true;
-  const back = mesh(box(0.235, 0.125, 0.004), PAL.paper, { shadow: true });
-  back.position.set(0, -0.08, 0);
-  const string = new THREE.Mesh(taperTube(new THREE.LineCurve3(V(-0.09, -0.04, 0.003), V(-0.13, 0.02, 0)), 0.003, 0.003, 1, 4), toon(PAL.ink));
-  string.userData.noOutline = true;
-  tag.add(card, back, string);
-  tag.position.set(0.18, H - 0.02, D / 2 + 0.02); tag.rotation.set(-0.08, 0, 0.09);
-  merged.add(tag);
+  clothTex = new THREE.CanvasTexture(c);
+  clothTex.colorSpace = THREE.SRGBColorSpace;
+  clothTex.wrapS = clothTex.wrapT = THREE.RepeatWrapping;
+  clothTex.repeat.set(2, 1.2);
+  return clothTex;
+}
+export function yardTable() {
+  const g = new THREE.Group();
+  const { w: W, d: D, h: H } = TABLE;
+  const r = rng(21);
+  const leg = mix(PAL.wood, PAL.ink, 0.1);
+  for (const x of [-W / 2 + 0.14, W / 2 - 0.14]) { // two trestles, legs crossed in an X
+    for (const s of [-1, 1]) g.add(at(mesh(box(0.04, H * 1.12, 0.04), leg), x, H / 2 - 0.02, 0, s * 0.36, 0, 0));
+    g.add(at(mesh(box(0.04, 0.035, D * 0.72), leg), x, H * 0.5, 0)); // the crossbar where they meet
+  }
+  for (let k = 0; k < 3; k++) { // three top boards, a little uneven
+    const z = -D / 2 + D / 6 + (k * D) / 3;
+    g.add(at(mesh(box(W + (r() - 0.5) * 0.02, 0.035, D / 3 - 0.012), PAL.woodLight, { hatch: 1 }), (r() - 0.5) * 0.01, H, z, 0, (r() - 0.5) * 0.01, 0));
+    if (k) g.add(at(stroke(W * 0.96, 0.004, 0.006), 0, H + 0.019, z - D / 6));
+  }
+  const merged = mergeByMaterial(g, 'YardTable');
+  // the cloth: a thin sheet over the top, draped down the front (its own textured material)
+  const clothMat = new THREE.MeshLambertMaterial({ map: clothTexture() });
+  const top = new THREE.Mesh(new THREE.BoxGeometry(W * 0.86, 0.008, D * 0.9), clothMat);
+  top.position.set(0, H + 0.022, 0);
+  const drape = new THREE.Mesh(new THREE.BoxGeometry(W * 0.86, 0.16, 0.008), clothMat);
+  drape.position.set(0, H - 0.06, D * 0.45 + 0.004); drape.rotation.x = 0.06;
+  for (const m of [top, drape]) { m.castShadow = true; m.receiveShadow = true; }
+  merged.add(top, drape);
   return merged;
+}
+
+// the hand-lettered "Yard Sale!" board (in the title's pencil hand, assets/fonts/), redrawn
+// once the font has loaded
+let signTex = null;
+function drawSign(c) {
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff7e5'; x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = '#253347'; x.lineWidth = 7; x.lineJoin = 'round';
+  x.beginPath(); x.moveTo(10, 12); x.lineTo(c.width - 8, 8); x.lineTo(c.width - 12, c.height - 10); x.lineTo(8, c.height - 6); x.closePath(); x.stroke();
+  x.fillStyle = '#253347';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = '700 96px "Pencil Title", "Segoe Print", "Bradley Hand", cursive';
+  x.save(); x.translate(c.width / 2, c.height * 0.36); x.rotate(-0.04); x.fillText('Yard', 0, 0); x.restore();
+  x.fillStyle = '#b53e36';
+  x.save(); x.translate(c.width / 2 + 6, c.height * 0.72); x.rotate(-0.03); x.fillText('Sale!', 0, 0); x.restore();
+}
+function signTexture() {
+  if (signTex) return signTex;
+  const c = document.createElement('canvas'); c.width = 320; c.height = 280;
+  drawSign(c);
+  signTex = new THREE.CanvasTexture(c);
+  signTex.colorSpace = THREE.SRGBColorSpace;
+  signTex.anisotropy = 4;
+  document.fonts?.load('96px "Pencil Title"').then(() => { drawSign(c); signTex.needsUpdate = true; }).catch(() => {});
+  return signTex;
+}
+// an A-frame board, 0.46 m wide and 0.6 m tall, lettered on its front face (+Z)
+export function saleSign() {
+  const g = new THREE.Group();
+  const post = mix(PAL.wood, PAL.ink, 0.1);
+  const back = at(mesh(box(0.46, 0.56, 0.025), PAL.woodLight), 0, 0.28, -0.1, -0.3, 0, 0);
+  const front = at(mesh(box(0.46, 0.56, 0.025), PAL.woodLight), 0, 0.28, 0.1, 0.3, 0, 0);
+  const hinge = at(mesh(box(0.48, 0.03, 0.04), post), 0, 0.55, 0);
+  g.add(back, front, hinge);
+  const merged = mergeByMaterial(g, 'SaleSign');
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.37), new THREE.MeshBasicMaterial({ map: signTexture() }));
+  face.userData.noOutline = true;
+  const holder = new THREE.Group();
+  holder.position.set(0, 0.28, 0.1); holder.rotation.x = 0.3;
+  face.position.set(0, 0.02, 0.0135);
+  holder.add(face);
+  merged.add(holder);
+  return merged;
+}
+
+// a buyer: a plain neighbour in the drawing's hand, about 1.5 m, paper-light clothes in one of the
+// review swatches, simple round head with a hat or hair, a basket on one arm. `legs` (two named
+// groups) swing as they walk; their arms stay down. Faces +Z.
+const BUYER_LOOKS = [
+  { top: PAL.denim, legs: PAL.charcoal, hat: PAL.flower, skin: PAL.skin },
+  { top: PAL.red, legs: PAL.denim, hat: null, hair: PAL.hair, skin: mix(PAL.skin, PAL.wood, 0.35) },
+  { top: PAL.leafLight, legs: PAL.wood, hat: PAL.cream, skin: mix(PAL.skin, PAL.paper, 0.2) },
+];
+export function buyer(i = 0) {
+  const look = BUYER_LOOKS[i % BUYER_LOOKS.length];
+  const root = new THREE.Group(); root.name = `Buyer_${i}`;
+  const body = new THREE.Group(); body.name = 'body';
+  const torso = new THREE.CapsuleGeometry(0.17, 0.42, 4, 12); torso.scale(1, 1, 0.8);
+  body.add(at(mesh(torso, look.top), 0, 0.98, 0));
+  body.add(at(mesh(new THREE.SphereGeometry(0.15, 16, 12), look.skin), 0, 1.42, 0.01));
+  if (look.hat) {
+    body.add(at(mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 20), look.hat), 0, 1.52, 0));
+    body.add(at(mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.12, 16), look.hat), 0, 1.58, 0));
+  } else {
+    const hair = new THREE.SphereGeometry(0.16, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    body.add(at(mesh(hair, look.hair), 0, 1.44, -0.01));
+  }
+  for (const s of [-1, 1]) body.add(at(mesh(new THREE.CapsuleGeometry(0.045, 0.36, 3, 8), look.skin), s * 0.21, 0.98, 0, 0, 0, s * 0.12));
+  // a basket on the right arm
+  const basket = at(mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.12, 14, 1, true), PAL.woodLight, { hatch: 1 }), 0.3, 0.8, 0.08);
+  basket.material.side = THREE.DoubleSide;
+  body.add(basket, at(mesh(new THREE.TorusGeometry(0.11, 0.012, 5, 16, Math.PI), PAL.wood), 0.3, 0.86, 0.08));
+  root.add(body);
+  for (const s of [-1, 1]) {
+    const legG = new THREE.Group(); legG.name = s < 0 ? 'legL' : 'legR';
+    legG.position.set(s * 0.08, 0.62, 0);
+    legG.add(at(mesh(new THREE.CapsuleGeometry(0.06, 0.48, 3, 8), look.legs), 0, -0.3, 0));
+    legG.add(at(mesh(box(0.1, 0.06, 0.18), PAL.charcoal), 0, -0.6, 0.04));
+    root.add(legG);
+  }
+  return root;
+}
+
+// a dust puff (v0.12 DIY time): three or four soft paper-white blobs in ink, scaled and faded
+// by the world as they billow up from where the hammer strikes or her feet land
+export function dustPuff(seed = 0) {
+  const g = new THREE.Group(); g.name = 'DustPuff';
+  const r = rng(40 + seed);
+  const n = 3 + (seed % 2);
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2 + r();
+    const s = 0.09 + r() * 0.07;
+    const m = mesh(new THREE.SphereGeometry(s, 10, 8), mix(PAL.ground, PAL.stone, 0.18), { shadow: false });
+    m.position.set(Math.cos(a) * 0.12, s * 0.7 + r() * 0.06, Math.sin(a) * 0.08);
+    g.add(m);
+  }
+  return g;
 }
 
 // ---------------- units: carried, delivered and sold (one model each, V1) ----------------
@@ -204,7 +297,14 @@ function unitGeometries() {
   const pencil = new THREE.BoxGeometry(0.07, 0.004, 0.014); pencil.rotateY(0.6); pencil.translate(0.004, 0.012, -0.003);
   const tip = new THREE.ConeGeometry(0.008, 0.02, 4); tip.rotateZ(Math.PI / 2); tip.rotateY(0.6); tip.translate(-0.034, 0.012, 0.021);
   coin.push(paint(pencil, mix(PAL.coin, PAL.wood, 0.45)), paint(tip, mix(PAL.coin, PAL.wood, 0.45)));
-  unitGeos = { C: cob, T: bake(tparts), S: sunflowerHeadGeometry(0.1, true), coins: bake(coin) };
+  // v0.12 (captain: "update the sunflowers that pick up and accumulate on your head to resemble
+  // sunflowers better ... accumulate vertically"): an upright sunflower, facing +Z: a round dark
+  // seed centre in two rings of yellow petals, on a short green stem with one leaf, so a column of
+  // them on her head reads as sunflowers at phone size (origin at the head's centre)
+  const sf = [sunflowerHeadGeometry(0.095, false).clone()];
+  sf.push(paint(taperTube(new THREE.CatmullRomCurve3([V(0, -0.02, -0.02), V(0.008, -0.08, -0.015), V(0, -0.135, -0.01)]), 0.011, 0.008, 6, 6), PAL.leaf));
+  sf.push(paint(blade([V(0.004, -0.085, -0.012), V(0.045, -0.07, 0.0), V(0.085, -0.095, 0.012)], { width: (s) => 0.022 * Math.sin(Math.PI * s) ** 0.7, across: V(0, 0.4, 1).normalize(), thick: 0.25, cup: 0.2, segs: 5, radial: 5 }), PAL.leaf));
+  unitGeos = { C: cob, T: bake(tparts), S: bake(sf), coins: bake(coin) };
   return unitGeos;
 }
 // W twig (the pile's log, smaller), R stone, C cob, S sunflower head (faces +Z), T tomato, coins

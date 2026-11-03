@@ -2,36 +2,51 @@
 // Every accepted transaction returns a new ledger plus events; the caller saves the new
 // ledger before any presentation starts (spec §12). Views only present this state.
 // v0.11 (captain 2026-11-02): wood and stone she drops at the material pile by the house wait
-// there (`yard`) and builds take from her head first, then from the pile; the first crop patch
-// she rakes is her free first crop (`crop`, permanent: it also themes the cards and menus); the
-// other two base crops open after her first harvest (`harvested`).
+// there (`yard`); the first crop patch she rakes is her free first crop (`crop`, permanent: it
+// also themes the cards and menus); the other two base crops open after her first harvest
+// (`harvested`).
+// v0.12 (captain's v0.11 playtest, 2026-11-02): crops are sold at a yard-sale table she fills by
+// walking past it (`table`, `stock`, `yardSale`); a stage is built in one go with its DIY button
+// once she has everything (`build`: no partial deposits, no Return); sticks drop at random spots
+// around the tree and go if left (`sticks`); weeds creep back over planted crops and a plant left
+// under one wilts (`overgrown`); the raised bed is built with sticks (T0); the tool upgrades are gone.
 import {
   BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, MATERIALS, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES,
-  PILES, PRICES, RESOURCES, ROCKS, ROCK_IDS, ROUTE, SPOTS, STAGES, STAGE_ORDER, STONE_REQUIRED, TOOLS,
-  U2_FIRST_READY_MS, UPGRADES, WEEDS, WEED_PLOT, YARD_MATERIALS,
+  PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES, STAGE_ORDER, STICK,
+  STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TOOLS, WEEDS, WEED_PLOT, YARD_MATERIALS,
 } from './data.js';
 
 const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
+const zeroCrops = () => Object.fromEntries(CROPS.map((c) => [c, 0]));
 
 export function createLedger() {
   return {
     carried: zeroRes(),
     yard: { W: 0, R: 0 }, // the material pile by the house (v0.11): no cap
+    table: zeroCrops(), // v0.12: the crops set out on the yard-sale table, TABLE_CAP at most
+    sales: 0, // v0.12: yard sales held
     crop: null, // her first crop: null until she rakes a crop patch, then 'C', 'S' or 'T' for good
     harvested: false, // her first crop unit is picked: the other two base crops open
     purse: 0,
     lifetimeCoins: 0,
-    sold: { C: 0, S: 0, T: 0 },
-    stages: Object.fromEntries(STAGE_ORDER.map((id) => [id, { committed: false, deposited: { coins: 0, W: 0, R: 0 } }])),
+    sold: zeroCrops(),
+    stages: Object.fromEntries(STAGE_ORDER.map((id) => [id, { committed: false }])),
     paymentEvents: [], // committed stage IDs in commit order (each at most once)
     weeds: Object.fromEntries(WEEDS.map((id) => [id, false])), // true = cleared
     piles: Object.fromEntries(Object.entries(PILES).map(([id, p]) => [id, p.units])),
-    spots: Object.fromEntries(Object.keys(SPOTS).map((id) => [id, { remaining: 0, readyAt: null }])),
+    // v0.12: sticks around the tree: units lying at each slot and when they landed
+    sticks: Object.fromEntries(STICK_SLOTS.map((id) => [id, { units: 0, at: null }])),
+    stickNext: null, // active time the next stick falls (from the house foundation on)
+    stickSeq: 0, // sticks dropped so far (the seed of the next slot)
     // a crop node is a dig spot once its stage commits, and productive once dug (P25-4)
     nodes: Object.fromEntries(Object.keys(NODES).map((id) => [id, { remaining: 0, readyAt: null, dug: false }])),
+    // v0.12: a weed creeping over a planted node: the active time it sprouted, else null
+    overgrown: Object.fromEntries(Object.keys(NODES).map((id) => [id, null])),
+    wilted: Object.fromEntries(Object.keys(NODES).map((id) => [id, false])), // its plant wilted: replant it
+    regrowAt: null, // active time the next weed creeps in (scheduled once regrowth is on)
+    regrowSeq: 0, // weeds that have crept in so far (picks the next node)
     rocks: Object.fromEntries(ROCK_IDS.map((id) => [id, ROCKS[id].units])), // finite stone (P25-6)
     tool: null, // the tool in Vanessa's hand: null, 'rake' or 'shovel' (P25-4)
-    owned: Object.fromEntries(Object.keys(UPGRADES).map((id) => [id, false])), // shop upgrades (§6.5)
     activeMs: 0,
     // Reserved for later steps (birds, spec §6.6/§12); always zero in this slice.
     theft: { rotation: 0, log: [], totalBeforeH4: 0 },
@@ -40,6 +55,15 @@ export function createLedger() {
 
 const clone = (l) => structuredClone(l);
 const fail = (reason) => ({ ok: false, reason });
+const sum = (o) => Object.values(o).reduce((n, x) => n + x, 0);
+
+// a seeded hash of a counter: the "random" choices replay the same on every device (mulberry32)
+export function seeded(n) {
+  let t = (n * 0x6d2b79f5 + 0x9e3779b9) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
 
 // ---------- derived state ----------
 export const isCommitted = (l, id) => l.stages[id]?.committed === true;
@@ -77,82 +101,91 @@ export function lockedReason(l, id) {
   if (weeds.length) return { kind: 'weeds', weeds };
   return null;
 }
-// What a stage costs on this ledger: her first crop's patch is free (v0.11).
+// What a stage costs on this ledger: her first crop's patch costs no coins (v0.11; v0.12: the
+// raised bed still takes its 4 wood).
 export function recipe(l, id) {
   const s = STAGES[id];
-  if (isFirstCrop(l, id)) return { coins: 0, W: 0, R: 0 };
-  return { coins: s.coins, W: s.W, R: s.R };
+  return { coins: isFirstCrop(l, id) ? 0 : s.coins, W: s.W, R: s.R };
 }
+export const isFree = (l, id) => { const r = recipe(l, id); return r.coins + r.W + r.R === 0; };
 export function houseStage(l) {
   let n = 0;
   for (const h of ['H1', 'H2', 'H3', 'H4']) if (isCommitted(l, h)) n++;
   return n;
 }
-// the market crate appears when her first crop's patch is planted (its stage commits)
-export const crateAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
+// the yard-sale table appears when her first crop's patch is planted (its stage commits)
+export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
+export const tableCount = (l) => sum(l.table);
+export const tableRoom = (l) => TABLE_CAP - tableCount(l);
+export const tableFull = (l) => tableCount(l) >= TABLE_CAP;
+export const tableValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 export const mainComplete = (l) => isCommitted(l, 'H4');
 
-export function stillNeeded(l, id) {
-  const s = recipe(l, id);
-  const d = l.stages[id].deposited;
-  return { coins: s.coins - d.coins, W: s.W - d.W, R: s.R - d.R };
-}
 // wood or stone she has for building: on her head plus at the pile
 export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
-// Shortage = required - deposited - what she has (purse; carried plus the pile), clamped at 0
-// (spec §11.2): what the card says is still "to go".
+// Shortage = recipe - what she has (purse; carried plus the pile), clamped at 0 (spec §11.2): the
+// bottom line's count of what is still to get, counting down as she gathers.
 export function shortage(l, id) {
-  const need = stillNeeded(l, id);
+  const need = recipe(l, id);
   return {
     coins: Math.max(0, need.coins - l.purse),
     W: Math.max(0, need.W - onHand(l, 'W')),
     R: Math.max(0, need.R - onHand(l, 'R')),
   };
 }
-export const fullyFunded = (l, id) => {
-  const n = stillNeeded(l, id);
-  return n.coins === 0 && n.W === 0 && n.R === 0;
-};
+// she has everything a stage takes (its DIY button can be pressed at the stage)
+export const affordable = (l, id) => { const s = shortage(l, id); return s.coins + s.W + s.R === 0; };
 
-// Units a source can give right now (piles, spots, rocks, crop nodes).
+// Units a source can give right now (piles, sticks, rocks, crop nodes).
 export function available(l, src) {
   if (src in PILES) return l.piles[src];
-  if (src in SPOTS) return l.spots[src].remaining;
+  if (src in l.sticks) return l.sticks[src].units;
   if (src in ROCKS) return l.rocks[src];
   if (src in NODES) return l.nodes[src].remaining;
   return 0;
 }
 export function sourceResource(src) {
   if (src in ROCKS) return 'R';
-  return (PILES[src] ?? SPOTS[src] ?? NODES[src])?.res ?? null;
+  if (STICK_SLOTS.includes(src)) return 'W';
+  return (PILES[src] ?? NODES[src])?.res ?? null;
 }
 // a crop node gives crops once its stage is committed and its spot dug
 export function nodeEstablished(l, id) {
   return isCommitted(l, NODES[id].stage) && l.nodes[id].dug === true;
 }
+// the sticks lying around the tree now
+export const sticksDown = (l) => STICK_SLOTS.filter((id) => l.sticks[id].units > 0);
 
 // ---------- weeds, dig spots and tools (P25-4, P25-4b) ----------
 // A weed is in the world when its plot's stage has unlocked (prerequisites committed); the
-// opening clumps are there from the start. Cleared clumps never come back.
+// opening clumps are there from the start. Cleared clumps never come back. v0.12: a regrowth
+// weed (`wr-<node>`) is there while it covers its planted node.
 export function weedPresent(l, id) {
+  const node = regrowNode(id);
+  if (node) return l.overgrown[node] !== null;
   const plot = WEED_PLOT[id];
   if (!plot || STAGES[plot].base) return true; // the three crop patches' weeds: from the start
   return prereqsOf(l, plot).every((p) => isCommitted(l, p));
 }
 // A patch's weeds can be raked when the patch is hers to work: any crop patch before she has
-// chosen (raking one chooses it), her first crop's patch, and another patch once it is unlocked
-// (the other base crops after her first harvest, C1 and S1 after their prerequisites). Weeds on
-// a patch that is not open yet just wait there.
+// chosen (raking one chooses it), her first crop's patch, another base patch after her first
+// harvest (the tomatoes' bed may still be unbuilt), and C1 and S1 after their prerequisites.
+// Weeds on a patch that is not open yet just wait there.
 export function patchWorkable(l, stage) {
-  if (STAGES[stage].base && (l.crop === null || isFirstCrop(l, stage))) return true;
+  if (STAGES[stage].base) return l.crop === null || isFirstCrop(l, stage) || l.harvested;
   return !missingPrereqs(l, stage).length;
 }
-export const weedOpen = (l, id) => l.weeds[id] === false && weedPresent(l, id) && patchWorkable(l, WEED_PLOT[id]);
-export const openWeeds = (l) => WEEDS.filter((id) => weedOpen(l, id));
+export const weedOpen = (l, id) => {
+  if (regrowNode(id)) return weedPresent(l, id);
+  return l.weeds[id] === false && weedPresent(l, id) && patchWorkable(l, WEED_PLOT[id]);
+};
+export const openWeeds = (l) => [...WEEDS, ...REGROW_WEEDS].filter((id) => weedOpen(l, id));
+// the regrowth weeds over her crops now
+export const regrowWeeds = (l) => REGROW_WEEDS.filter((id) => weedPresent(l, id));
 // the plot weeds that must be raked before a stage's spots can be dug
 export const plotWeeds = (stage) => WEEDS.filter((w) => WEED_PLOT[w] === stage);
 export const plotClear = (l, stage) => plotWeeds(stage).every((w) => l.weeds[w]);
-// a dig spot: its stage committed, its plot weeds raked, not dug yet
+// a dig spot: its stage committed, its plot weeds raked, not dug yet (or its plant wilted)
 export function digOpen(l, id) {
   const n = NODES[id];
   return !!n && isCommitted(l, n.stage) && !l.nodes[id].dug && plotClear(l, n.stage);
@@ -166,16 +199,14 @@ export const toolJobs = (l) => ({ rake: openWeeds(l), shovel: openDigSpots(l) })
 export function toolIdle(l) {
   return l.tool !== null && toolJobs(l)[l.tool].length === 0;
 }
-export const owns = (l, item) => l.owned?.[item] === true;
 
 // ---------- the stone invariant (§6.6 point 1, P25-6) ----------
 // Stone is finite and never stolen, sold or spent on an optional item, so the stone in the rocks,
-// carried and in uncommitted escrow must always cover the stone still required. -> missing units
-// (0 when it holds); a save that breaks it gets the recovery rock.
+// carried and at the pile must always cover the stone still required. -> missing units (0 when it
+// holds); a save that breaks it gets the recovery rock.
 export function stoneOnHand(l) {
   let n = l.carried.R + (l.yard?.R ?? 0);
   for (const id of ROCK_IDS) n += l.rocks[id];
-  for (const id of STAGE_ORDER) if (!isCommitted(l, id)) n += l.stages[id].deposited.R;
   return n;
 }
 export function stoneStillRequired(l) {
@@ -185,13 +216,12 @@ export const stoneShortfall = (l) => Math.max(0, stoneStillRequired(l) - stoneOn
 export { STONE_REQUIRED };
 
 // The follow-up transactions the game applies by itself after any accepted one, in order:
-// a free stage that has just opened commits (C0 once its two weeds are cleared), and a held
-// tool with nothing left to do goes back to its lean. -> [tx]
+// a free stage that has just opened commits (her first crop once its two weeds are cleared),
+// and a held tool with nothing left to do goes back to its lean. -> [tx]
 export function autoTxs(l) {
   const out = [];
   for (const id of STAGE_ORDER) {
-    const s = recipe(l, id);
-    if (s.coins + s.W + s.R === 0 && stageState(l, id) === 'OPEN') out.push({ t: 'commitFree', stage: id });
+    if (isFree(l, id) && stageState(l, id) === 'OPEN') out.push({ t: 'commitFree', stage: id });
   }
   if (toolIdle(l)) out.push({ t: 'returnTool' });
   return out;
@@ -213,47 +243,96 @@ export function settle(l0) {
 }
 
 // ---------- transactions ----------
-// tx: { t: 'tick', ms } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'depositMat', stage, r }
-//   | { t: 'depositCoins', stage } | { t: 'refund', stage } | { t: 'sell', crop }
-//   | { t: 'takeTool', tool } | { t: 'returnTool' } | { t: 'dig', id } | { t: 'commitFree', stage }
-//   | { t: 'buy', item } | { t: 'drop', r }
+// tx: { t: 'tick', ms, calm? } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'drop', r? }
+//   | { t: 'stock' } | { t: 'yardSale' } | { t: 'build', stage } | { t: 'commitFree', stage }
+//   | { t: 'takeTool', tool } | { t: 'returnTool' } | { t: 'dig', id }
 export function apply(l0, tx) {
   switch (tx?.t) {
-    case 'tick': return tick(l0, tx.ms);
+    case 'tick': return tick(l0, tx.ms, !!tx.calm);
     case 'clearWeed': return clearWeed(l0, tx.id);
     case 'pick': return pick(l0, tx.src);
     case 'takeTool': return takeTool(l0, tx.tool);
     case 'returnTool': return returnTool(l0);
     case 'dig': return dig(l0, tx.id);
     case 'commitFree': return commitFree(l0, tx.stage);
-    case 'buy': return buy(l0, tx.item);
+    case 'build': return build(l0, tx.stage);
     case 'drop': return drop(l0, tx.r ?? null);
-    case 'depositMat': return depositMat(l0, tx.stage, tx.r);
-    case 'depositCoins': return depositCoins(l0, tx.stage);
-    case 'refund': return refund(l0, tx.stage);
-    case 'sell': return sell(l0, tx.crop);
+    case 'stock': return stock(l0);
+    case 'yardSale': return yardSale(l0);
     default: return fail('unknownTx');
   }
 }
 
 // Active-time clock: only advanced while the world runs (pause, menus, hidden tabs add nothing).
-function tick(l0, ms) {
+// It also drops the sticks, lets a stick left too long go, and lets weeds creep over her crops.
+// `calm` (Help me finish): no weed creeps in and nothing is lost: a lying stick or a weed's wilt
+// clock simply waits.
+function tick(l0, ms, calm = false) {
   if (!(Number.isFinite(ms) && ms >= 0)) return fail('badTime');
   const l = clone(l0);
   const events = [];
   l.activeMs += ms;
-  for (const [id, s] of Object.entries(l.spots)) {
-    if (s.readyAt !== null && s.remaining === 0 && l.activeMs >= s.readyAt) {
-      s.remaining = SPOTS[id].batch;
-      s.readyAt = null;
-      events.push({ type: 'ready', src: id });
-    }
-  }
+  const now = l.activeMs;
   for (const [id, n] of Object.entries(l.nodes)) {
-    if (n.readyAt !== null && n.remaining === 0 && l.activeMs >= n.readyAt) {
+    if (n.readyAt !== null && n.remaining === 0 && now >= n.readyAt) {
       n.remaining = NODES[id].yield;
       n.readyAt = null;
       events.push({ type: 'ready', src: id });
+    }
+  }
+  // sticks: one left too long is gone; a new one falls on a free slot
+  for (const id of STICK_SLOTS) {
+    const s = l.sticks[id];
+    if (s.units <= 0) continue;
+    if (calm) s.at += ms;
+    else if (now >= s.at + STICK.lifeMs) {
+      events.push({ type: 'stickGone', src: id, units: s.units });
+      s.units = 0;
+      s.at = null;
+    }
+  }
+  if (l.stickNext === null && isCommitted(l, STICK.after)) l.stickNext = now + STICK.everyMs;
+  if (l.stickNext !== null && now >= l.stickNext && sticksDown(l).length < STICK.max) {
+    const free = STICK_SLOTS.filter((id) => l.sticks[id].units === 0);
+    const id = free[Math.floor(seeded(l.stickSeq) * free.length)];
+    l.sticks[id] = { units: STICK.units, at: now };
+    l.stickSeq += 1;
+    l.stickNext = now + STICK.everyMs;
+    events.push({ type: 'stickFell', src: id });
+  }
+  // weeds over planted crops (one at a time, once the foundation stands)
+  const over = Object.keys(NODES).filter((id) => l.overgrown[id] !== null);
+  if (calm || isCommitted(l, REGROW.until)) {
+    // Help me finish (or the finished farm): none creeps in, and an open one is cleared
+    for (const id of over) { l.overgrown[id] = null; events.push({ type: 'weedCleared', id: `wr-${id}`, node: id, calm: true }); }
+    l.regrowAt = null;
+  } else {
+    for (const id of over) {
+      const since = l.overgrown[id];
+      const prev = l0.activeMs;
+      // the two warnings: a clump at warnMs, grown and choking the plant at growMs
+      for (const [at, stage] of [[REGROW.warnMs, 'clump'], [REGROW.growMs, 'choking']]) {
+        if (prev < since + at && now >= since + at && now < since + REGROW.wiltMs) events.push({ type: 'weedGrows', id: `wr-${id}`, node: id, stage });
+      }
+      if (now < since + REGROW.wiltMs) continue;
+      // the one plant under it wilts: its spot needs digging again, the rest is untouched
+      l.overgrown[id] = null;
+      l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
+      l.wilted[id] = true;
+      events.push({ type: 'wilted', id, weed: `wr-${id}` });
+    }
+    const regrowing = isCommitted(l, REGROW.after) && !Object.values(l.overgrown).some((v) => v !== null);
+    if (!regrowing) l.regrowAt = null;
+    else if (l.regrowAt === null) l.regrowAt = now + REGROW.everyMs;
+    else if (now >= l.regrowAt) {
+      const planted = Object.keys(NODES).filter((id) => nodeEstablished(l, id));
+      if (planted.length) {
+        const id = planted[l.regrowSeq % planted.length];
+        l.overgrown[id] = now;
+        l.regrowSeq += 1;
+        l.regrowAt = null;
+        events.push({ type: 'weedSprouted', id: `wr-${id}`, node: id });
+      } else l.regrowAt = now + REGROW.everyMs;
     }
   }
   return { ok: true, l, events };
@@ -261,12 +340,17 @@ function tick(l0, ms) {
 
 // weeding needs the rake in her hands (A25-5)
 function clearWeed(l0, id) {
-  if (!(id in l0.weeds)) return fail('unknownWeed');
-  if (l0.weeds[id]) return fail('alreadyCleared');
+  const node = regrowNode(id);
+  if (!node && !(id in l0.weeds)) return fail('unknownWeed');
+  if (node ? !weedPresent(l0, id) : l0.weeds[id]) return fail('alreadyCleared');
   if (!weedPresent(l0, id)) return fail('notPresent');
-  if (!patchWorkable(l0, WEED_PLOT[id])) return fail('patchLocked');
+  if (!node && !patchWorkable(l0, WEED_PLOT[id])) return fail('patchLocked');
   if (l0.tool !== 'rake') return fail('needRake');
   const l = clone(l0);
+  if (node) {
+    l.overgrown[node] = null;
+    return { ok: true, l, events: [{ type: 'weedCleared', id, node }] };
+  }
   l.weeds[id] = true;
   const events = [{ type: 'weedCleared', id }];
   // the first crop patch she rakes is her crop, for good (v0.11)
@@ -295,7 +379,8 @@ function returnTool(l0) {
   return { ok: true, l, events: [{ type: 'toolReturned', tool }] };
 }
 
-// dig a crop spot with the shovel: the plant comes up, first ready 5 s later (3 s with U2)
+// dig a crop spot with the shovel: the plant comes up, first ready 5 s later (also a wilted
+// plant's spot: replanting is free)
 function dig(l0, id) {
   if (!(id in NODES)) return fail('unknownSpot');
   if (!isCommitted(l0, NODES[id].stage)) return fail('notCommitted');
@@ -303,33 +388,54 @@ function dig(l0, id) {
   if (!plotClear(l0, NODES[id].stage)) return fail('weeds');
   if (l0.tool !== 'shovel') return fail('needShovel');
   const l = clone(l0);
-  const firstReady = owns(l, 'U2') ? U2_FIRST_READY_MS : NODE_FIRST_READY_MS;
-  l.nodes[id] = { remaining: 0, readyAt: l.activeMs + firstReady, dug: true };
-  return { ok: true, l, events: [{ type: 'dug', id, stage: NODES[id].stage }] };
+  const replanted = l.wilted[id];
+  l.nodes[id] = { remaining: 0, readyAt: l.activeMs + NODE_FIRST_READY_MS, dug: true };
+  l.wilted[id] = false;
+  return { ok: true, l, events: [{ type: 'dug', id, stage: NODES[id].stage, ...(replanted ? { replanted: true } : {}) }] };
 }
 
-// a stage that costs nothing commits as soon as it opens (C0, once its two weeds are cleared);
-// commits otherwise happen only on a deposit (F25)
+function buildable(l0, stage) {
+  if (!(stage in STAGES)) return 'unknownStage';
+  const state = stageState(l0, stage);
+  if (state === 'COMMITTED') return 'committed';
+  if (state === 'LOCKED') return 'locked';
+  return null;
+}
+
+// a stage that costs nothing commits as soon as it opens (her first crop, once its two weeds
+// are cleared)
 function commitFree(l0, stage) {
-  if (!(stage in STAGES)) return fail('unknownStage');
-  const why = canDeposit(l0, stage);
+  const why = buildable(l0, stage);
   if (why) return fail(why);
-  if (!fullyFunded(l0, stage)) return fail('notFree');
-  return commitIfFunded(clone(l0), stage, []);
+  if (!isFree(l0, stage)) return fail('notFree');
+  return build(l0, stage);
 }
 
-// an optional upgrade at the crate's Buy tab: after the first sale, coins only, once (§6.5)
-function buy(l0, item) {
-  const u = UPGRADES[item];
-  if (!u) return fail('unknownItem');
-  if (!crateAvailable(l0)) return fail('noCrate');
-  if (l0.sold.C + l0.sold.S + l0.sold.T === 0) return fail('noSaleYet');
-  if (owns(l0, item)) return fail('owned');
-  if (l0.purse < u.coins) return fail('noCoins');
+// v0.12 DIY: the whole stage in one go, once she has all of it. Wood and stone come from her
+// head first, then the yard pile; coins from the purse. Standing at the stage is the caller's
+// rule (the DIY button works only there).
+function build(l0, stage) {
+  const why = buildable(l0, stage);
+  if (why) return fail(why);
+  if (!affordable(l0, stage)) return fail('short');
   const l = clone(l0);
-  l.purse -= u.coins;
-  l.owned[item] = true;
-  return { ok: true, l, events: [{ type: 'bought', item, coins: u.coins }] };
+  const need = recipe(l, stage);
+  const took = { carried: { W: 0, R: 0 }, yard: { W: 0, R: 0 }, coins: need.coins };
+  for (const r of MATERIALS) {
+    const head = Math.min(need[r], l.carried[r]);
+    l.carried[r] -= head;
+    l.yard[r] -= need[r] - head;
+    took.carried[r] = head;
+    took.yard[r] = need[r] - head;
+  }
+  l.purse -= need.coins;
+  l.stages[stage].committed = true;
+  l.paymentEvents.push(stage);
+  // a crop stage's new nodes open as dig spots (P25-4): nothing grows until each is dug
+  for (const [id, node] of Object.entries(NODES)) {
+    if (node.stage === stage) l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
+  }
+  return { ok: true, l, events: [{ type: 'built', stage, took }, { type: 'committed', stage }] };
 }
 
 // everything of wood and stone on her head onto the material pile by the house, in one step
@@ -344,6 +450,37 @@ function drop(l0, r = null) {
   return { ok: true, l, events: [{ type: 'dropped', n: { W: n.W ?? 0, R: n.R ?? 0 }, yard: { ...l.yard } }] };
 }
 
+// v0.12: the crops on her head onto the yard-sale table as she walks past it, corn, sunflowers,
+// tomatoes, until it holds TABLE_CAP; what does not fit stays on her head
+function stock(l0) {
+  if (!tableAvailable(l0)) return fail('noTable');
+  if (tableFull(l0)) return fail('tableFull');
+  if (!CROPS.some((c) => l0.carried[c] > 0)) return fail('noStock');
+  const l = clone(l0);
+  const n = zeroCrops();
+  for (const c of CROPS) {
+    const k = Math.min(l.carried[c], tableRoom(l));
+    l.carried[c] -= k;
+    l.table[c] += k;
+    n[c] = k;
+  }
+  return { ok: true, l, events: [{ type: 'stocked', n, table: { ...l.table } }] };
+}
+
+// v0.12: the yard sale, once the table is full: every item on it sells at its fixed price (§6.1)
+function yardSale(l0) {
+  if (!tableAvailable(l0)) return fail('noTable');
+  if (!tableFull(l0)) return fail('notFull');
+  const l = clone(l0);
+  const items = { ...l.table };
+  const coins = tableValue(l);
+  for (const c of CROPS) { l.sold[c] += items[c]; l.table[c] = 0; }
+  l.purse += coins;
+  l.lifetimeCoins += coins;
+  l.sales += 1;
+  return { ok: true, l, events: [{ type: 'yardSale', items, coins, sale: l.sales }] };
+}
+
 function pick(l0, src) {
   const res = sourceResource(src);
   if (!res) return fail('unknownSource');
@@ -353,19 +490,11 @@ function pick(l0, src) {
   const l = clone(l0);
   const events = [];
   l.carried[res] += 1;
-  if (src in PILES) {
-    l.piles[src] -= 1;
-    // The renewable spot starts its first 20 s once both starter piles of its resource are empty.
-    for (const [sid, spot] of Object.entries(SPOTS)) {
-      if (spot.after.includes(src) && spot.after.every((p) => l.piles[p] === 0)) {
-        const s = l.spots[sid];
-        if (s.remaining === 0 && s.readyAt === null) s.readyAt = l.activeMs + spot.renewMs;
-      }
-    }
-  } else if (src in SPOTS) {
-    const s = l.spots[src];
-    s.remaining -= 1;
-    if (s.remaining === 0) s.readyAt = l.activeMs + SPOTS[src].renewMs;
+  if (src in PILES) l.piles[src] -= 1;
+  else if (src in l.sticks) {
+    const s = l.sticks[src];
+    s.units -= 1;
+    if (s.units === 0) s.at = null;
   } else if (src in ROCKS) {
     l.rocks[src] -= 1; // finite: an empty rock never returns
     if (l.rocks[src] === 0) events.push({ type: 'rockEmpty', src });
@@ -380,94 +509,10 @@ function pick(l0, src) {
   return { ok: true, l, events };
 }
 
-function canDeposit(l0, stage) {
-  if (!(stage in STAGES)) return 'unknownStage';
-  const state = stageState(l0, stage);
-  if (state === 'COMMITTED') return 'committed';
-  if (state === 'LOCKED') return 'locked';
-  return null;
-}
-
-function depositMat(l0, stage, r) {
-  const why = canDeposit(l0, stage);
-  if (why) return fail(why);
-  if (!MATERIALS.includes(r)) return fail('notAccepted'); // crops are sold first, never delivered
-  if (stillNeeded(l0, stage)[r] <= 0) return fail('notNeeded');
-  if (onHand(l0, r) <= 0) return fail('noStock');
-  const l = clone(l0);
-  // from her head first, then from the material pile (v0.11)
-  const from = l.carried[r] > 0 ? 'carried' : 'yard';
-  if (from === 'carried') l.carried[r] -= 1; else l.yard[r] -= 1;
-  l.stages[stage].deposited[r] += 1;
-  return commitIfFunded(l, stage, [{ type: 'deposited', stage, r, n: 1, from }]);
-}
-
-// One atomic deposit of min(purse, coins still needed) (spec §6.1).
-function depositCoins(l0, stage) {
-  const why = canDeposit(l0, stage);
-  if (why) return fail(why);
-  const need = stillNeeded(l0, stage).coins;
-  if (need <= 0) return fail('notNeeded');
-  const n = Math.min(l0.purse, need);
-  if (n <= 0) return fail('noCoins');
-  const l = clone(l0);
-  l.purse -= n;
-  l.stages[stage].deposited.coins += n;
-  return commitIfFunded(l, stage, [{ type: 'deposited', stage, r: 'coins', n }]);
-}
-
-// Full funding atomically commits the stage once, consumes the escrow and grants its unlock.
-// A crop stage's new nodes open as dig spots (P25-4): nothing grows until each is dug.
-function commitIfFunded(l, stage, events) {
-  if (fullyFunded(l, stage)) {
-    l.stages[stage].committed = true;
-    l.paymentEvents.push(stage);
-    for (const [id, node] of Object.entries(NODES)) {
-      if (node.stage === stage) l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
-    }
-    events.push({ type: 'committed', stage });
-  }
-  return { ok: true, l, events };
-}
-
-// Return deposited resources: free while incomplete; coins in full to the purse; v0.11: wood and
-// stone go back onto the material pile, which has no cap (so `kept` is always zero now; the field
-// stays for the card and older tests).
-function refund(l0, stage) {
-  if (!(stage in STAGES)) return fail('unknownStage');
-  if (isCommitted(l0, stage)) return fail('committed');
-  const d = l0.stages[stage].deposited;
-  if (d.coins === 0 && d.W === 0 && d.R === 0) return fail('nothingDeposited');
-  const l = clone(l0);
-  const dep = l.stages[stage].deposited;
-  const back = { coins: dep.coins, W: 0, R: 0 };
-  l.purse += dep.coins;
-  dep.coins = 0;
-  for (const r of MATERIALS) {
-    const n = dep[r];
-    l.yard[r] += n;
-    dep[r] = 0;
-    back[r] = n;
-  }
-  return { ok: true, l, events: [{ type: 'refunded', stage, back, kept: { W: dep.W, R: dep.R } }] };
-}
-
-function sell(l0, crop) {
-  if (!crateAvailable(l0)) return fail('noCrate');
-  if (!CROPS.includes(crop)) return fail('notSellable');
-  if (l0.carried[crop] <= 0) return fail('noStock');
-  const l = clone(l0);
-  const coins = PRICES[crop];
-  l.carried[crop] -= 1;
-  l.purse += coins;
-  l.lifetimeCoins += coins;
-  l.sold[crop] += 1;
-  return { ok: true, l, events: [{ type: 'sold', crop, coins }] };
-}
-
 // ---------- validation (used by saves and tests) ----------
 const isInt = (n, lo = 0, hi = Infinity) => Number.isInteger(n) && n >= lo && n <= hi;
 const sameKeys = (o, keys) => o && typeof o === 'object' && Object.keys(o).length === keys.length && keys.every((k) => k in o);
+const isTime = (t) => t === null || isInt(t);
 
 export function validateLedger(l) {
   const errors = [];
@@ -476,6 +521,9 @@ export function validateLedger(l) {
   if (!sameKeys(l.carried, RESOURCES)) e('carried keys');
   else for (const r of RESOURCES) if (!isInt(l.carried[r], 0, CAPACITY)) e(`carried ${r} outside 0..${CAPACITY}`);
   if (!sameKeys(l.yard, YARD_MATERIALS) || !YARD_MATERIALS.every((r) => isInt(l.yard[r]))) e('yard');
+  if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c])) || sum(l.table) > TABLE_CAP) e('table');
+  else if (sum(l.table) > 0 && !BASE_STAGES.some((id) => l.stages?.[id]?.committed)) e('table stocked before any crop plot');
+  if (!isInt(l.sales)) e('sales');
   if (!(l.crop === null || CROPS.includes(l.crop))) e('crop');
   if (typeof l.harvested !== 'boolean') e('harvested');
   if (!isInt(l.purse)) e('purse must be an integer >= 0');
@@ -484,19 +532,13 @@ export function validateLedger(l) {
   if (!isInt(l.activeMs)) e('activeMs');
   if (!sameKeys(l.stages, STAGE_ORDER)) e('stage keys');
   else {
-    const cropOk = l.crop === null || CROPS.includes(l.crop);
     for (const id of STAGE_ORDER) {
       const st = l.stages[id];
-      if (typeof st?.committed !== 'boolean') { e(`${id} committed flag`); continue; }
-      if (!sameKeys(st.deposited, ['coins', 'W', 'R'])) { e(`${id} deposited keys`); continue; }
-      if (!cropOk) continue;
-      const s = recipe(l, id);
-      for (const k of ['coins', 'W', 'R']) if (!isInt(st.deposited[k], 0, s[k])) e(`${id} deposited ${k} exceeds recipe`);
-      if (st.committed) {
+      if (!sameKeys(st, ['committed']) || typeof st.committed !== 'boolean') { e(`${id} stage shape`); continue; }
+      if (st.committed && (l.crop === null || CROPS.includes(l.crop))) {
         for (const p of prereqsOf(l, id)) {
           if (p === 'second' ? plotsPlanted(l) < 2 : !l.stages[p]?.committed) e(`${id} committed before ${p}`);
         }
-        for (const k of ['coins', 'W', 'R']) if (st.deposited[k] !== s[k]) e(`${id} committed but not fully funded`);
       }
     }
     if (l.crop === null && BASE_STAGES.some((id) => l.stages[id].committed)) e('a crop patch is planted but no first crop is chosen');
@@ -508,18 +550,33 @@ export function validateLedger(l) {
   if (!sameKeys(l.weeds, WEEDS) || !WEEDS.every((w) => typeof l.weeds[w] === 'boolean')) e('weeds');
   if (!sameKeys(l.piles, Object.keys(PILES))) e('pile keys');
   else for (const [id, p] of Object.entries(PILES)) if (!isInt(l.piles[id], 0, p.units)) e(`pile ${id}`);
-  const timer = (t, max) => t && isInt(t.remaining, 0, max) && (t.readyAt === null || isInt(t.readyAt));
-  if (!sameKeys(l.spots, Object.keys(SPOTS))) e('spot keys');
-  else for (const [id, s] of Object.entries(SPOTS)) if (!timer(l.spots[id], s.batch)) e(`spot ${id}`);
+  if (!sameKeys(l.sticks, STICK_SLOTS)) e('stick keys');
+  else {
+    for (const id of STICK_SLOTS) {
+      const s = l.sticks[id];
+      if (!sameKeys(s, ['units', 'at']) || !isInt(s.units, 0, STICK.units) || !isTime(s.at) || (s.units > 0) !== (s.at !== null)) e(`stick ${id}`);
+    }
+  }
+  if (!isTime(l.stickNext) || !isInt(l.stickSeq)) e('stick clock');
   if (!sameKeys(l.nodes, Object.keys(NODES))) e('node keys');
   else {
     for (const [id, n] of Object.entries(NODES)) {
       const node = l.nodes[id];
-      if (!timer(node, n.yield) || !sameKeys(node, ['remaining', 'readyAt', 'dug']) || typeof node.dug !== 'boolean') e(`node ${id}`);
+      if (!node || !isInt(node.remaining, 0, n.yield) || !isTime(node.readyAt) || !sameKeys(node, ['remaining', 'readyAt', 'dug']) || typeof node.dug !== 'boolean') e(`node ${id}`);
       else if (!l.stages?.[n.stage]?.committed && (node.dug || node.remaining > 0 || node.readyAt !== null)) e(`node ${id} active before ${n.stage}`);
       else if (!node.dug && (node.remaining > 0 || node.readyAt !== null)) e(`node ${id} growing before it is dug`);
     }
   }
+  if (!sameKeys(l.overgrown, Object.keys(NODES))) e('overgrown keys');
+  else {
+    for (const id of Object.keys(NODES)) {
+      const o = l.overgrown[id];
+      if (!isTime(o)) e(`overgrown ${id}`);
+      else if (o !== null && !l.nodes?.[id]?.dug) e(`a weed over ${id}, which is not planted`);
+    }
+  }
+  if (!sameKeys(l.wilted, Object.keys(NODES)) || !Object.keys(NODES).every((id) => typeof l.wilted[id] === 'boolean' && !(l.wilted[id] && l.nodes?.[id]?.dug))) e('wilted');
+  if (!isTime(l.regrowAt) || !isInt(l.regrowSeq)) e('regrowth clock');
   if (!sameKeys(l.rocks, ROCK_IDS)) e('rock keys');
   else {
     for (const id of ROCK_IDS) {
@@ -528,7 +585,6 @@ export function validateLedger(l) {
     }
   }
   if (!(l.tool === null || TOOLS.includes(l.tool))) e('tool');
-  if (!sameKeys(l.owned, Object.keys(UPGRADES)) || !Object.values(l.owned).every((v) => typeof v === 'boolean')) e('owned');
   const th = l.theft;
   if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || !isInt(th.totalBeforeH4, 0, 8)) e('theft');
   return errors;

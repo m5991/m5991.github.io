@@ -23,15 +23,21 @@
 // herself with a "DIY time!" (world/build.js, ui/burst.js); the weeds sit on the three crop
 // patches and the first one she rakes is her free first crop, which themes every card and menu
 // for good (ui/theme.js).
+// v0.12 (captain's v0.11 playtest): crops she walks past go onto the yard-sale table, and a full
+// table sells with the Yard Sale button (or a tap on the stand); there are no cards for building
+// or selling: the next build's needs count down at the bottom and become its DIY button, which
+// works at the part; DIY is a hop, dust and comic hammering; sticks drop around the tree and go if
+// left; weeds creep over planted crops; Help me finish (Pause) turns those two off.
 import * as THREE from 'three';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { BASE_STAGE, CAPACITY, HAMMERED, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER, UPGRADES } from './game/data.js';
+import { BASE_STAGE, CAPACITY, HAMMERED, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, stageState, stillNeeded, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop,
+  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, tableFull, recipe,
 } from './game/ledger.js';
-import { PATCH_NAME, toGoText } from './game/guide.js';
+import { buildBar, PATCH_NAME, WOOD_SOURCES } from './game/guide.js';
+import { E21_COINS, found, SONGS, songsDue } from './game/songs.js';
 import { Hammering } from './world/build.js';
 import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
@@ -43,10 +49,10 @@ import { playsOpening, saveNotice } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
 import { createSaveData, createSaveManager } from './game/save.js';
 import {
-  createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickContextTarget, pickHighlight, toolBlocked, wantedTool,
+  atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, toolBlocked, wantedTool,
 } from './game/interaction.js';
 import { nextGoal } from './game/guide.js';
-import { coachPrompt, kindOf, learned, LINGER_MS, MOVED_M, TUTORIAL_STAGE, tutorialStep } from './game/tutorial.js';
+import { coachPrompt, kindOf, learned, LINGER_MS, MOVED_M, tutorialStep } from './game/tutorial.js';
 import { fitRect, PRESETS, Projection, projectedExtent } from './world/projection.js';
 import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
@@ -70,7 +76,7 @@ outlines.enabled = params.get('outline') !== '0';
 const DEBUG = params.has('debug');
 const SPEED = params.has('speed') ? Number(params.get('speed')) : RUN_SPEED;
 // arrow tip height above each kind of target, metres
-const ARROW_H = { weed: 0.75, pile: 0.8, spot: 0.8, rock: 0.75, node: 2.1, mat: 0.35, crate: 0.95, tools: 1.9, yard: 0.7 };
+const ARROW_H = { weed: 0.75, pile: 0.8, stick: 0.6, rock: 0.75, node: 2.1, site: 0.5, table: 1.05, tools: 1.9, yard: 0.7 };
 const $ = (id) => document.getElementById(id);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
@@ -106,7 +112,7 @@ async function boot() {
   const hero = new Hero({ registry, world, scene, speed: SPEED });
   world.setHand(hero.view.getObjectByName('Hand_R_Tool'), hero.view); // the held rake or shovel follows it
   // she builds it herself (spec v0.11 §10.10): the hammer from her bib pocket, the strikes
-  const hammering = new Hammering({ hammer: G.hammer(), hand: hero.view.getObjectByName('Hand_R_Tool'), body: hero.view, root: world.root });
+  const hammering = new Hammering({ hammer: G.hammer(), hand: hero.view.getObjectByName('Hand_R_Tool'), body: hero.view, root: world.root, physics: hero.body });
   const burst = createBurst();
   let burstHeld = false; // test hook (?debug=1): hold the burst's frame for a screenshot
   const rig = new CameraRig(proj);
@@ -133,7 +139,7 @@ async function boot() {
   hero.stack.onLand = () => sfx.cue('pop'); // a picked-up unit arrives on the stack
   world.onWash = () => sfx.cue('brush'); // one soft brush stroke as a colour wash starts (§10.9)
   hero.onFootfall = (kind) => sfx.cue('step', { gain: kind === 'run' ? 1 : 0.7 });
-  world.onBranch = (phase) => sfx.cue(phase); // the branch snaps free, then lands (P25-5)
+  world.onBranch = (phase) => sfx.cue(phase); // the stick snaps free, then lands (P25-5)
 
   // a message for the player, shown now or, while the opening plays, as it ends
   const afterOpening = [];
@@ -158,10 +164,44 @@ async function boot() {
       world.sync(data.ledger, true);
       hud.render(data.ledger);
       settleLedger();
+      checkSongs();
     } else if (data.ledger.activeMs - lastSaveAt > 5000) {
       persist(); // active time and position, throttled
     }
     return r;
+  }
+  // v0.12: a song earned by the ledger (E21: a big purse) is found, saved, then shown: a small
+  // fountain of coins over Vanessa and the song's card
+  function checkSongs() {
+    for (const id of songsDue(data.ledger, data.discoveries)) {
+      data.discoveries = { ...data.discoveries, [id]: found(data.ledger) };
+      persist();
+      later(() => songMoment(id));
+    }
+  }
+  function songMoment(id) {
+    if (finale.active) { setTimeout(() => songMoment(id), 1000); return; }
+    sfx.cue('complete');
+    const top = hero.position.clone().setY(1.9);
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const up = top.clone().add(new THREE.Vector3(Math.cos(a) * 0.7, 0.6 + (i % 3) * 0.15, Math.sin(a) * 0.35));
+      world.tweens.wait(i * 60).then(() => world.flight('coin', top, up, 420)).then(() => world.flight('coin', up, hero.position.clone().setY(1.2), 380)).then(() => sfx.cue('coin'));
+    }
+    hud.bump('coins');
+    hud.announce(`Song found: ${SONGS[id].title}`);
+    setTimeout(() => {
+      if (cards.isOpen || !session.playing) return;
+      input.release();
+      hero.halt();
+      loop.pause('card');
+      cards.message({
+        title: `♪ Song found: “${SONGS[id].title}”`,
+        text: `You saved up ${E21_COINS} coins, and someone sang about it. This is the money song, kept in your songs from now on.`,
+        cancel: 'Lovely',
+        onClose: () => loop.resume('card'),
+      });
+    }, reducedMotion() ? 300 : 1500);
   }
   function settleLedger() {
     for (let guard = 0, next = autoTxs(data.ledger); next.length && guard < 20; next = autoTxs(data.ledger), guard++) {
@@ -172,9 +212,10 @@ async function boot() {
   const stationPos = (id) => world.stations[id]?.pos.clone().setY(0.3) ?? hero.position.clone();
   const matTop = (id) => stationPos(id).setY(0.15);
 
-  // Units travel through the stack over Vanessa's head (carry.js): pile -> stack on a pick,
-  // stack -> mat or crate on a transfer, mat -> stack on a refund. A unit appears in its
-  // destination pile when its flight lands (world.expect / world.landed).
+  // Units travel through the stack over Vanessa's head (carry.js): source -> stack on a pick,
+  // stack -> the yard pile on a drop, stack -> the yard-sale table on a stock (v0.12), and from
+  // her head or the yard pile into the part on a DIY. A unit appears in its destination pile when
+  // its flight lands (world.expect / world.landed).
   function present(tx, events) {
     const l = data.ledger;
     for (const e of events) {
@@ -192,7 +233,7 @@ async function boot() {
         case 'full':
           // the cap is told at the refusal moment, never on the counter (captain, 2026-11-01)
           hud.announce(`${cap(RESOURCE_NAMES[e.res])} full`);
-          hud.toast(`${cap(RESOURCE_NAMES[e.res])} full: Vanessa carries ${CAPACITY} at most.${['C', 'S', 'T'].includes(e.res) ? ' Sell crops at the market crate.' : ' Use it at a mat.'}`, 3200);
+          hud.toast(`${cap(RESOURCE_NAMES[e.res])} full: Vanessa carries ${CAPACITY} at most.${['C', 'S', 'T'].includes(e.res) ? ' Walk past the yard-sale table to set them out.' : ' Walk past the pile by the house to drop it.'}`, 3200);
           break;
         case 'weedCleared':
           hud.announce('Weeds cleared');
@@ -201,7 +242,9 @@ async function boot() {
           // her first crop, for good: it themes every card and menu (P27-7)
           applyTheme(e.crop);
           hud.announce(`Your first crop: ${PATCH_NAME[e.crop]}`);
-          hud.toast(`${cap(PATCH_NAME[e.crop])} it is! This patch is free: rake its other weeds, then dig it with the shovel.`, 4500);
+          hud.toast(e.crop === 'T'
+            ? 'Tomatoes it is! This patch is free: rake its other weeds, then build its raised bed with sticks.'
+            : `${cap(PATCH_NAME[e.crop])} it is! This patch is free: rake its other weeds, then dig it with the shovel.`, 4500);
           break;
         case 'firstHarvest':
           hud.toast('First harvest! The other two crop patches open now: rake their weeds whenever you like.', 4500);
@@ -220,6 +263,64 @@ async function boot() {
           hud.announce(`Left at the pile: ${l.yard.W} wood, ${l.yard.R} stone`);
           break;
         }
+        case 'stocked': {
+          // v0.12: her crops come off the stack onto the table's cloth, one every 80 ms
+          let i = 0;
+          const before = l.table.C + l.table.S + l.table.T - (e.n.C + e.n.S + e.n.T);
+          for (const c of ['C', 'S', 'T']) {
+            for (let k = 0; k < e.n[c]; k++, i++) {
+              world.expect('table', c);
+              const slot = before + i;
+              hero.stack.send(c, world.tableSlotWorld(c, slot), l.carried, i * 80).then(() => { world.landed('table', c); sfx.cue('sell'); });
+            }
+          }
+          const n = l.table.C + l.table.S + l.table.T;
+          hud.announce(n >= 6 ? 'The table is full: time for a yard sale' : `On the table: ${n} of 6`);
+          if (n >= 6 && !data.session.firstSaleSeen) hud.toast('The table is full! Tap Yard Sale, or the table, to sell it all.', 4200);
+          break;
+        }
+        case 'yardSale': {
+          // v0.12: the sign goes down, neighbours walk up and take the goods; a coin pops for each
+          hud.announce(`Yard sale! Sold ${e.items.C + e.items.S + e.items.T} crops for ${e.coins} coins`);
+          const order = [];
+          for (const c of ['C', 'S', 'T']) for (let k = 0; k < e.items[c]; k++) order.push(c);
+          saleShowing = true;
+          world.yardSale(order, {
+            onSign: () => sfx.cue('confirm'),
+            onCoins: (res, from) => {
+              world.flight('coin', from.clone().setY(from.y + 0.2), hero.position.clone().setY(1.2), 380).then(() => { sfx.cue('coin'); hud.bump('coins'); });
+            },
+          }).then(() => { saleShowing = false; });
+          if (!data.session.firstSaleSeen) {
+            data.session.firstSaleSeen = true;
+            persist();
+            hud.toast(`Yard sale! ${e.coins} coins. Coins with wood and stone build everything: the bottom line shows what the next build still needs.`, 5200);
+          }
+          break;
+        }
+        case 'stickFell':
+          world.dropStick(e.src, rig.camera);
+          break;
+        case 'stickGone':
+          world.fadeStick(e.src);
+          break;
+        case 'weedSprouted':
+          hud.announce(`A weed is sprouting in the ${PATCH_NAME[NODES[e.node].res]}`);
+          break;
+        case 'weedGrows': {
+          // the two warnings (spec v0.12 P28-4): a clump, then choking the plant
+          const what = e.stage === 'clump' ? `Weeds in the ${PATCH_NAME[NODES[e.node].res]}: rake them before the plant wilts.` : `Weeds are choking a ${RESOURCE_UNIT[NODES[e.node].res]} plant! Rake them now.`;
+          hud.toast(what, 3800);
+          hud.announce(what);
+          break;
+        }
+        case 'wilted': {
+          const what = RESOURCE_UNIT[NODES[e.id].res];
+          world.wilt(e.id);
+          hud.toast(`A ${what} plant wilted under the weeds. Replant it: dig its spot with the shovel, for free.`, 4800);
+          hud.announce(`A ${what} plant wilted`);
+          break;
+        }
         case 'toolTaken':
           hud.announce(`${cap(e.tool)} in hand`);
           break;
@@ -229,74 +330,44 @@ async function boot() {
         case 'dug':
           world.revealDig(e.id, data.ledger);
           world.pulse(e.id);
-          hud.announce('Planted: ready to harvest in a few seconds');
+          hud.announce(e.replanted ? 'Replanted: ready to harvest in a few seconds' : 'Planted: ready to harvest in a few seconds');
           break;
-        case 'ready':
-          if (e.src === 'sW') world.branchDue(); // the batch falls from the tree once it is seen
-          break;
-        case 'bought':
-          hud.bump('coins');
-          hud.toast(`Bought the ${UPGRADES[e.item].label}. ${UPGRADES[e.item].effect}`, 4500);
-          break;
-        case 'deposited':
-          if (!world.piles[e.stage]) break; // a stage without a mat in this build (debug `build`): no flight
-          if (e.r === 'coins') {
-            world.expect(e.stage, 'coins', e.n);
-            const coins = [];
-            for (let i = 0; i < Math.min(6, e.n); i++) coins.push(world.flight('coin', hero.position.clone().setY(1.2), matTop(e.stage), 300 + i * 40).then(() => sfx.cue('coin')));
-            Promise.all(coins).then(() => world.landed(e.stage, 'coins', e.n));
-          } else {
-            const k = l.stages[e.stage].deposited[e.r] - 1;
-            world.expect(e.stage, e.r);
-            const to = world.matSlotWorld(e.stage, e.r, k);
-            const land = () => { world.landed(e.stage, e.r); sfx.cue(LAND_CUE[e.r]); };
-            // from her head, or (v0.11) from the yard pile, across the farm to the station
-            if (e.from === 'yard') world.flight(e.r, world.yardTopWorld(e.r, l.yard[e.r]), to, 520).then(land);
-            else hero.stack.send(e.r, to, l.carried).then(land);
+        case 'built': {
+          // v0.12 DIY: what it takes flies in from her head, the yard pile and her purse
+          const to = world.buildPoint(e.stage);
+          const spot = (k) => to.clone().add(new THREE.Vector3((k % 3 - 1) * 0.15, 0.1, 0));
+          let d = 0;
+          for (const r of ['W', 'R']) {
+            for (let k = 0; k < e.took.carried[r]; k++, d += 50) hero.stack.send(r, spot(k), l.carried, d).then(() => sfx.cue(LAND_CUE[r]));
+            for (let k = 0; k < e.took.yard[r]; k++, d += 50) {
+              const from = world.yardTopWorld(r, l.yard[r] + e.took.yard[r] - k - 1);
+              world.tweens.wait(d).then(() => world.flight(r, from, spot(k), 520)).then(() => { if (k % 2 === 0) sfx.cue(LAND_CUE[r]); });
+            }
           }
+          for (let i = 0; i < Math.min(6, e.took.coins); i++) world.flight('coin', hero.position.clone().setY(1.2), to, 300 + i * 40).then(() => sfx.cue('coin'));
+          if (e.took.coins) hud.bump('coins');
+          if (e.took.carried.W + e.took.yard.W) hud.bump('W');
+          if (e.took.carried.R + e.took.yard.R) hud.bump('R');
           break;
+        }
         case 'committed': {
           const s = STAGES[e.stage];
           const first = BASE_STAGE[data.ledger.crop] === e.stage;
-          if (HAMMERED.includes(e.stage) && world.stations[e.stage]) startBuilding(e.stage);
+          const hammered = HAMMERED.includes(e.stage) && !!world.stations[e.stage];
+          if (hammered) startBuilding(e.stage);
           else hero.celebrate(1200);
           hud.announce(HAMMERED.includes(e.stage) ? `DIY time! Vanessa builds the ${s.label}.` : `${cap(s.label)} saved`);
-          world.reveal(e.stage, s.workMs, data.ledger).then(() => {
+          // the part goes together once she has hopped to it (v0.12)
+          const lead = hammered ? Hammering.leadMs(reducedMotion()) : 0;
+          if (lead) world.holdReveal(e.stage, data.ledger);
+          world.tweens.wait(lead).then(() => world.reveal(e.stage, s.workMs, data.ledger)).then(() => {
             sfx.cue('complete');
-            if (s.crop && first) hud.toast(`The ${s.label} is clear: dig its two spots with the shovel. The market crate is open: sell your ${PATCH_NAME[data.ledger.crop]} there for coins.`, 4800);
+            if (s.crop && first) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel. The yard-sale table is set up: walk past it with your ${PATCH_NAME[data.ledger.crop]}.`, 4800);
             else if (s.crop) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel.`, 4200);
             if (s.hire) hud.toast('The first elf archer is hired. Archers and birds come in a later build.', 5000);
             if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, another crop plot and the walls.', 5000);
             if (e.stage === 'H4') finale.start(); // H4 is saved; last, the drawing gets its colour (P25-2)
           });
-          break;
-        }
-        case 'sold': {
-          const i = l.sold.C + l.sold.S + l.sold.T - 1;
-          world.expect('crate', e.crop);
-          hero.stack.send(e.crop, world.crateSlotWorld(i), l.carried).then(() => { world.landed('crate', e.crop); sfx.cue(LAND_CUE[e.crop]); });
-          hud.bump('coins');
-          if (!data.session.firstSaleSeen) {
-            data.session.firstSaleSeen = true;
-            persist();
-            hud.toast('Crops sell for coins. Coins plus wood and stone build everything. Spare coins buy tool upgrades here.', 5000);
-          }
-          break;
-        }
-        case 'refunded': {
-          const b = e.back;
-          // the units lift off the mat where they lay and fly back to the yard pile (v0.11)
-          let d = 0;
-          for (const r of ['W', 'R']) {
-            for (let k = 0; k < b[r]; k++, d += 70) {
-              world.expect('yard', r);
-              const from = world.matSlotWorld(e.stage, r, k);
-              const to = world.yardSlotWorld(r, Math.min(l.yard[r] - b[r] + k, r === 'W' ? 23 : 17));
-              world.tweens.wait(d).then(() => world.flight(r, from, to, 520)).then(() => world.landed('yard', r));
-            }
-          }
-          for (let i = 0; i < Math.min(6, b.coins); i++) world.flight('coin', matTop(e.stage), hero.position.clone().setY(1.2), 300 + i * 40).then(() => sfx.cue('coin'));
-          hud.toast(`Took back ${b.coins} coins to your purse and ${b.W} wood, ${b.R} stone to the pile.`, 4500);
           break;
         }
         default:
@@ -306,17 +377,23 @@ async function boot() {
 
   const ix = createInteraction({ getLedger, commit });
 
-  // ---------- she builds it herself (spec v0.11 §10.10, P27-3) ----------
+  // ---------- she builds it herself (spec v0.11 §10.10, P27-3; v0.12 DIY time) ----------
   // The stage is committed and saved already; this is presentation. The rake or shovel goes back
-  // to its lean first, the hammer comes out of her pocket, she faces the part and strikes it while
-  // it goes together in ink, the burst pops up at the first strike, and moving away stops her.
+  // to its lean first, she hops toward the part (dust where she lands), the hammer comes out of
+  // her pocket and she strikes it in a big comic way while it goes together in ink (dust, ticks
+  // and swoosh lines at each blow, the part jolting), the burst pops up at the first strike, and
+  // moving away stops her.
   function startBuilding(stage) {
     if (hammering.active) hammering.stop();
+    ix.reset();
     world.showHeldTool(false);
-    hammering.start(stage, STAGES[stage].workMs);
-    hammering.faceTo = world.buildPoint(stage);
+    const at = world.buildPoint(stage);
+    hammering.start(stage, STAGES[stage].workMs, { x: at.x, z: at.z });
+    hammering.faceTo = at;
+    hero.yawTarget = Math.atan2(at.x - hero.body.position.x, at.z - hero.body.position.z);
   }
-  hammering.onStrike = (i, n) => {
+  hammering.onLand = (p) => { sfx.cue('thud'); world.puff(new THREE.Vector3(p.x, 0, p.z), { scale: 1.1 }); };
+  hammering.onStrike = (i) => {
     sfx.cue('tock');
     if (i === 0) {
       // beside her, on the side away from the screen's centre
@@ -324,18 +401,44 @@ async function boot() {
       burst.show(tmpP.x < 0 ? -1 : 1);
     }
     const st = hammering.stage;
-    world.feedPart(st, (i + 1) / n); // the units on the mat fly into the part, in time with the strikes
+    world.strikePart(st, i);
     const hit = world.buildPoint(st).project(rig.camera);
     burst.tick({ x: ((hit.x + 1) / 2) * view.w, y: ((1 - hit.y) / 2) * view.h }, reducedMotion());
   };
-  hammering.onEnd = (stage) => { world.showHeldTool(true); world.feedPart(stage, 1); };
+  hammering.onEnd = () => { world.showHeldTool(true); };
+
+  // v0.12: DIY at the site she stands at, once she has everything; the Yard Sale once the table
+  // is full and she is at it (the button, E / Space, or a tap on the stand; spec v0.12 P28-1: out
+  // of reach the button says to go to the table, and the arrow points there)
+  function doDiy(stage) {
+    const r = commit({ t: 'build', stage });
+    if (r.ok) sfx.cue('confirm');
+    else hud.toast(r.reason === 'short' ? 'Not everything is here yet.' : 'This cannot be built yet.');
+  }
+  let saleShowing = false;
+  const SALE_REACH_M = 1.6;
+  function atTheTable() {
+    const t = ctxTargets.find((x) => x.kind === 'table');
+    return !!t && inReach({ x: hero.body.position.x, z: hero.body.position.z }, t, SALE_REACH_M);
+  }
+  function doYardSale() {
+    if (saleShowing || !tableFull(data.ledger)) return;
+    if (!atTheTable()) { hud.toast('Yard Sale: go to the table.', 2200); return; }
+    commit({ t: 'yardSale' });
+  }
 
   // ---------- loop with the world-pause gate ----------
   let frozen = false; // test hook (?debug=1): hold world time while the page keeps rendering
   const loop = createLoop({ world: (dt) => { if (!frozen) worldStep(dt); }, render: renderStep });
   const input = createInput({
     zone: $('stick-zone'), base: $('stick-base'), knob: $('stick-knob'),
-    onAction: () => { if (!cards.isOpen && !loop.paused) hud.triggerContext(); },
+    onAction: () => {
+      if (cards.isOpen || loop.paused) return;
+      if (hud.diyShown) hud.triggerDiy();
+      else if (hud.saleShown) hud.triggerSale();
+      else hud.triggerContext();
+    },
+    onTap: (x, y) => tapWorld(x, y),
     onEscape: () => { if (cards.isOpen) return; if (opening.active) { if (opening.phase === 'running') opening.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) openPause(); },
     onBlueprint: () => toggleBlueprint(),
     isBlocked: () => cards.isOpen || loop.paused,
@@ -353,26 +456,26 @@ async function boot() {
     hero.setInput(debugSteer ?? input.read());
     hero.preStep(dt);
     world.physics.step(1 / 60, dt / 1000, 5);
-    commit({ t: 'tick', ms: Math.round(dt) });
-    world.updateBranch(dt, rig.camera);
+    commit({ t: 'tick', ms: Math.round(dt), calm: data.settings.helpMeFinish });
+    world.updateBranch(dt);
     ctxTargets = world.targets(data.ledger);
     const heroXZ = { x: hero.body.position.x, z: hero.body.position.z };
     goal = goalFor(data.ledger, heroXZ);
     toolCtx = { want: wantedTool(data.ledger, goal, heroXZ, ctxTargets), toolsComeToMe: data.settings.toolsComeToMe };
-    const evs = ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, ...toolCtx });
+    const evs = hammering.active ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
     const working = ix.working;
-    const armedT = ix.armed && ctxTargets.find((t) => t.id === ix.armed.id);
     if (hammering.active && hero.moving) hammering.stop(); // moving away never undoes the build
-    const faceTo = working ? working : armedT ?? (hammering.active ? hammering.faceTo : null);
+    const faceTo = working ? working : hammering.active ? hammering.faceTo : null;
     hero.update(dt, { working: !!working || hammering.active, faceTo });
     hammering.update(dt); // after her pose, so the hammer sits in her fist
     if (!debugCarried) hero.setCounts(data.ledger.carried);
     world.updateHeldTool();
     world.updatePiles(dt, reducedMotion());
+    world.updateRegrowth(data.ledger);
     tweens.update(dt);
     // the ground ring: nearest collectible, solid in reach, filling while she works
-    highlight = ix.armed ? null : pickHighlight(data.ledger, heroXZ, ctxTargets, ix.state.selectedId, HIGHLIGHT_RANGE_M, toolCtx);
+    highlight = hammering.active ? null : pickHighlight(data.ledger, heroXZ, ctxTargets, ix.state.selectedId, HIGHLIGHT_RANGE_M, toolCtx);
     const still = !isMoving({ moving: hero.moving, speed: hero.groundSpeed });
     const mode = working ? 'work' : highlight?.inReach ? (still ? 'settle' : 'reach') : 'near';
     world.updateMarker(dt, highlight && { target: highlight.target, mode, progress: ix.workProgress }, reducedMotion());
@@ -386,9 +489,10 @@ async function boot() {
   let toolCtx = { want: null, toolsComeToMe: false };
   function goalFor(l, heroXZ) {
     const g = nextGoal(l);
-    if (!(g.target in ROCKS)) return g;
+    const wood = WOOD_SOURCES.includes(g.target);
+    if (!(g.target in ROCKS) && !wood) return g;
     let best = null;
-    for (const id of Object.keys(ROCKS)) {
+    for (const id of wood ? WOOD_SOURCES : Object.keys(ROCKS)) {
       const st = world.stations[id];
       if (!st || !available(l, id)) continue;
       const d = Math.hypot(st.pos.x - heroXZ.x, st.pos.z - heroXZ.z);
@@ -411,64 +515,33 @@ async function boot() {
     // a soft cue each time the first-actions guide moves on to a new step (its text shows it too)
     if (step?.phase && tut.phase && step.phase !== tut.phase) sfx.cue('cue');
     tut.phase = step?.phase ?? null;
-    const ctxT = pickContextTarget(heroXZ, ctxTargets);
-    // the hand points at the context button: the house-foundation mat's (deliver, v0.9) or the crate's (sell, P24-4b)
-    const atMat = !ix.armed && ((step?.phase === 'build' && ctxT?.id === TUTORIAL_STAGE && stageState(l, TUTORIAL_STAGE) === 'OPEN')
-      || (step?.phase === 'sell' && ctxT?.kind === 'crate'));
+    // the hand points at the button to press: DIY at the first build, Yard Sale at the first sale
+    const point = step?.phase === 'build' && hud.diyShown ? 'diy' : step?.phase === 'sale' && hud.saleShown ? 'sale' : null;
     const here = highlight?.inReach ? kindOf(highlight.target.id, l) : null;
     coachState = {
       step,
-      atMat,
-      prompt: coachPrompt({ step, learned: learned(l), mode: input.mode, here, tool: toolCtx.want, working: !!working, lingering: tut.lingerHold > 0, atMat }),
+      point,
+      prompt: coachPrompt({ step, learned: learned(l), mode: input.mode, here, tool: toolCtx.want, working: !!working, lingering: tut.lingerHold > 0, point }),
     };
   }
 
   function handleIxEvent(e) {
     if (e.type === 'workStart') { world.markerPop(0.07); return; } // answers the moment work starts
-    if (e.type === 'unit') { if (e.result.ok) world.markerPop(0.16); return; }
-    if (e.type !== 'disarmed') return;
-    const l = data.ledger;
-    if (e.kind === 'crate') {
-      if (e.reason === 'soldAll') hud.toast(`Sold ${e.units} crops for ${e.coins} coins.`);
-      else if (e.reason === 'nothingToSell') hud.toast('Nothing to sell yet — harvest corn first.');
-      else if (e.reason === 'movedAway') hud.toast(`Selling paused after ${e.units} crops. Come back and sell again to continue.`);
-    } else if (e.reason === 'movedAway') {
-      hud.toast('Building paused: what went in stays. Come back and tap Build to go on.');
-    } else if (e.reason === 'shortage') {
-      const m = e.missing;
-      hud.toast(`${cap(STAGES[e.id].label)} · ${toGoText(m)}.${m.coins ? ' Sell crops at the market crate.' : ''} What went in stays here.`, 4500);
-      hud.announce(`${cap(STAGES[e.id].label)}: ${toGoText(m)}`);
-    }
-    if (e.reason !== 'committed') hud.render(l);
+    if (e.type === 'unit') { if (e.result.ok) world.markerPop(0.16); }
   }
 
   function updateContext(heroXZ) {
-    if (ix.armed) {
-      const a = ix.armed;
-      hud.setContext(a.kind === 'crate' ? 'Stop selling' : 'Stop', () => { ix.disarm('stopped'); hud.setProgress(null); });
-      if (a.kind === 'mat') {
-        lastProgress = `${STAGES[a.id].hire ? 'Hiring' : 'Building'}: ${STAGES[a.id].label} · ${toGoText(stillNeeded(data.ledger, a.id))}`;
-      } else {
-        lastProgress = `Selling… ${a.units} sold, +${a.coins} coins`;
-      }
-      hud.setProgress(lastProgress);
-      return;
-    }
-    const t = pickContextTarget(heroXZ, ctxTargets);
-    if (t?.kind === 'mat') {
-      const locked = stageState(data.ledger, t.id) === 'LOCKED';
-      const s = STAGES[t.id];
-      hud.setContext(locked ? `${cap(s.label)} (locked)` : s.hire ? `Hire the ${s.label}` : `Build the ${s.label}`, () => openRecipe(t.id));
-    } else if (t?.kind === 'crate') {
-      hud.setContext('Open market crate', openCrate);
-    } else {
-      // at the tools: the explicit way to take the one the next job needs (P25-4)
-      const tools = ctxTargets.find((x) => x.kind === 'tools');
-      if (tools && toolCtx.want && inReach(heroXZ, tools)) {
-        const tool = toolCtx.want;
-        hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
-      } else hud.setContext(null, null);
-    }
+    // v0.12: the build line (the site she stands at, or the goal line's next build) and its DIY
+    const site = atSite(heroXZ, ctxTargets);
+    const bar = finale.active || opening.active ? null : buildBar(data.ledger, site?.id ?? null);
+    hud.setBuild(bar, bar?.ready && bar.here ? () => doDiy(bar.stage) : null);
+    hud.setSale(tableFull(data.ledger) && !saleShowing && !finale.active, doYardSale);
+    // at the tools: the explicit way to take the one the next job needs (P25-4)
+    const tools = ctxTargets.find((x) => x.kind === 'tools');
+    if (tools && toolCtx.want && inReach(heroXZ, tools)) {
+      const tool = toolCtx.want;
+      hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
+    } else hud.setContext(null, null);
     // nonmodal status: what Vanessa is doing or why the nearby source is idle
     let text = '';
     const w = ix.working;
@@ -489,67 +562,41 @@ async function boot() {
       // the yard pile, inspected (P27-1)
       const yard = !text && ctxTargets.find((x) => x.kind === 'yard' && inReach(heroXZ, x, 1.2));
       if (yard) text = `Yard pile · ${data.ledger.yard.W} wood, ${data.ledger.yard.R} stone. Build takes from here.`;
-      const near = ctxTargets.filter((x) => ['node', 'spot', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
+      // the yard-sale table, inspected (v0.12)
+      const table = !text && ctxTargets.find((x) => x.kind === 'table' && inReach(heroXZ, x, 1.2));
+      if (table) {
+        const n = data.ledger.table.C + data.ledger.table.S + data.ledger.table.T;
+        text = saleShowing ? 'Yard sale!' : n >= 6 ? 'The table is full: tap Yard Sale' : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
+      }
+      const near = ctxTargets.filter((x) => ['node', 'stick', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
       for (const n of near) {
         if (text) break;
         const res = sourceResource(n.id);
-        if (n.hold) { text = 'A branch is coming down from the tree'; break; }
+        if (n.hold) { text = 'A stick is coming down from the tree'; break; }
         if (available(data.ledger, n.id) > 0 && data.ledger.carried[res] >= CAPACITY) { text = `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
-        if (available(data.ledger, n.id) === 0) {
-          if (n.kind === 'node') { text = 'Growing'; break; }
-          if (n.kind === 'spot') { text = 'Another branch falls from the tree soon'; break; }
-        }
+        if (available(data.ledger, n.id) === 0 && n.kind === 'node') { text = data.ledger.overgrown[n.id] !== null ? 'Weeds! Rake them before it wilts' : 'Growing'; break; }
       }
+      // a wilted plant's spot (spec v0.12 P28-4)
+      const re = !text && ctxTargets.find((x) => x.kind === 'dig' && data.ledger.wilted[x.id] && inReach(heroXZ, x, 1.2));
+      if (re) text = data.ledger.tool === 'shovel' ? 'Replant: stand still to dig' : 'Replant: dig it with the shovel (it leans by the house)';
     }
     if (text !== lastProgress) { hud.setProgress(text || null); lastProgress = text; }
   }
 
-  // ---------- cards (each pauses the world and disarms; spec §11.1) ----------
-  function withCard(open) {
-    ix.disarm('modal');
-    input.release();
-    hero.halt();
-    loop.pause('card');
-    hud.setProgress(null);
-    open(() => { loop.resume('card'); });
-  }
-  function ctxNow() {
-    return { hero: { x: hero.body.position.x, z: hero.body.position.z }, targets: world.targets(data.ledger) };
-  }
-  function openRecipe(stage) {
-    const coached = stage === TUTORIAL_STAGE && tutorialStep(data.ledger, { moved: true })?.phase === 'build';
-    withCard((done) => cards.recipe({
-      l: data.ledger,
-      stage,
-      coach: coached,
-      onBuild: () => {
-        const r = ix.arm('mat', stage, null, ctxNow());
-        if (r.ok) sfx.cue('confirm');
-        if (!r.ok) hud.toast(r.reason === 'notInReach' ? 'Stand at the station to build.' : 'This station is locked.');
-      },
-      onReturn: () => {
-        const r = commit({ t: 'refund', stage });
-        if (!r.ok) hud.toast('Nothing to return.');
-      },
-      onClose: done,
-    }));
-  }
-  function openCrate() {
-    const coached = tutorialStep(data.ledger, { moved: true })?.phase === 'sell';
-    withCard((done) => cards.crate({
-      l: data.ledger,
-      coach: coached,
-      onSell: (mode) => {
-        const r = ix.arm('crate', 'crate', mode, ctxNow());
-        if (!r.ok) hud.toast('Stand by the crate to sell.');
-      },
-      // the card has already asked `Buy … for n coins?` and the player confirmed (§6.5)
-      onBuy: (item) => {
-        const r = commit({ t: 'buy', item });
-        if (r.ok) sfx.cue('confirm'); else hud.toast(r.reason === 'noCoins' ? `Need ${UPGRADES[item].coins - data.ledger.purse} more coins.` : 'Not available.');
-      },
-      onClose: done,
-    }));
+  // v0.12: a tap on the world that lands on the yard-sale stand holds the sale (the captain:
+  // "you click the stand is more intuitive")
+  function tapWorld(x, y) {
+    if (!session.playing || loop.paused || !tableFull(data.ledger)) return;
+    const st = world.stations.table;
+    if (!st?.obj.visible) return;
+    const ndc = new THREE.Vector2((x / view.w) * 2 - 1, -(y / view.h) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, rig.camera);
+    const onTable = ray.intersectObject(st.obj, true).length > 0;
+    // or close to it on screen (a finger is wide)
+    tmpP.copy(st.pos).setY(0.6).project(rig.camera);
+    const px = Math.hypot(((tmpP.x + 1) / 2) * view.w - x, ((1 - tmpP.y) / 2) * view.h - y);
+    if (onTable || px < 56) doYardSale();
   }
 
   // ---------- session: title, pause, whole farm, overlay ----------
@@ -613,19 +660,22 @@ async function boot() {
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
     burst.hide();
+    world.endSale();
+    saleShowing = false;
     $('btn-replay').hidden = !mainComplete(data.ledger);
     hud.render(data.ledger);
     hud.setGoal(nextGoal(data.ledger).text);
     persist();
     settleLedger(); // e.g. a test save from before v0.9 whose corn-plot weeds are already cleared
     $('set-tools').checked = data.settings.toolsComeToMe;
+    $('set-help').checked = data.settings.helpMeFinish;
     titleEl.hidden = true;
     session.playing = true;
     loop.resume('title');
     $('btn-pause').focus();
   }
   function openPause() {
-    ix.disarm('pause');
+    ix.reset();
     input.release();
     hero.halt();
     loop.pause('menu');
@@ -690,7 +740,8 @@ async function boot() {
     at: () => proj.groundAt(VANESSA_START.u, VANESSA_START.v), // D17
     reducedMotion,
     onStart: () => {
-      ix.disarm('finale');
+      ix.reset();
+      world.endSale();
       input.release();
       hero.halt();
       loop.pause('finale');
@@ -718,7 +769,7 @@ async function boot() {
     music: () => ({ state: audio.state, position: audio.position }),
     finished: () => mainComplete(data.ledger),
     onStart: () => {
-      ix.disarm('opening');
+      ix.reset();
       input.release();
       hero.halt();
       loop.pause('opening');
@@ -773,6 +824,8 @@ async function boot() {
   $('btn-pause').onclick = openPause;
   // P25-4 accessibility setting: the needed tool comes to her hand at the job (saved)
   $('set-tools').onchange = (ev) => { data.settings.toolsComeToMe = ev.target.checked; persist(); };
+  // v0.12: Help me finish: no weeds creep over the crops and no stick is lost (saved)
+  $('set-help').onchange = (ev) => { data.settings.helpMeFinish = ev.target.checked; persist(); };
   $('btn-resume').onclick = closePause;
   $('btn-whole').onclick = () => enterWhole(false);
   $('btn-overlay').onclick = () => enterWhole(true);
@@ -786,7 +839,7 @@ async function boot() {
     });
   };
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { ix.disarm('hidden'); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
+    if (document.hidden) { ix.reset(); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
     audio.setHidden(document.hidden);
   });
 
@@ -850,7 +903,7 @@ async function boot() {
     Object.assign($('frame').style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     if (opening?.active) paper.place(w, h); // the sheet for the new screen, and a new still
   }
-  window.addEventListener('resize', () => { ix.disarm('resize'); layout(); });
+  window.addEventListener('resize', () => { layout(); });
   layout();
 
   // points the tree must not hide: Vanessa's legs, body and head, the marked collectible and
@@ -922,13 +975,13 @@ async function boot() {
   function updateCoach() {
     if (loop.paused || rig.mode === 'whole' || !session.playing || !coachState) { coach.hideAll(); badge.hidden = true; return; }
     if (hammering.active) { coach.hideAll(); return; } // nothing over the build
-    const { step, prompt, atMat } = coachState;
+    const { step, prompt, point } = coachState;
     // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
     const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : step?.target ? [{ id: step.target }] : [];
     const arrows = [];
     for (const aim of aims) {
       const st = world.stations[aim.id];
-      if (!st || atMat) continue;
+      if (!st || point) continue;
       const hp = hero.body.position;
       const atTarget = Math.hypot(st.pos.x - hp.x, st.pos.z - hp.z) - st.def.r <= 0.9;
       if (atTarget) continue;
@@ -941,7 +994,7 @@ async function boot() {
     coach.tip(prompt, !$('progress').hidden);
     placeStackBadge();
     coach.demo(step?.phase === 'move' && input.mode !== 'keyboard' && !input.stickActive); // not while she is already dragging
-    coach.pointAtContext(atMat);
+    coach.pointAt(point === 'diy' ? $('btn-diy') : point === 'sale' ? $('btn-sale') : null);
   }
 
   function renderStep(dt) {
@@ -1028,7 +1081,7 @@ async function boot() {
       audio, get highlight() { return highlight; }, get coachState() { return coachState; }, get tut() { return tut; },
       teleport(u, v) { const g = proj.groundAt(u, v); hero.place(g.x, g.z); rig.snap = true; },
       place(x, z) { hero.place(x, z); rig.snap = true; },
-      enterWhole, leaveWhole, start, openPause, openRecipe, openCrate,
+      enterWhole, leaveWhole, start, openPause, doDiy, doYardSale, tapWorld,
       fps: () => loop.fps,
       // deterministic world time for automated checks: runs the same world step the loop runs
       advance(ms, frame = 50) { for (let t = 0; t < ms; t += frame) if (!loop.paused) worldStep(frame); },
@@ -1069,12 +1122,11 @@ async function boot() {
           // a crop plot that waits for the first harvest: the cheat marks it harvested
           if (STAGES[st].afterHarvest && !isFirstCrop(data.ledger, st) && data.ledger.crop && !data.ledger.harvested) data.ledger = { ...data.ledger, harvested: true };
           rake(STAGES[st].weeds ?? []);
-          const need = stillNeeded(data.ledger, st);
+          const need = recipe(data.ledger, st);
           const c = data.ledger.carried;
           data.ledger = { ...data.ledger, purse: data.ledger.purse + need.coins, carried: { ...c, W: Math.max(c.W, need.W), R: Math.max(c.R, need.R) } };
-          for (const r of ['W', 'R']) for (let k = stillNeeded(data.ledger, st)[r]; k > 0; k--) commit({ t: 'depositMat', stage: st, r });
-          if (stillNeeded(data.ledger, st).coins > 0) commit({ t: 'depositCoins', stage: st });
-          settleLedger(); // a free stage (C0) commits here
+          if (need.coins + need.W + need.R > 0) commit({ t: 'build', stage: st });
+          settleLedger(); // a free stage (her first crop) commits here
           if (!data.ledger.stages[st].committed) return;
           done.push(st);
           rake(plotWeeds(st));

@@ -4,9 +4,9 @@
 // show what the ledger already committed and saved.
 // Playtest fixes (captain phone test 2026-11-01): the tree fades while it hides Vanessa or the
 // marked target; a ground ring marks the nearest collectible and fills with each work unit;
-// sources pop as a unit leaves and weed clumps shrink away instead of vanishing. Delivered
-// units pile up on their mat and sold crops fill the market crate (carry.js), each appearing
-// as its flight lands; a built stage's mat waits for its last unit, then shrinks away.
+// sources pop as a unit leaves and weed clumps shrink away instead of vanishing. Dropped wood and
+// stone pile up at the yard pile and crops set out on the yard-sale table (carry.js), each
+// appearing as its flight lands.
 // v0.9 (addendum 25): the rake and shovel go from their lean into Vanessa's right hand and back
 // (P25-4); crop spots show as dig spots until dug, then the plant comes up (P25-4); every
 // renewable wood batch falls from the tree as a dead branch, waiting in the tree while its spot
@@ -16,15 +16,21 @@
 // its colour (game/reveal.js). Until then it is its outline (paper inside the ink line) or its
 // blueprint ghost; the blueprint button fades those in and out; a commit washes the colour in.
 // The finale's colour (P25-2: grass from her feet, blue sky, yellow sun) is set here too.
+// v0.12 (captain's v0.11 playtest): no mats any more (a build's site is marked only by its own
+// blueprint outline); crops she walks past go onto the yard-sale table, and a yard sale is a small
+// scene (the sign goes down, neighbours walk up, the goods go into their baskets, coins pop out);
+// sticks drop from the tree onto random spots around it and fade if left; weeds creep over planted
+// crops and a plant left under one wilts; the raised bed is built (its outline until T0); dust
+// puffs up when she builds.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { HOUSE_STAGES, NODES, PILES, SPOTS, STAGES, YARD_SHOWN } from '../game/data.js';
-import { crateAvailable, digOpen, isCommitted, missingPrereqs, recipe, stageState, stillNeeded } from '../game/ledger.js';
+import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, YARD_SHOWN } from '../game/data.js';
+import { digOpen, isCommitted, tableAvailable, weedPresent } from '../game/ledger.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
 import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, STEPPING, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
-import { CRATE_SHOWN, crateSlot, matSlot, UnitPile, yardSlot } from './carry.js';
+import { TABLE_SHOWN, tableSlot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { BLUEPRINT_FADE_MS, FINALE_COLOURS, PARTS, partLook, partsColouredBy, REDUCED_FADE_MS, WASH_MS } from '../game/reveal.js';
@@ -39,26 +45,24 @@ const ray = new THREE.Raycaster();
 const tmpV = new THREE.Vector3();
 export const REDUCED_FLIGHT_MS = 150; // reduced motion: a unit fades, never arcs (V8)
 
-// a station model's own scale: mats sized to their reach, the bed's weeds a little smaller,
-// the yard pile drawn large enough to read on a phone
+// a station model's own scale: the bed's weeds a little smaller, the yard pile drawn large enough
+// to read on a phone
 export function stationScale(def) {
-  if (def.kind === 'mat') return def.r / 0.62;
   if (def.bed) return 0.8;
   if (def.kind === 'yard') return 1.25;
+  if (def.kind === 'stick') return 0.85;
   return 1;
 }
 
-// v0.11: which station mats show on this ledger. A mat shows while its stage is not built and is
-// one she can work toward now: the house shows its next stage (locked or not), any other
-// station once its prerequisites are met (it may still wait for its weeds). Her first crop's
-// plot costs nothing and has no mat.
-export function matShown(l, id) {
-  if (isCommitted(l, id)) return false;
-  const r = recipe(l, id);
-  if (r.coins + r.W + r.R === 0) return false;
-  if (HOUSE_STAGES.includes(id)) return HOUSE_STAGES.find((h) => !isCommitted(l, h)) === id;
-  return !missingPrereqs(l, id).length;
-}
+// v0.12 yard sale timings (ms): the sign goes down, the buyers walk up, each takes their goods,
+// they walk off; reduced motion: everything fades in place within about a second
+export const SALE_MS = { sign: 320, walkIn: 1500, take: 260, pause: 220, walkOut: 1300, linger: 500 };
+// where the buyers come from and stand, in drawing units relative to the table (u, v): across
+// the stall from the camera, facing it, so the goods stay in view as they go
+const BUYER_FROM = [[11, -4], [14, -1.5], [12, 1]];
+const BUYER_AT = [[-1.6, -2.4], [0.3, -2.8], [2.1, -2.3]];
+export const SIGN_SCALE = 1.45;
+const PUFF_SIZE = 2.4; // a dust puff read at phone size: about 0.6 m across at its fullest
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -109,7 +113,7 @@ export class World {
     this.fits = {}; // id -> { scale, extent, heightM }
     this.root = new THREE.Group();
     scene.add(this.root);
-    this.piles = {}; // station id -> UnitPile of delivered units (mats) or sold crops (crate)
+    this.piles = {}; // 'yard' -> the yard pile's units, 'table' -> the yard-sale table's goods
     this.incoming = {}; // `${id}:${res}` -> units still flying to that pile
     this.parts = {}; // drawing part id (reveal.js PARTS) -> its looks
     this.blueprint = true; // P25-3, the player's setting (main.js)
@@ -156,9 +160,12 @@ export class World {
     this.addPart('D10', { model: restored, before: [paintable(bench, { colour: 0 })] });
     this.benchFootprint = fader(footprint);
     const bed = fitted('D18', G.raisedBed());
+    // the bed's plants sit in it, but apart from its boards: the bed is an outline until T0 (v0.12)
     const bedPlants = G.bedPlants();
-    bed.add(bedPlants);
+    bedPlants.position.copy(bed.position); bedPlants.rotation.copy(bed.rotation); bedPlants.scale.copy(bed.scale);
+    this.root.add(bedPlants);
     this.addBox(bed, 2.4, 1.1, 1);
+    this.addPart('D18', { model: bed, outlineBefore: true });
     this.addPart('tomatoes', { model: bedPlants.getObjectByName('D19_TomatoStems'), outlineBefore: true });
     this.bed = bed;
     this.nodeViews = {}; // crop node id -> { dig, units: Group of its ripe units (or null) }
@@ -299,6 +306,8 @@ export class World {
 
     // stations
     for (const def of STATIONS) this.buildStation(def);
+    this.buildRegrowth();
+    this.buildSale();
     this.marker = { obj: G.marker(), id: null, alpha: 0, t: 0, pop: 0, popAmp: 0, scale: 1 };
     this.marker.obj.visible = false;
     this.root.add(this.marker.obj);
@@ -441,12 +450,12 @@ export class World {
     switch (def.kind) {
       case 'weed': obj = G.weed(); break;
       case 'pile': obj = G.fallenBranch(PILES[def.id].units, def.id === 'pW1' ? 1 : 2); break;
-      case 'spot': obj = G.fallenBranch(SPOTS[def.id].batch, 3); break;
+      case 'stick': obj = G.fallenBranch(STICK.units, Number(def.id.slice(1)) + 3); obj.visible = false; break;
       case 'rock': obj = G.looseRock(Number(def.id.slice(1)) || 9); break;
       case 'tools': obj = new THREE.Group(); break; // the tools themselves are D13/D14
-      case 'mat': obj = G.mat(); break;
+      case 'site': obj = new THREE.Group(); break; // v0.12: nothing marks a build site
       case 'yard': obj = G.yardPatch(); break;
-      case 'crate': obj = G.crate(); obj.visible = false; break;
+      case 'table': obj = G.yardTable(); obj.visible = false; break;
       default: throw new Error(def.kind);
     }
     obj.position.copy(pos);
@@ -454,27 +463,64 @@ export class World {
     obj.name = `${def.kind}:${def.id}`;
     this.root.add(obj);
     this.stations[def.id] = { def, obj, pos };
-    if (def.kind === 'mat') this.piles[def.id] = new UnitPile(obj, matSlot);
     if (def.kind === 'yard') this.piles.yard = new UnitPile(obj, yardSlot, 1.4);
     obj.scale.setScalar(stationScale(def));
-    if (def.kind === 'crate') this.piles.crate = new UnitPile(obj, crateSlot, 1.3);
-    if (def.kind === 'crate') {
-      this.crateBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.43, 0.3, 0.31)) });
-      this.crateBody.position.set(pos.x, 0.3, pos.z);
+    if (def.kind === 'table') {
+      this.piles.table = new UnitPile(obj, tableSlot, 1.3);
+      this.tableBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.33, 0.28)) });
+      this.tableBody.position.set(pos.x, 0.33, pos.z);
     }
+  }
+
+  // v0.12: a weed that can creep over each planted crop node, in front of its plant (hidden
+  // until the ledger says it is there); it is a weed station like the opening's clumps
+  buildRegrowth() {
+    for (const id of Object.keys(NODES)) {
+      const plant = this.stations[id];
+      if (!plant) continue;
+      const obj = G.weed();
+      const bed = NODES[id].res === 'T';
+      const pos = bed ? this.bedAt(id).add(new THREE.Vector3(0.1, 0, 0.12)) : plant.pos.clone().add(new THREE.Vector3(0.08, 0, 0.18));
+      obj.position.copy(pos);
+      obj.visible = false;
+      obj.name = `weed:wr-${id}`;
+      this.root.add(obj);
+      const def = { id: `wr-${id}`, kind: 'weed', r: 0.3, label: 'weeds', regrow: id, ...(bed ? { bed: id } : {}) };
+      obj.scale.setScalar(stationScale(def));
+      this.stations[def.id] = { def, obj, pos: pos.clone().setY(0) };
+    }
+  }
+
+  // v0.12: the sale's sign and buyers, made once and shown only during a yard sale
+  buildSale() {
+    const t = this.stations.table;
+    const sign = G.saleSign();
+    sign.visible = false;
+    sign.position.copy(this.ground(STATIONS.find((d) => d.id === 'table').u + 2.2, STATIONS.find((d) => d.id === 'table').v + 1.2));
+    sign.rotation.y = -0.25;
+    sign.scale.setScalar(SIGN_SCALE);
+    this.root.add(sign);
+    const buyers = [0, 1, 2].map((i) => {
+      const b = G.buyer(i);
+      b.visible = false;
+      this.root.add(b);
+      return b;
+    });
+    this.sale = { sign, buyers, active: false, goods: null, token: 0, table: t };
   }
 
   // targets for the interaction controller (positions in metres on the ground)
   targets(l) {
     const out = [];
     for (const [id, s] of Object.entries(this.stations)) {
-      if (s.def.kind === 'crate' && !crateAvailable(l)) continue;
-      if (s.def.kind === 'mat' && !matShown(l, id)) continue; // built, or not reachable yet
+      if (s.def.kind === 'table' && !tableAvailable(l)) continue;
+      if (s.def.kind === 'site' && isCommitted(l, id)) continue; // built
       if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
+      if (s.def.regrow && !weedPresent(l, id)) continue;
       const kind = s.def.kind === 'node' && digOpen(l, id) ? 'dig' : s.def.kind;
       const t = { id, kind, x: s.pos.x, z: s.pos.z, r: s.def.r, label: s.def.label };
-      if (id === 'sW' && this.branch.state !== 'idle') t.hold = true; // still in the tree or falling
+      if (s.def.kind === 'stick' && this.branch.state !== 'idle' && this.branch.id === id) t.hold = true; // still falling
       out.push(t);
     }
     return out;
@@ -486,52 +532,37 @@ export class World {
     for (const [id, s] of Object.entries(this.stations)) {
       const { kind } = s.def;
       if (kind === 'weed') {
-        const gone = l.weeds[id];
+        const gone = s.def.regrow ? !weedPresent(l, id) : l.weeds[id];
         if (gone && s.obj.visible && animate && !this.revealing?.has(id)) this.shrinkAway(id);
+        else if (!gone && !s.obj.visible && animate && s.def.regrow && !this.revealing?.has(id)) this.creepIn(id);
         else if (!this.revealing?.has(id)) { s.obj.visible = !gone; s.obj.scale.setScalar(stationScale(s.def)); }
       } else if (kind === 'pile') {
         showUnits(s.obj, l.piles[id]);
         s.obj.getObjectByName('patch').visible = l.piles[id] > 0; // a starter pile never returns
-      } else if (kind === 'spot') {
-        showUnits(s.obj, l.spots[id].remaining);
-        // a batch that is due shows only when its branch has fallen (P25-5)
-        s.obj.visible = this.branch.state === 'idle' || l.spots[id].remaining === 0;
-        if (this.branch.state !== 'idle') showUnits(s.obj, 0);
+      } else if (kind === 'stick') {
+        // v0.12: a stick lies where it fell; one that is falling shows when it lands
+        const n = l.sticks[id].units;
+        showUnits(s.obj, n);
+        if (!this.revealing?.has(id)) s.obj.visible = n > 0 && !(this.branch.state !== 'idle' && this.branch.id === id);
       } else if (kind === 'rock') {
         const n = l.rocks[id];
         showUnits(s.obj, n);
         if (n === 0 && s.obj.visible && animate && !this.revealing?.has(id) && s.seen) this.fadeRock(id);
         else if (!this.revealing?.has(id)) s.obj.visible = n > 0;
         if (n > 0) s.seen = true; // a rock that had stone fades when emptied; an empty one never shows
-      } else if (kind === 'mat') {
-        const st = stageState(l, id);
-        const shown = matShown(l, id);
-        const base = s.def.r / 0.62;
-        if (st === 'COMMITTED' && s.obj.visible && animate && !this.revealing?.has(`mat:${id}`)) this.retireMat(id);
-        else if (shown && !s.obj.visible && animate && !this.revealing?.has(`mat:${id}`) && !this.playHidden) this.popMat(id);
-        else if (!this.revealing?.has(`mat:${id}`)) { s.obj.visible = shown; s.obj.scale.setScalar(base); }
-        const dep = l.stages[id].deposited;
-        const n = (r, cap = Infinity) => Math.max(0, Math.min(cap, dep[r] - this.inFlight(id, r)));
-        const units = [...Array(n('W')).fill('W'), ...Array(n('R')).fill('R'), ...Array(n('coins', 12)).fill('coins')];
-        // a built stage's units go into the part as she hammers (feedPart)
-        const fed = st === 'COMMITTED' ? this.fed?.[id] ?? 0 : 0;
-        this.piles[id].set(units.slice(0, Math.round(units.length * (1 - fed))), { pop: animate });
-        const rc = recipe(l, id);
-        const total = rc.coins + rc.W + rc.R;
-        const need = stillNeeded(l, id);
-        G.setMatFill(s.obj, total ? 1 - (need.coins + need.W + need.R) / total : 0);
-        s.obj.getObjectByName('border').material.color.set(st === 'LOCKED' ? 0x9a9a9a : G.PALETTE.cap);
       } else if (kind === 'yard') {
         // the pile: what she has dropped, each unit appearing as its flight lands (P27-1)
         const n = (r) => Math.max(0, Math.min(YARD_SHOWN[r], l.yard[r] - this.inFlight('yard', r)));
         this.piles.yard.set([...Array(n('W')).fill('W'), ...Array(n('R')).fill('R')], { pop: animate });
         this.yardHidden = Math.max(0, l.yard.W - YARD_SHOWN.W) + Math.max(0, l.yard.R - YARD_SHOWN.R);
-      } else if (kind === 'crate') {
-        if (crateAvailable(l) && !s.obj.visible && !this.revealing?.has('crate')) s.obj.visible = true;
-        const shown = [];
-        for (const c of ['C', 'S', 'T']) for (let i = l.sold[c] - this.inFlight('crate', c); i > 0 && shown.length < CRATE_SHOWN; i--) shown.push(c);
-        this.piles.crate.set(shown, { pop: animate });
-        if (crateAvailable(l) && !this.crateBody.world) this.physics.addBody(this.crateBody);
+      } else if (kind === 'table') {
+        // v0.12: the table appears with her first crop plot; its goods, each as its flight lands,
+        // and during a sale the sold goods until the buyers take them
+        if (tableAvailable(l) && !s.obj.visible && !this.revealing?.has('table') && !this.playHidden) s.obj.visible = true;
+        const shown = this.sale.goods ? [...this.sale.goods] : [];
+        for (const c of ['C', 'S', 'T']) for (let i = l.table[c] - this.inFlight('table', c); i > 0 && shown.length < TABLE_SHOWN; i--) shown.push(c);
+        this.piles.table.set(shown, { pop: animate });
+        if (tableAvailable(l) && !this.tableBody.world) this.physics.addBody(this.tableBody);
       }
     }
     this.lastLedger = l;
@@ -646,11 +677,11 @@ export class World {
     this.revealing ??= new Set();
     if (STAGES[stage].crop) {
       // a crop plot is dug, not built: its commit opens its two dig spots, and the first plot
-      // brings the market crate (v0.11: whichever crop she chose)
+      // brings the yard-sale table (whichever crop she chose)
       const spots = Object.keys(NODES).filter((id) => NODES[id].stage === stage && this.nodeViews[id]).map((id) => this.nodeViews[id].dig);
-      const crate = this.stations.crate.obj;
+      const crate = this.stations.table.obj;
       const withCrate = !crate.visible;
-      if (withCrate) this.revealing.add('crate');
+      if (withCrate) this.revealing.add('table');
       const base = spots.map((d) => d.scale.x);
       for (const d of spots) { d.visible = true; d.scale.setScalar(0.01); }
       if (withCrate) { crate.visible = true; crate.scale.setScalar(0.01); }
@@ -660,10 +691,17 @@ export class World {
         if (withCrate) crate.scale.setScalar(k);
       }, ease.outBack);
       spots.forEach((d, i) => d.scale.setScalar(base[i]));
-      this.revealing.delete('crate');
+      this.revealing.delete('table');
     }
     // the parts this commit finishes (a crop plant waits for its digging: revealDig)
     await this.washParts(partsColouredBy(stage).filter((id) => this.parts[id] && partLook(l, id) === 'colour'), ms);
+  }
+
+  // v0.12: a part keeps its blueprint look while she hops to it (the commit is saved already);
+  // `reveal` then builds it and washes its colour in
+  holdReveal(stage, l) {
+    this.revealing ??= new Set();
+    for (const id of partsColouredBy(stage)) if (this.parts[id] && partLook(l, id) === 'colour') this.revealing.add(id);
   }
 
   // a dug spot: the soil patch goes, the plant comes up in ink and takes its colour (P25-4,
@@ -698,7 +736,7 @@ export class World {
     if (!reduced && buildMs > 0) {
       // house parts rise from the plinth line and a dug corn plant grows, in ink; a part already
       // drawn in outline (plants, the bench, the stones) simply waits for its colour
-      const kind = (x) => (['H1', 'H2', 'H3', 'H4'].includes(x.id) ? 'rise' : ['c1', 'c2', 'c3', 'c4'].includes(x.id) ? 'grow' : null);
+      const kind = (x) => (['H1', 'H2', 'H3', 'H4', 'D18'].includes(x.id) ? 'rise' : ['c1', 'c2', 'c3', 'c4'].includes(x.id) ? 'grow' : null);
       await this.tweens.run(buildMs, (t) => {
         for (const x of models) {
           const k = kind(x);
@@ -724,23 +762,23 @@ export class World {
   }
 
   // ---------- the colour finale (P25-2): presentation only ----------
-  // Hide the play elements (V9: mats and their piles, the crate and its load, sources, weeds,
+  // Hide the play elements (V9: the yard pile, the table and its goods, sources, weeds,
   // leftover rocks, the ring); k 0 shown .. 1 gone. Crop plants stay: they are the drawing.
   setPlayHidden(k) {
     this.playHidden = k;
     for (const s of Object.values(this.stations)) {
-      if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock', 'yard'].includes(s.def.kind)) continue;
+      if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard'].includes(s.def.kind)) continue;
       if (k >= 1) s.obj.visible = false;
       s.obj.scale.setScalar(stationScale(s.def) * Math.max(0.01, 1 - k));
     }
-    if (k > 0) this.marker.obj.visible = false;
+    if (k > 0) { this.marker.obj.visible = false; this.sale.sign.visible = false; for (const b of this.sale.buyers) b.visible = false; }
     if (k === 0) {
       for (const s of Object.values(this.stations)) {
-        if (!['weed', 'pile', 'spot', 'mat', 'crate', 'rock', 'yard'].includes(s.def.kind)) continue;
+        if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard'].includes(s.def.kind)) continue;
         s.obj.scale.setScalar(stationScale(s.def));
-        if (['pile', 'spot', 'yard'].includes(s.def.kind)) s.obj.visible = true; // sync shows their units
+        if (['pile', 'yard'].includes(s.def.kind)) s.obj.visible = true; // sync shows their units
       }
-      if (this.lastLedger) this.sync(this.lastLedger); // weeds, mats, crate and rocks by the ledger
+      if (this.lastLedger) this.sync(this.lastLedger); // weeds, sticks, the table and rocks by the ledger
     }
   }
   // grass 0..1 spreads from `centre` (her feet) to the far corners; sky 0..1 rises from the
@@ -909,49 +947,56 @@ export class World {
     });
   }
 
-  // ---------- the falling branch (P25-5) ----------
+  // ---------- the falling stick (P25-5; v0.12: onto any of the slots around the tree) ----------
   buildBranch() {
-    const spot = this.stations.sW;
-    const obj = G.fallingBranch(SPOTS.sW.batch, 3);
-    // the same lengths as the spot's branch, so it lands exactly as the batch lies
-    obj.children.forEach((c) => c.applyMatrix4(new THREE.Matrix4().makeRotationY(0.35 + 3 * 0.9)));
+    const obj = G.fallingBranch(STICK.units, 4);
     obj.visible = false;
     this.root.add(obj);
     const tree = this.objects.D09;
     const k = tree.scale.x;
-    // out of the right edge of the canopy, on its near side, over the wood spot's side of the tree
+    // out of the right edge of the canopy, on its near side
     const start = tree.position.clone().add(new THREE.Vector3(1.85 * k, 2.55 * k, 0.75 * k));
-    const toTree = new THREE.Vector3().subVectors(tree.position, spot.pos).setY(0).normalize();
-    const land = spot.pos.clone().addScaledVector(toTree, 0.55);
-    this.branch = { state: 'idle', t: 0, obj, start, land, end: spot.pos.clone(), cracked: false, thudded: false };
+    this.branch = { state: 'idle', id: null, t: 0, obj, start, land: new THREE.Vector3(), end: new THREE.Vector3(), cracked: false, thudded: false };
     this.onBranch = null; // (phase: 'crack' | 'thud') -> void: sounds (main.js)
   }
-  // a renewable batch came due in the ledger: its branch waits in the tree until its spot is seen
-  branchDue() { if (this.branch.state === 'idle') { this.branch.state = 'waiting'; this.branch.t = 0; } }
+  // a stick fell in the ledger: it falls from the canopy onto its slot when the slot is on screen
+  // and no other is falling; otherwise it simply pops up where it lies
+  dropStick(id, camera = null) {
+    const st = this.stations[id];
+    if (!st) return;
+    const b = this.branch;
+    if (b.state !== 'idle' || !camera || !this.onScreen(st.pos, camera)) { this.popIn(id); return; }
+    const tree = this.objects.D09;
+    const toTree = new THREE.Vector3().subVectors(tree.position, st.pos).setY(0).normalize();
+    b.id = id;
+    b.end.copy(st.pos);
+    b.land.copy(st.pos).addScaledVector(toTree, 0.45);
+    b.obj.rotation.set(0, 0, 0);
+    b.obj.children.forEach((c) => { c.rotation.y = 0.35 + (Number(id.slice(1)) + 3) * 0.9; });
+    b.obj.scale.setScalar(stationScale(st.def));
+    b.state = this.reducedMotion() ? 'fading' : 'falling';
+    b.t = 0; b.cracked = false; b.thudded = false;
+    st.obj.visible = false;
+  }
   get branchPending() { return this.branch.state !== 'idle'; }
   // while the branch falls, the tree must not hide it (the occluder fade takes this point)
   branchPoint(out) {
     const b = this.branch;
     return b.state === 'falling' && b.obj.visible ? out.copy(b.obj.position).setY(Math.max(0.2, b.obj.position.y)) : null;
   }
-  spotOnScreen(camera) {
-    const p = tmpV.copy(this.branch.end).setY(0.2).project(camera);
+  onScreen(pos, camera) {
+    const p = tmpV.copy(pos).setY(0.2).project(camera);
     return p.z < 1 && Math.abs(p.x) <= 0.92 && Math.abs(p.y) <= 0.92;
   }
-  updateBranch(dtMs, camera) {
+  updateBranch(dtMs) {
     const b = this.branch;
     if (b.state === 'idle') return;
     const tree = this.objects.D09;
-    if (b.state === 'waiting') {
-      if (!camera || !this.spotOnScreen(camera)) return;
-      b.state = this.reducedMotion() ? 'fading' : 'falling';
-      b.t = 0; b.cracked = false; b.thudded = false;
-    }
     b.t += dtMs;
     const o = b.obj;
     if (b.state === 'fading') {
-      // reduced motion: no shiver, no fall; the branch fades in at the spot within 150 ms
-      if (!b.cracked) { b.cracked = true; o.visible = true; o.position.copy(b.end); o.rotation.set(0, 0, 0); this.fadeIn = fadeable(o); }
+      // reduced motion: no shiver, no fall; the stick fades in at its slot within 150 ms
+      if (!b.cracked) { b.cracked = true; o.visible = true; o.position.copy(b.end); this.fadeIn = fadeable(o); }
       const a = Math.min(1, b.t / 150);
       for (const m of this.fadeIn) m.opacity = a;
       if (b.t >= 150) this.landBranch();
@@ -975,7 +1020,7 @@ export class World {
       o.rotation.set(0.5 * (1 - u), 0.6 * (1 - u), 0.9 * (1 - u) * Math.cos(u * 2.2)); // turning slightly
       return;
     }
-    if (!b.thudded) { b.thudded = true; this.onBranch?.('thud'); }
+    if (!b.thudded) { b.thudded = true; this.onBranch?.('thud'); this.puff(b.land, { scale: 0.7 }); }
     t -= fall;
     if (t < bounce) {
       const u = t / bounce;
@@ -998,6 +1043,37 @@ export class World {
     if (this.fadeIn) { for (const m of this.fadeIn) m.dispose(); this.fadeIn = null; restoreMaterials(b.obj); }
     this.objects.D09.rotation.set(0, this.objects.D09.rotation.y, 0);
     b.state = 'idle';
+    b.id = null;
+    if (this.lastLedger) this.sync(this.lastLedger, false);
+  }
+  // a stick that lands off screen (or while another falls) pops up where it lies
+  async popIn(id) {
+    const st = this.stations[id];
+    this.revealing ??= new Set();
+    this.revealing.add(id);
+    const o = st.obj;
+    const k = stationScale(st.def);
+    o.visible = true;
+    await this.tweens.run(this.reducedMotion() ? 150 : 320, (t) => o.scale.setScalar(k * Math.max(0.01, this.reducedMotion() ? 1 : ease.outBack(t))), ease.out);
+    o.scale.setScalar(k);
+    this.revealing.delete(id);
+    if (this.lastLedger) this.sync(this.lastLedger, false);
+  }
+  // v0.12: a stick left too long is gone: it fades and sinks a little (or is just gone if it is
+  // still falling)
+  async fadeStick(id) {
+    const st = this.stations[id];
+    if (this.branch.id === id && this.branch.state !== 'idle') { this.landBranch(); }
+    this.revealing ??= new Set();
+    this.revealing.add(id);
+    const o = st.obj;
+    o.visible = true;
+    const ms = this.reducedMotion() ? 150 : 600;
+    await this.tweens.run(ms, (t) => { setOpacity(o, 1 - t); o.position.y = -0.04 * t; });
+    o.visible = false;
+    o.position.y = 0;
+    setOpacity(o, 1);
+    this.revealing.delete(id);
     if (this.lastLedger) this.sync(this.lastLedger, false);
   }
 
@@ -1009,12 +1085,12 @@ export class World {
     this.incoming[`${id}:${res}`] = Math.max(0, this.inFlight(id, res) - n);
     if (this.lastLedger) this.sync(this.lastLedger, true);
   }
-  // where the k-th delivered unit of `res` sits on a mat, and the i-th sold crop in the crate
-  matSlotWorld(id, res, k) { return this.piles[id].slotWorld(res, k, k); }
   // the yard pile (v0.11): where its k-th unit of `res` sits, and the top one when the pile
-  // holds `n` (a Build takes it from there)
+  // holds `n` (a build takes it from there)
   yardSlotWorld(res, k) { return this.piles.yard.slotWorld(res, Math.min(k, YARD_SHOWN[res] - 1), k); }
   yardTopWorld(res, n) { return this.yardSlotWorld(res, Math.max(0, Math.min(n, YARD_SHOWN[res] - 1))).setY(0.3); }
+  // v0.12: where the i-th good on the yard-sale table sits
+  tableSlotWorld(res, i) { return this.piles.table.slotWorld(res, 0, Math.min(TABLE_SHOWN - 1, i)); }
 
   // the point of a build she hammers at (spec v0.11 §10.10): the house's front, or the part
   // beside its station
@@ -1023,7 +1099,7 @@ export class World {
     if (HOUSE_STAGES.includes(stage)) return out.copy(this.objects.D01.position).lerp(st.pos, 0.35).setY(0.6);
     this.buildPts ??= {};
     if (!this.buildPts[stage]) {
-      const part = { G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11' }[stage];
+      const part = { G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11', T0: 'D18' }[stage];
       const root = part && this.parts[part]?.model?.root;
       let c = st.pos.clone();
       if (root) {
@@ -1037,57 +1113,181 @@ export class World {
     }
     return out.copy(this.buildPts[stage]);
   }
-  // the units a mat shows for its deposits, before any are fed into the part
-  matUnits(stage) {
-    const d = this.lastLedger?.stages[stage].deposited;
-    return d ? d.W + d.R + Math.min(12, d.coins) : 0;
-  }
-  // in time with the strikes, the units on a built stage's mat fly into the part: `share` 0..1 of
-  // them are in (presentation only; the stage is committed already)
-  feedPart(stage, share) {
-    const pile = this.piles[stage];
-    if (!pile) return;
-    this.fed ??= {};
-    if (share <= (this.fed[stage] ?? 0)) return;
-    this.fed[stage] = share;
-    const slots = pile.slots;
-    const keep = Math.min(slots.length, Math.round(this.matUnits(stage) * (1 - share)));
-    const to = this.buildPoint(stage);
-    for (let i = slots.length - 1; i >= keep; i--) {
-      const sl = slots[i];
-      const from = sl.obj.getWorldPosition(new THREE.Vector3());
-      this.flight(sl.res, from, to.clone().add(new THREE.Vector3((i % 3 - 1) * 0.15, 0.1, 0)), 280);
-    }
-    pile.set(slots.slice(0, keep).map((x) => x.res), { pop: false });
-  }
-  crateSlotWorld(i) { return this.piles.crate.slotWorld('C', 0, Math.min(CRATE_SHOWN - 1, i)); }
   updatePiles(dtMs, reducedMotion) { for (const p of Object.values(this.piles)) p.update(dtMs, reducedMotion); }
 
-  // a built stage's mat: let the last units land, then shrink it away with its pile
-  async retireMat(id) {
-    this.revealing ??= new Set();
-    const key = `mat:${id}`;
-    this.revealing.add(key);
-    for (let waited = 0; waited < 800 && ['W', 'R', 'coins'].some((r) => this.inFlight(id, r) > 0); waited += 50) await this.tweens.wait(50);
-    const o = this.stations[id].obj;
-    const base = this.stations[id].def.r / 0.62;
-    await this.tweens.run(320, (t) => o.scale.setScalar(base * Math.max(0.01, 1 - t)), ease.inOut);
-    o.visible = false;
-    o.scale.setScalar(base);
-    this.revealing.delete(key);
-    if (this.lastLedger) this.sync(this.lastLedger, true); // the house's next stage mat comes up
+  // ---------- v0.12: DIY time, the dust and the yard sale ----------
+  // A dust puff at `pos`: a few paper-white blobs in ink billow up and out, then thin away
+  // (about 0.7 s). Reduced motion: none.
+  puff(pos, { scale = 1, delay = 0, seed = 0 } = {}) {
+    if (this.reducedMotion()) return Promise.resolve();
+    const o = G.dustPuff(seed + Math.floor(Math.random() * 7));
+    const mats = fadeable(o);
+    o.position.copy(pos).setY(Math.max(0, pos.y - 0.1));
+    o.rotation.y = Math.random() * Math.PI;
+    o.scale.setScalar(0.01);
+    this.root.add(o);
+    const run = () => this.tweens.run(700, (t) => {
+      const k = PUFF_SIZE * scale * (0.5 + 0.9 * ease.out(t));
+      o.scale.set(k * (1 + 0.25 * t), k, k * (1 + 0.25 * t));
+      o.position.y = Math.max(0, pos.y - 0.1) + 0.25 * t * scale;
+      for (const m of mats) m.opacity = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 0.85) * 0.95;
+    }).then(() => { this.root.remove(o); for (const m of mats) m.dispose(); });
+    return delay ? this.tweens.wait(delay).then(run) : run();
   }
-  // a station that has just opened: its mat comes up (v0.11)
-  async popMat(id) {
+  // a strike lands on the part being built: dust at the hit point, and the part jolts
+  strikePart(stage, k = 1) {
+    const at = this.buildPoint(stage);
+    this.puff(at.clone().setY(Math.max(0.05, at.y - 0.3)), { scale: 0.9 + 0.3 * k, seed: k });
+    if (this.reducedMotion()) return;
+    const part = { H1: 'H1', H2: 'H2', H3: 'H3', H4: 'H4', G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11', T0: 'D18' }[stage];
+    const root = this.parts[part]?.model?.root;
+    if (!root || root.userData.jolting) return;
+    root.userData.jolting = true;
+    const base = root.position.clone();
+    this.tweens.run(180, (t) => { const s = Math.sin(t * Math.PI * 3) * (1 - t); root.position.set(base.x + s * 0.03, base.y - Math.abs(s) * 0.02, base.z); })
+      .then(() => { root.position.copy(base); root.userData.jolting = false; });
+  }
+
+  // The yard sale (presentation only; the ledger already sold the goods and paid the coins):
+  // the "Yard Sale!" sign goes down beside the table, two or three neighbours walk up, each puts
+  // their goods into their basket while coins pop toward Vanessa (`onCoins`), and they walk off.
+  // `items` [res...] in table order. Resolves when it is over; the table takes nothing until then.
+  async yardSale(items, { onCoins = null, onSign = null } = {}) {
+    const sale = this.sale;
+    const token = ++sale.token;
+    sale.active = true;
+    sale.goods = [...items];
+    const live = () => sale.token === token;
+    const reduced = this.reducedMotion();
+    const t = this.stations.table;
+    const tdef = t.def;
+    // the sign drops in beside the table with a little bounce
+    const sign = sale.sign;
+    sign.visible = true;
+    onSign?.();
+    if (reduced) { setOpacity(sign, 0); await this.tweens.run(150, (u) => setOpacity(sign, u)); setOpacity(sign, 1); } else {
+      await this.tweens.run(SALE_MS.sign, (u) => { sign.scale.setScalar(SIGN_SCALE * Math.max(0.01, ease.outBack(u))); sign.position.y = 0.3 * (1 - u); });
+      this.puff(sign.position.clone(), { scale: 0.6 });
+    }
+    if (!live()) return;
+    const n = Math.min(3, Math.max(2, Math.ceil(items.length / 3)));
+    const per = Math.ceil(items.length / n);
+    const buyers = sale.buyers.slice(0, n);
+    const from = buyers.map((_, i) => this.ground(tdef.u + BUYER_FROM[i][0], tdef.v + BUYER_FROM[i][1]));
+    const to = buyers.map((_, i) => this.ground(tdef.u + BUYER_AT[i][0], tdef.v + BUYER_AT[i][1]));
+    const walk = (b, a, z, ms, phase = 0) => this.tweens.run(ms, (u) => {
+      if (!live()) return;
+      const e = ease.inOut(u);
+      b.position.lerpVectors(a, z, e);
+      b.rotation.y = Math.atan2(z.x - a.x, z.z - a.z);
+      const step = Math.sin((u * ms) / 140 + phase);
+      b.getObjectByName('legL').rotation.x = step * 0.5;
+      b.getObjectByName('legR').rotation.x = -step * 0.5;
+      b.getObjectByName('body').position.y = Math.abs(step) * 0.03;
+    });
+    if (reduced) {
+      buyers.forEach((b, i) => { b.position.copy(to[i]); b.rotation.y = Math.atan2(t.pos.x - b.position.x, t.pos.z - b.position.z); b.visible = true; setOpacity(b, 0); });
+      await this.tweens.run(200, (u) => buyers.forEach((b) => setOpacity(b, u)));
+      buyers.forEach((b) => setOpacity(b, 1));
+    } else {
+      buyers.forEach((b, i) => { b.position.copy(from[i]); b.visible = true; });
+      await Promise.all(buyers.map((b, i) => this.tweens.wait(i * 220).then(() => walk(b, from[i], to[i], SALE_MS.walkIn, i))));
+      buyers.forEach((b) => { b.rotation.y = Math.atan2(t.pos.x - b.position.x, t.pos.z - b.position.z); b.getObjectByName('legL').rotation.x = 0; b.getObjectByName('legR').rotation.x = 0; });
+    }
+    if (!live()) return;
+    // each takes their goods into the basket, a coin popping out for each
+    for (const [i, b] of buyers.entries()) {
+      for (let k = 0; k < per && sale.goods.length; k++) {
+        const res = sale.goods.pop();
+        const slot = sale.goods.length;
+        const fromP = this.tableSlotWorld(res, slot);
+        this.sync(this.lastLedger, false);
+        const basket = b.localToWorld(new THREE.Vector3(0.3, 0.85, 0.08));
+        const fly = this.flight(res, fromP, basket, reduced ? 150 : SALE_MS.take);
+        onCoins?.(res, fromP);
+        await fly;
+        if (!live()) return;
+      }
+      if (!reduced) await this.tweens.wait(SALE_MS.pause);
+    }
+    sale.goods = null;
+    this.sync(this.lastLedger, false);
+    // they walk off; the sign comes up again
+    if (reduced) {
+      await this.tweens.run(200, (u) => { buyers.forEach((b) => setOpacity(b, 1 - u)); setOpacity(sign, 1 - u); });
+      buyers.forEach((b) => { b.visible = false; setOpacity(b, 1); });
+      sign.visible = false; setOpacity(sign, 1);
+    } else {
+      await Promise.all(buyers.map((b, i) => this.tweens.wait(i * 160).then(() => walk(b, b.position.clone(), from[i], SALE_MS.walkOut, i))));
+      buyers.forEach((b) => { b.visible = false; });
+      await this.tweens.wait(SALE_MS.linger);
+      await this.tweens.run(260, (u) => sign.scale.setScalar(SIGN_SCALE * Math.max(0.01, 1 - u * u)));
+      sign.visible = false;
+      sign.scale.setScalar(SIGN_SCALE);
+    }
+    if (live()) { sale.active = false; this.sync(this.lastLedger, false); }
+  }
+  // load, New farm or the finale: no sale on show
+  endSale() {
+    const sale = this.sale;
+    sale.token++;
+    sale.active = false;
+    sale.goods = null;
+    sale.sign.visible = false;
+    sale.sign.scale.setScalar(SIGN_SCALE);
+    for (const b of sale.buyers) b.visible = false;
+  }
+
+  // v0.12: a weed creeps over a planted crop: it grows up out of the soil over 0.6 s
+  async creepIn(id) {
     this.revealing ??= new Set();
-    const key = `mat:${id}`;
-    this.revealing.add(key);
-    const o = this.stations[id].obj;
-    const base = this.stations[id].def.r / 0.62;
+    this.revealing.add(id);
+    const st = this.stations[id];
+    const o = st.obj;
+    const k = stationScale(st.def);
     o.visible = true;
-    await this.tweens.run(this.reducedMotion() ? 150 : 420, (t) => o.scale.setScalar(base * Math.max(0.01, this.reducedMotion() ? 1 : ease.outBack(t))), ease.out);
-    o.scale.setScalar(base);
-    this.revealing.delete(key);
+    await this.tweens.run(this.reducedMotion() ? 150 : 600, (t) => o.scale.set(k * Math.max(0.01, ease.outBack(t)), k * Math.max(0.01, t), k * Math.max(0.01, ease.outBack(t))));
+    o.scale.setScalar(k);
+    this.revealing.delete(id);
+    if (this.lastLedger) this.sync(this.lastLedger, false);
+  }
+  // v0.12 per frame: a regrown weed grows from a tuft to a full clump over REGROW.growMs, and once
+  // it is choking its plant the plant leans a little (spec v0.12 P28-4)
+  updateRegrowth(l) {
+    for (const node of Object.keys(NODES)) {
+      const st = this.stations[`wr-${node}`];
+      if (!st || this.revealing?.has(st.def.id)) continue;
+      const since = l.overgrown[node];
+      const k = stationScale(st.def);
+      const age = since === null ? 0 : Math.max(0, l.activeMs - since);
+      if (since !== null && st.obj.visible) st.obj.scale.setScalar(k * (0.45 + 0.55 * Math.min(1, age / REGROW.growMs)));
+      const lean = since !== null && age >= REGROW.growMs ? 0.18 : 0;
+      for (const p of Object.keys(this.parts)) {
+        const dug = PARTS[p].dug ?? [];
+        if (dug.length !== 1 || dug[0] !== node || this.revealing?.has(p)) continue;
+        const root = this.parts[p].model?.root;
+        if (!root) continue;
+        root.userData.lean0 ??= root.rotation.z;
+        const want = root.userData.lean0 + lean;
+        root.rotation.z += (want - root.rotation.z) * 0.1;
+      }
+    }
+  }
+
+  // v0.12: the plant under a weed left too long wilts: it droops and goes back to its outline,
+  // and its dig spot opens for replanting
+  async wilt(node) {
+    const ids = Object.keys(this.parts).filter((p) => (PARTS[p].dug ?? []).length === 1 && PARTS[p].dug[0] === node);
+    const roots = ids.map((p) => this.parts[p].model?.root).filter(Boolean);
+    this.revealing ??= new Set();
+    ids.forEach((p) => this.revealing.add(p));
+    const base = roots.map((r) => ({ rz: r.rotation.z, sy: r.scale.y }));
+    if (!this.reducedMotion()) {
+      await this.tweens.run(700, (t) => roots.forEach((r, i) => { r.rotation.z = base[i].rz + 0.45 * ease.inOut(t); r.scale.y = base[i].sy * (1 - 0.25 * ease.inOut(t)); }));
+    }
+    roots.forEach((r, i) => { r.rotation.z = base[i].rz; r.scale.y = base[i].sy; });
+    ids.forEach((p) => this.revealing.delete(p));
+    if (this.lastLedger) this.sync(this.lastLedger, false);
   }
 
   // a cleared weed clump shrinks and sinks over 0.3 s (presentation only)

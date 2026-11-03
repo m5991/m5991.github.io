@@ -1,18 +1,19 @@
-// Interaction controller (annex §D.2): reach, the 0.25 s stillness rule, auto-work at
-// 0.75 s per unit (1 s per weed), explicit arming of one mat or the crate, and the 0.15 s
-// transfer cadence with the 0.3 s coin pour. Pure logic: positions come in, ledger
-// transactions go out through `commit(tx)`, presentation events come back from `update`.
-// Not saved: everything here is disarmed and cleared on load (spec §12).
+// Interaction controller (annex §D.2): reach, the 0.25 s stillness rule and auto-work at
+// 0.75 s per unit (1 s per weed). Pure logic: positions come in, ledger transactions go out
+// through `commit(tx)`, presentation events come back from `update`. Not saved: everything here
+// is cleared on load (spec §12).
 // v0.9 (P25-4): weeding needs the rake and digging a crop spot needs the shovel. Standing still
 // at the tools takes the one the next tool job needs (0.5 s; a swap puts the other back). With
 // the wrong tool at a job no work starts (`toolBlocked`); with `Tools come to me` on, the needed
 // tool comes to her hand at the job instead, in the same 0.5 s.
 // v0.11: coming within YARD_REACH_M of the material pile by the house (`yard`) with wood or
-// stone on her head drops it all there at once, moving or not; and Build (an armed mat) takes
-// wood then stone from her head first and then from the pile, then the coins.
-import { CAPACITY, CROPS, NODES, TIMING, U1_WEED_MS, U2_DIG_MS, WEEDS, YARD_MATERIALS } from './data.js';
+// stone on her head drops it all there at once, moving or not.
+// v0.12: the same at the yard-sale table (`table`) with crops on her head: they go onto the table
+// until it is full. Nothing is armed any more: there is no delivery and no selling menu; a build
+// is one DIY press at its site (`atSite`), and the yard sale one press of its button.
+import { CAPACITY, CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, nodeEstablished, onHand, owns, sourceResource, stageState, stillNeeded, toolJobs, weedOpen,
+  available, digOpen, nodeEstablished, sourceResource, tableAvailable, tableFull, toolJobs, weedOpen,
 } from './ledger.js';
 
 export const REACH_M = 0.9; // 1.5 Vanessa collision diameters with the 0.6 m base hero sphere
@@ -21,12 +22,12 @@ export const HIGHLIGHT_RANGE_M = 3.5; // the ground ring marks the nearest colle
 export const YARD_REACH_M = 1.2; // P27-1: within about 1.2 m of the pile her load drops
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-const WORK_KINDS = new Set(['weed', 'pile', 'spot', 'rock', 'node', 'dig', 'tools']);
-const SOURCE_KINDS = new Set(['pile', 'spot', 'rock', 'node']);
+const WORK_KINDS = new Set(['weed', 'pile', 'stick', 'rock', 'node', 'dig', 'tools']);
+const SOURCE_KINDS = new Set(['pile', 'stick', 'rock', 'node']);
 // the tool a job target needs
 export const TOOL_FOR = { weed: 'rake', dig: 'shovel' };
 export function toolForId(l, id) {
-  if (WEEDS.includes(id)) return 'rake';
+  if (isWeedId(id)) return 'rake';
   if (id in NODES && digOpen(l, id)) return 'shovel';
   return null;
 }
@@ -89,12 +90,12 @@ function toolFirst(l, t) {
   return tool && l.tool !== tool ? tool : null;
 }
 
-// the length of the next work unit at `t`: weeds 1 s (0.5 s with U1), dig spots 1.5 s (0.75 s
-// with U2), taking a tool 0.5 s, every resource unit 0.75 s
+// the length of the next work unit at `t`: weeds 1 s, dig spots 1.5 s, taking a tool 0.5 s,
+// every resource unit 0.75 s
 export function workUnitMs(t, timing = TIMING, l = null) {
   if (t.kind === 'tools' || (l && toolFirst(l, t))) return timing.toolMs;
-  if (t.kind === 'weed') return l && owns(l, 'U1') ? U1_WEED_MS : timing.weedMs;
-  if (t.kind === 'dig') return l && owns(l, 'U2') ? U2_DIG_MS : timing.digMs;
+  if (t.kind === 'weed') return timing.weedMs;
+  if (t.kind === 'dig') return timing.digMs;
   return timing.workUnitMs;
 }
 
@@ -135,10 +136,10 @@ export function pickHighlight(l, hero, targets, selectedId = null, range = HIGHL
   return near.length ? { target: near[0], inReach: false } : null;
 }
 
-// the one contextual world action: the nearest mat or crate in reach
-export function pickContextTarget(hero, targets) {
-  const c = targets.filter((t) => (t.kind === 'mat' || t.kind === 'crate') && inReach(hero, t));
-  c.sort((a, b) => dist(hero, a) - dist(hero, b) || (a.id < b.id ? -1 : 1));
+// v0.12: the build site she stands at (its blueprint outline marks it; no mat), or null
+export function atSite(hero, targets) {
+  const c = targets.filter((t) => t.kind === 'site' && inReach(hero, t));
+  c.sort((a, b) => (dist(hero, a) - (a.r ?? 0)) - (dist(hero, b) - (b.r ?? 0)) || (a.id < b.id ? -1 : 1));
   return c[0] ?? null;
 }
 
@@ -149,6 +150,12 @@ export function atYard(hero, targets) {
   const y = targets.find((t) => t.kind === 'yard');
   return !!y && inReach(hero, y, YARD_REACH_M);
 }
+// she carries crops and the yard-sale table has room
+export const hasCrops = (l) => CROPS.some((c) => l.carried[c] > 0);
+export function atTable(hero, targets) {
+  const y = targets.find((t) => t.kind === 'table');
+  return !!y && inReach(hero, y, TABLE_REACH_M);
+}
 
 export function createInteraction({ getLedger, commit, timing = TIMING }) {
   const s = {
@@ -156,7 +163,6 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
     selectedId: null,
     want: null, // the tool the tools would give this frame
     work: null, // { target, elapsed }
-    armed: null, // { kind, id, mode, phase, timer, units, coins }
   };
 
   function stopWork(events, reason) {
@@ -164,92 +170,8 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
     s.work = null; // an incomplete unit resets without yield or loss
   }
 
-  function disarm(reason, extra = {}) {
-    if (!s.armed) return null;
-    const ev = { type: 'disarmed', kind: s.armed.kind, id: s.armed.id, reason, units: s.armed.units, coins: s.armed.coins, ...extra };
-    s.armed = null;
-    return ev;
-  }
-
-  function nextMaterial(l, stage) {
-    const need = stillNeeded(l, stage);
-    for (const r of ['W', 'R']) if (need[r] > 0 && onHand(l, r) > 0) return r; // wood, then stone
-    return null;
-  }
-
-  function nextCrop(l, mode) {
-    const order = mode === 'all' ? CROPS : [mode];
-    return order.find((c) => l.carried[c] > 0) ?? null;
-  }
-
-  function stepArmed(dt, ctx, events) {
-    const a = s.armed;
-    const target = ctx.targets.find((t) => t.id === a.id);
-    if (!target || !inReach(ctx.hero, target)) {
-      events.push(disarm('movedAway'));
-      return;
-    }
-    a.timer += dt;
-    while (s.armed && a.timer >= (a.phase === 'pour' ? timing.coinPourMs : timing.transferMs)) {
-      a.timer -= a.phase === 'pour' ? timing.coinPourMs : timing.transferMs;
-      const l = getLedger();
-      if (a.kind === 'crate') {
-        const crop = nextCrop(l, a.mode);
-        if (!crop) { events.push(disarm(a.units ? 'soldAll' : 'nothingToSell')); return; }
-        const res = commit({ t: 'sell', crop });
-        if (!res.ok) { events.push(disarm(res.reason)); return; }
-        a.units += 1;
-        a.coins += res.events[0].coins;
-        events.push({ type: 'transfer', kind: 'crate', id: a.id, r: crop, coins: res.events[0].coins, result: res });
-        continue;
-      }
-      // mat: materials W then R, then one atomic coin deposit after a 0.3 s pour
-      if (a.phase === 'materials') {
-        const r = nextMaterial(l, a.id);
-        if (r) {
-          const res = commit({ t: 'depositMat', stage: a.id, r });
-          if (!res.ok) { events.push(disarm(res.reason)); return; }
-          a.units += 1;
-          events.push({ type: 'transfer', kind: 'mat', id: a.id, r, result: res });
-          if (res.events.some((e) => e.type === 'committed')) {
-            events.push({ type: 'committed', stage: a.id });
-            events.push(disarm('committed'));
-            return;
-          }
-          continue;
-        }
-        if (stillNeeded(l, a.id).coins > 0 && l.purse > 0) {
-          a.phase = 'pour';
-          events.push({ type: 'coinPour', id: a.id, n: Math.min(l.purse, stillNeeded(l, a.id).coins) });
-          continue;
-        }
-        events.push(disarm('shortage', { missing: shortageOf(l, a.id) }));
-        return;
-      }
-      if (a.phase === 'pour') {
-        const res = commit({ t: 'depositCoins', stage: a.id });
-        if (!res.ok) { events.push(disarm(res.reason)); return; }
-        a.coins += res.events[0].n;
-        events.push({ type: 'transfer', kind: 'mat', id: a.id, r: 'coins', n: res.events[0].n, result: res });
-        if (res.events.some((e) => e.type === 'committed')) {
-          events.push({ type: 'committed', stage: a.id });
-          events.push(disarm('committed'));
-        } else {
-          events.push(disarm('shortage', { missing: shortageOf(getLedger(), a.id) }));
-        }
-        return;
-      }
-    }
-  }
-
-  function shortageOf(l, stage) {
-    const need = stillNeeded(l, stage);
-    return { coins: Math.max(0, need.coins - l.purse), W: Math.max(0, need.W - onHand(l, 'W')), R: Math.max(0, need.R - onHand(l, 'R')) };
-  }
-
   return {
     get state() { return s; },
-    get armed() { return s.armed; },
     get working() { return s.work?.target ?? null; },
     // share of the current work unit done, 0..1 (the ground ring's progress arc)
     get workProgress() { return s.work ? Math.min(1, s.work.elapsed / workUnitMs(s.work.target, timing, getLedger())) : 0; },
@@ -257,19 +179,21 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
     get workDoing() { return s.work ? workTx(getLedger(), s.work.target, s.want).t : null; },
 
     // ctx: { hero: {x,z}, moving: boolean (input held), speed: m/s, targets: [{id, kind, x, z, r}],
-    //        want?: the tool to take at the tools, toolsComeToMe?: setting }
+    //        want?: the tool to take at the tools, toolsComeToMe?: setting,
+    //        tableBusy?: a yard sale is being shown (the table takes nothing until the buyers go) }
     update(dtMs, ctx) {
       const events = [];
-      if (s.armed) {
-        stopWork(events, 'armed');
-        stepArmed(dtMs, ctx, events);
-        return events.filter(Boolean);
-      }
       let l = getLedger();
       // the material pile: walking past it drops her whole load, moving or not (v0.11)
       if (hasLoad(l) && atYard(ctx.hero, ctx.targets)) {
         const res = commit({ t: 'drop' });
         events.push({ type: 'drop', result: res });
+        l = getLedger();
+      }
+      // the yard-sale table: walking past it sets her crops out on it (v0.12)
+      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atTable(ctx.hero, ctx.targets)) {
+        const res = commit({ t: 'stock' });
+        events.push({ type: 'stock', result: res });
         l = getLedger();
       }
       if (isMoving(ctx)) {
@@ -304,20 +228,9 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       return events;
     },
 
-    // Confirm delivery / Sell: arms only that target, only while in reach.
-    arm(kind, id, mode, ctx) {
-      const t = ctx.targets.find((x) => x.id === id);
-      if (!t || !inReach(ctx.hero, t)) return { ok: false, reason: 'notInReach' };
-      if (kind === 'mat' && stageState(getLedger(), id) !== 'OPEN') return { ok: false, reason: 'locked' };
-      const prev = disarm('replaced');
-      s.work = null;
-      s.armed = { kind, id, mode: mode ?? 'all', phase: 'materials', timer: 0, units: 0, coins: 0 };
-      return { ok: true, replaced: prev };
-    },
-    // modal, pause, resize, reload or `Stop delivery`
-    disarm,
+    // a card, pause, a build or a teleport: drop the unit in progress
     reset() {
-      s.stillMs = 0; s.selectedId = null; s.work = null; s.armed = null;
+      s.stillMs = 0; s.selectedId = null; s.work = null;
     },
   };
 }

@@ -11,7 +11,7 @@ import { createStick } from './stick.js';
 
 const KEYS = { KeyW: [0, 1], ArrowUp: [0, 1], KeyS: [0, -1], ArrowDown: [0, -1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
-export function createInput({ zone, base, knob, onAction, onEscape, onBlueprint, isBlocked, onMode }) {
+export function createInput({ zone, base, knob, onAction, onEscape, onBlueprint, isBlocked, onMode, onTap }) {
   const v = { x: 0, y: 0 };
   const stick = createStick();
   const held = new Set();
@@ -31,8 +31,11 @@ export function createInput({ zone, base, knob, onAction, onEscape, onBlueprint,
     setKnob(0, 0);
   }
 
+  // v0.12: a short tap that does not drag is also a tap on the world (the yard-sale stand)
+  let press = null;
   zone.addEventListener('pointerdown', (e) => {
     if (e.button > 0 || isBlocked()) return;
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
     if (!stick.down(e.pointerId, e.clientX, e.clientY)) return;
     setMode(e.pointerType === 'mouse' ? 'mouse' : 'touch');
     show(e.clientX, e.clientY);
@@ -41,7 +44,12 @@ export function createInput({ zone, base, knob, onAction, onEscape, onBlueprint,
   });
   zone.addEventListener('pointermove', (e) => { stick.move(e.pointerId, e.clientX, e.clientY); });
   const end = (e) => { if (stick.up(e.pointerId)) hide(); };
-  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointerup', (e) => {
+    const p = press;
+    press = null;
+    end(e);
+    if (p && p.id === e.pointerId && performance.now() - p.t < 350 && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 14 && !isBlocked()) onTap?.(e.clientX, e.clientY);
+  });
   zone.addEventListener('pointercancel', end);
   zone.addEventListener('lostpointercapture', end);
   zone.addEventListener('contextmenu', (e) => e.preventDefault());

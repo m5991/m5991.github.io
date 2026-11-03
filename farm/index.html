@@ -42,7 +42,12 @@
   <div id="toast" role="status" hidden></div>
 
   <footer id="controls">
+    <!-- v0.12: the next build's needs, counting down; with everything in hand it becomes its DIY
+         button, which works only at the part (src/ui/hud.js setBuild) -->
+    <div id="buildbar" role="status" hidden><span class="need"></span><button id="btn-diy" type="button" hidden><span class="verb">DIY</span><span class="what"></span></button></div>
     <button id="audio-prompt" type="button" hidden>Tap to enable audio</button>
+    <!-- v0.12: the yard sale, once the table holds six (tapping the stand works too) -->
+    <button id="btn-sale" type="button" hidden>Yard Sale</button>
     <button id="context" type="button" hidden></button>
   </footer>
 
@@ -88,7 +93,9 @@
       <legend>Help</legend>
       <label><input id="set-tools" type="checkbox"> Tools come to me</label>
       <p class="small">The rake or the shovel comes to Vanessa's hand at the job, with no trip to the house.</p>
-      <p class="small">Move: touch and drag anywhere, or WASD / arrow keys. Stand still beside something to work on it: take the rake or the shovel where they lean by the house to weed or dig. Walk past the pile by the house to leave wood and stone there. Use the button at the bottom right, or E / Space, to build at a station or sell at the market crate. Blueprint, or B, shows or hides the outlines of unbuilt things.</p>
+      <label><input id="set-help" type="checkbox"> Help me finish</label>
+      <p class="small">No weeds creep over the crops and no stick is lost under the tree.</p>
+      <p class="small">Move: touch and drag anywhere, or WASD / arrow keys. Stand still beside something to work on it: take the rake or the shovel where they lean by the house to weed or dig. Walk past the pile by the house to leave wood and stone there, and past the yard-sale table to set out your crops. When the table is full, tap Yard Sale (or the table). The bottom line counts what the next build still needs; once you have it all, go to the part and tap DIY (or E / Space). Blueprint, or B, shows or hides the outlines of unbuilt things.</p>
       <button id="btn-opening" type="button">Watch the opening</button>
     </fieldset>
     <button id="btn-reset" type="button">New farm…</button>

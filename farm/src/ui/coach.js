@@ -39,6 +39,7 @@ export function createCoach(root = document) {
   const toggle = (el, on) => { if (el.classList.contains('on') !== on) el.classList.toggle('on', on); };
   // v0.11: the crop choice shows three arrows at once, one per patch in its crop's colour; the
   // extra two are copies of the guide's arrow, made on first use
+  const pulsed = new Set();
   const all = [arrow];
   const arrowEl = (i) => {
     while (all.length <= i) {
@@ -76,20 +77,24 @@ export function createCoach(root = document) {
     },
     // the drag demo on a ghost stick (the "drag anywhere" prompt on touch screens)
     demo(on) { toggle(demo, on); },
-    // a hand pointing at the context button, which pulses
-    pointAtContext(on) {
-      const show = on && !context.hidden;
+    // a hand pointing at a button (v0.12: DIY or Yard Sale; the context button before), which
+    // pulses; null hides it
+    pointAt(el) {
+      const show = !!el && !el.hidden && el.getClientRects().length > 0;
       toggle(hand, show);
-      context.classList.toggle('coach-pulse', show);
-      if (!show) return;
-      const r = context.getBoundingClientRect();
+      for (const b of pulsed) if (b !== el || !show) b.classList.remove('coach-pulse');
+      if (!show) { pulsed.clear(); return; }
+      el.classList.add('coach-pulse');
+      pulsed.add(el);
+      const r = el.getBoundingClientRect();
       hand.style.transform = `translate(${(r.left + r.width / 2).toFixed(1)}px, ${r.top.toFixed(1)}px)`;
     },
+    pointAtContext(on) { this.pointAt(on ? context : null); },
     hideAll() {
       this.arrow(null);
       this.tip(null);
       this.demo(false);
-      this.pointAtContext(false);
+      this.pointAt(null);
     },
   };
 }

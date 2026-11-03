@@ -2,7 +2,8 @@
 // at the first hammer strike a jagged speech burst pops up beside Vanessa, on the side away from
 // the camera's centre, paper inside an uneven hand-drawn ink outline, tilted a few degrees, the
 // words hand-lettered in ink with one flower-yellow shadow step. Two short ink ticks flick out at
-// each strike's contact for 150 ms. DOM over the canvas, never interactive; presentation only.
+// each strike's contact for 150 ms (v0.12: 220 ms, with two swoosh lines trailing the hammer).
+// DOM over the canvas, never interactive; presentation only.
 import { burstState } from '../world/build.js';
 
 const INK = '#253347';
@@ -32,8 +33,11 @@ export function createBurst(root = document) {
       <path d="${d}" fill="${PAPER}" stroke="${INK}" stroke-width="3.2" stroke-linejoin="round"/>
       <path d="${d}" fill="none" stroke="${INK}" stroke-width="1.1" stroke-linejoin="round" opacity="0.45" transform="translate(2.5 -1.5) rotate(0.8 120 70)"/>
     </svg><span class="words" data-text="DIY time!">DIY time!</span>`;
-  ticks.innerHTML = `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="${INK}" stroke-width="2.6" stroke-linecap="round" fill="none">
-      <path d="M8 12 L15 18"/><path d="M30 9 L25 17"/><path d="M33 26 L26 24"/></g></svg>`;
+  // v0.12 ("hammering on over the top way"): at each contact, ink ticks flick out of the hit and
+  // two swoosh lines trail the hammer's path down onto it
+  ticks.innerHTML = `<svg viewBox="0 0 80 80" aria-hidden="true"><g stroke="${INK}" stroke-linecap="round" fill="none">
+      <g stroke-width="3"><path d="M30 34 L38 41"/><path d="M53 30 L46 39"/><path d="M58 50 L49 47"/><path d="M27 52 L36 49"/></g>
+      <g class="swoosh" stroke-width="2.2" opacity="0.8"><path d="M14 8 Q30 6 38 30"/><path d="M6 18 Q22 16 30 36"/></g></g></svg>`;
   el.style.setProperty('--burst-shadow', FLOWER);
   let t = -1; // ms since the burst appeared, or -1
   let tickMs = 0;
@@ -46,7 +50,7 @@ export function createBurst(root = document) {
     // a strike's contact at screen point p (CSS px)
     tick(p, reduced = false) {
       if (reduced || !p) return;
-      tickMs = 150;
+      tickMs = 220;
       ticks.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`;
       ticks.classList.add('on');
     },

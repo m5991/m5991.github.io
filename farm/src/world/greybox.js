@@ -310,25 +310,12 @@ export function hammer() {
   return shadows(addOutline(g, 0.008));
 }
 
-// Construction / station mat: flat pad, ink border, fill ring showing deposited / required.
-export function mat() {
-  const g = group('Mat');
-  const pad = at(new THREE.Mesh(new THREE.CircleGeometry(0.62, 32), lam(PALETTE.paper)), 0, 0.012, 0, -Math.PI / 2);
-  pad.receiveShadow = true;
-  const border = at(new THREE.Mesh(new THREE.RingGeometry(0.6, 0.66, 40), new THREE.MeshBasicMaterial({ color: PALETTE.cap })), 0, 0.016, 0, -Math.PI / 2);
-  border.name = 'border';
-  const fill = at(new THREE.Mesh(new THREE.RingGeometry(0.38, 0.52, 40, 1, Math.PI / 2, 0.0001), new THREE.MeshBasicMaterial({ color: PALETTE.tool })), 0, 0.02, 0, -Math.PI / 2);
-  fill.name = 'fill';
-  g.add(pad, border, fill);
-  g.traverse((m) => { if (m.isMesh) m.userData.noOutline = true; });
-  return g;
-}
-export function setMatFill(g, share) {
-  const fill = g.getObjectByName('fill');
-  fill.geometry.dispose();
-  fill.geometry = new THREE.RingGeometry(0.38, 0.52, 40, 1, Math.PI / 2, Math.max(0.0001, Math.PI * 2 * share));
-}
-export function crate() { return shadows(addOutline(P.crate())); }
+// v0.12: the yard-sale table, its "Yard Sale!" sign, the buyers who come to it, and the dust
+// that puffs up when she builds (props.js)
+export function yardTable() { return shadows(addOutline(P.yardTable())); }
+export function saleSign() { return shadows(addOutline(P.saleSign(), 0.012)); }
+export function buyer(i) { return shadows(addOutline(P.buyer(i), 0.014)); }
+export function dustPuff(seed) { const g = addOutline(P.dustPuff(seed), 0.012); g.traverse((m) => { if (m.isMesh) m.castShadow = false; }); return g; }
 // Carried-stack unit meshes (W log, R stone, C cob, S sunflower head, T tomato, coins), the same
 // models as the piles and crops (V1)
 export const unitMesh = P.unitMesh;
