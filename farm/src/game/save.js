@@ -17,9 +17,9 @@ export function createSaveData() {
     ledger: createLedger(),
     session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false },
     vanessa: { x: null, z: null }, // validated position; null = start position
-    // toolsComeToMe (P25-4): the needed tool appears in her hand at the job, no trip to the house;
-    // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost
-    settings: { reducedMotion: false, birdsNeverSteal: false, toolsComeToMe: false, helpMeFinish: false },
+    // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
+    // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)
+    settings: { reducedMotion: false, birdsNeverSteal: false, helpMeFinish: false },
     discoveries: {},
     archers: {},
   };
@@ -33,7 +33,7 @@ export function validateSave(d) {
   if (!d.session || typeof d.session.endingSeen !== 'boolean' || typeof d.session.firstSaleSeen !== 'boolean') errors.push('session');
   const v = d.vanessa;
   if (!v || !((v.x === null && v.z === null) || (Number.isFinite(v.x) && Number.isFinite(v.z)))) errors.push('vanessa position');
-  if (!d.settings || typeof d.settings.reducedMotion !== 'boolean' || typeof d.settings.toolsComeToMe !== 'boolean' || typeof d.settings.helpMeFinish !== 'boolean') errors.push('settings');
+  if (!d.settings || typeof d.settings.reducedMotion !== 'boolean' || typeof d.settings.helpMeFinish !== 'boolean' || 'toolsComeToMe' in d.settings) errors.push('settings');
   return errors;
 }
 
@@ -166,6 +166,22 @@ export function migratePreV012(d0) {
   return d;
 }
 
+// ---------- saves from v0.12 (the Tools come to me setting) ----------
+// Still schema v5 (only test saves exist; spec v0.13 P29-10). The ledger needs nothing: its tables
+// follow its house stage (a v0.12 table holds six at most, and one table always stands), and the
+// tools she has taken once are read from it. The `Tools come to me` setting is dropped: a tool she
+// has used comes by itself now, so a player who had it on loses nothing. Returns a new payload;
+// one that already has the v0.13 shape is returned as is.
+export function isPreV013(d) {
+  return !!d?.settings && typeof d.settings === 'object' && 'toolsComeToMe' in d.settings;
+}
+export function migratePreV013(d0) {
+  if (!isPreV013(d0)) return d0;
+  const d = structuredClone(d0);
+  delete d.settings.toolsComeToMe;
+  return d;
+}
+
 // The stone invariant (§6.6 point 1): if the stone in the rocks, carried and at the pile no longer
 // covers the stone still required, the recovery rock RX at R1's place gets the missing units.
 // -> { data, added } (a new payload when it changed)
@@ -180,15 +196,15 @@ export function repairStone(d0) {
 // settings added since the first v5 test saves get their defaults
 function withSettingDefaults(d) {
   if (!d?.settings || typeof d.settings !== 'object') return d;
-  const missing = ['toolsComeToMe', 'helpMeFinish'].filter((k) => typeof d.settings[k] !== 'boolean');
+  const missing = ['helpMeFinish'].filter((k) => typeof d.settings[k] !== 'boolean');
   if (!missing.length) return d;
   return { ...d, settings: { ...d.settings, ...Object.fromEntries(missing.map((k) => [k, false])) } };
 }
 
-// what a stored payload becomes before validation: older test saves brought up to v0.12
+// what a stored payload becomes before validation: older test saves brought up to v0.13
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))));
+  return migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d)))));
 }
 
 // `mainComplete` derives from H4 even if endingSeen is false (spec §12).
@@ -218,7 +234,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PAL, toon, toonMaterial } from './look.js';
 import { at, hash3, log, lumpy, mergeByMaterial, mesh, mix, noise3, stone, stoneGeometry, taperTube } from './hand.js';
 import { bake, blade, cobGeometry, paint, rng, sunflowerHeadGeometry, vmesh } from './flora.js';
+import { LOOKS } from '../game/crowd.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
@@ -218,42 +219,142 @@ export function saleSign() {
   return merged;
 }
 
-// a buyer: a plain neighbour in the drawing's hand, about 1.5 m, paper-light clothes in one of the
-// review swatches, simple round head with a hat or hair, a basket on one arm. `legs` (two named
-// groups) swing as they walk; their arms stay down. Faces +Z.
-const BUYER_LOOKS = [
-  { top: PAL.denim, legs: PAL.charcoal, hat: PAL.flower, skin: PAL.skin },
-  { top: PAL.red, legs: PAL.denim, hat: null, hair: PAL.hair, skin: mix(PAL.skin, PAL.wood, 0.35) },
-  { top: PAL.leafLight, legs: PAL.wood, hat: PAL.cream, skin: mix(PAL.skin, PAL.paper, 0.2) },
-];
-export function buyer(i = 0) {
-  const look = BUYER_LOOKS[i % BUYER_LOOKS.length];
-  const root = new THREE.Group(); root.name = `Buyer_${i}`;
+// a neighbour (v0.13, captain: "the clients are always the same and blocky ... make them more
+// random"): one of the crowd's looks (game/crowd.js personLook), in the drawing's hand with smooth
+// rounded forms: a lathe-turned shirt or dress, tapered arms with round hands, a round head with
+// dot eyes, one of six hair styles or a straw hat, cap or beanie, rounded shoes, and a basket or a
+// tote on the right arm. Built for a 1.6 m adult and scaled to `look.height` (a kid keeps a
+// larger head). Named groups `legL`, `legR`, `armL`, `armR` swing and `body` bobs as they walk;
+// `userData.basket` is where their goods fly to (local). Faces +Z.
+const lathe = (pts, segs = 18) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), segs);
+export function buyer(look) {
+  const L = typeof look === 'number' ? LOOKS[look % LOOKS.length] : look ?? { n: 0, height: 1.6, build: 1, skin: PAL.skin, hair: PAL.hair, hairStyle: 'short', hat: null, hatColour: PAL.flower, top: PAL.denim, bottom: PAL.charcoal, dress: false, carry: 'basket', kid: false };
+  const root = new THREE.Group(); root.name = `Buyer_${L.n ?? 0}`;
+  const w = L.build; // shoulders and hips
+  const kid = L.kid;
+  const headR = kid ? 0.15 : 0.115;
+  const hipY = kid ? 0.66 : 0.82; // in the 1.6 m frame (a kid's legs are shorter for its height)
+  const shoulderY = kid ? 1.16 : 1.3;
+  const headY = shoulderY + 0.07 + headR * 0.95;
   const body = new THREE.Group(); body.name = 'body';
-  const torso = new THREE.CapsuleGeometry(0.17, 0.42, 4, 12); torso.scale(1, 1, 0.8);
-  body.add(at(mesh(torso, look.top), 0, 0.98, 0));
-  body.add(at(mesh(new THREE.SphereGeometry(0.15, 16, 12), look.skin), 0, 1.42, 0.01));
-  if (look.hat) {
-    body.add(at(mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 20), look.hat), 0, 1.52, 0));
-    body.add(at(mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.12, 16), look.hat), 0, 1.58, 0));
-  } else {
-    const hair = new THREE.SphereGeometry(0.16, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    body.add(at(mesh(hair, look.hair), 0, 1.44, -0.01));
+  // the shirt (or the dress, down past the knees), turned on a lathe: waist in, shoulders round
+  const top = L.dress
+    ? lathe([[0.0, hipY - 0.42], [0.2 * w, hipY - 0.42], [0.17 * w, hipY - 0.1], [0.13 * w, hipY + 0.12], [0.12 * w, hipY + 0.2], [0.15 * w, shoulderY - 0.16], [0.16 * w, shoulderY - 0.05], [0.1 * w, shoulderY + 0.03], [0.04, shoulderY + 0.05], [0, shoulderY + 0.05]])
+    : lathe([[0.0, hipY - 0.03], [0.135 * w, hipY - 0.03], [0.14 * w, hipY + 0.06], [0.125 * w, hipY + 0.2], [0.15 * w, shoulderY - 0.14], [0.16 * w, shoulderY - 0.05], [0.1 * w, shoulderY + 0.03], [0.04, shoulderY + 0.05], [0, shoulderY + 0.05]]);
+  top.scale(1, 1, 0.78);
+  body.add(mesh(top, L.top));
+  if (!L.dress) body.add(mesh(lathe([[0, hipY - 0.1], [0.13 * w, hipY - 0.1], [0.14 * w, hipY], [0.12 * w, hipY + 0.04], [0, hipY + 0.04]]).scale(1, 1, 0.8), L.bottom)); // the trousers' seat
+  body.add(at(mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.1, 10), L.skin), 0, shoulderY + 0.07, 0)); // neck
+  // the head: a soft egg with dot eyes and a small smile (drawn lines, no ink hull)
+  const head = new THREE.SphereGeometry(headR, 16, 12); head.scale(0.94, 1.04, 0.94);
+  body.add(at(mesh(head, L.skin), 0, headY, 0.0));
+  for (const s of [-1, 1]) body.add(at(mesh(new THREE.SphereGeometry(headR * 0.11, 6, 5), PAL.ink, { ink: false, shadow: false }), s * headR * 0.36, headY + headR * 0.12, headR * 0.86));
+  const smile = new THREE.TorusGeometry(headR * 0.26, headR * 0.035, 3, 10, Math.PI * 0.8);
+  body.add(at(mesh(smile, PAL.mouth, { ink: false, shadow: false }), 0, headY - headR * 0.3, headR * 0.84, 0, 0, Math.PI * 1.1));
+  // hair
+  const cap = (k = 1.08, cut = 0.55) => new THREE.SphereGeometry(headR * k, 14, 8, 0, Math.PI * 2, 0, Math.PI * cut);
+  const hairStyle = L.hat === 'straw' || L.hat === 'scarf' ? (L.hairStyle === 'braid' || L.hairStyle === 'ponytail' ? L.hairStyle : 'none') : L.hairStyle;
+  if (hairStyle !== 'bald' && hairStyle !== 'none') body.add(at(mesh(cap(1.08, hairStyle === 'curly' ? 0.5 : 0.56), L.hair), 0, headY + headR * 0.02, -headR * 0.06, -0.25, 0, 0));
+  if (hairStyle === 'bun') body.add(at(mesh(new THREE.SphereGeometry(headR * 0.42, 12, 10), L.hair), 0, headY + headR * 0.95, -headR * 0.45));
+  if (hairStyle === 'braid') { // a plait down her back: knots of hair getting smaller
+    for (let k = 0; k < 5; k++) {
+      const q = k / 4;
+      body.add(at(mesh(new THREE.SphereGeometry(headR * (0.3 - q * 0.1), 8, 6), L.hair), headR * 0.12 * Math.sin(q * 3), headY - headR * (0.35 + q * 1.5), -headR * (0.95 + q * 0.1)));
+    }
   }
-  for (const s of [-1, 1]) body.add(at(mesh(new THREE.CapsuleGeometry(0.045, 0.36, 3, 8), look.skin), s * 0.21, 0.98, 0, 0, 0, s * 0.12));
-  // a basket on the right arm
-  const basket = at(mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.12, 14, 1, true), PAL.woodLight, { hatch: 1 }), 0.3, 0.8, 0.08);
-  basket.material.side = THREE.DoubleSide;
-  body.add(basket, at(mesh(new THREE.TorusGeometry(0.11, 0.012, 5, 16, Math.PI), PAL.wood), 0.3, 0.86, 0.08));
-  root.add(body);
+  if (hairStyle === 'ponytail') {
+    const tail = taperTube(new THREE.CatmullRomCurve3([V(0, headY + headR * 0.55, -headR * 0.85), V(0, headY + headR * 0.1, -headR * 1.25), V(0, headY - headR * 0.9, -headR * 1.15)]), headR * 0.28, headR * 0.1, 10, 8);
+    body.add(mesh(tail, L.hair));
+  }
+  if (hairStyle === 'curly') {
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2;
+      body.add(at(mesh(new THREE.SphereGeometry(headR * 0.34, 6, 4), L.hair), Math.cos(a) * headR * 0.78, headY + headR * (0.55 + 0.25 * Math.sin(a * 2)), Math.sin(a) * headR * 0.7 - headR * 0.1));
+    }
+  }
+  // a hat now and then
+  if (L.hat === 'straw') {
+    body.add(at(mesh(new THREE.CylinderGeometry(headR * 2.1, headR * 2.2, 0.018, 24), L.hatColour, { hatch: 1 }), 0, headY + headR * 0.55, 0, -0.08, 0, 0));
+    body.add(at(mesh(lathe([[headR * 0.95, 0], [headR * 0.92, headR * 0.5], [headR * 0.7, headR * 0.72], [0, headR * 0.75]]), L.hatColour, { hatch: 1 }), 0, headY + headR * 0.55, 0, -0.08, 0, 0));
+    body.add(at(mesh(new THREE.CylinderGeometry(headR * 0.97, headR * 0.97, headR * 0.16, 20, 1, true), PAL.red), 0, headY + headR * 0.66, 0, -0.08, 0, 0));
+  } else if (L.hat === 'cap') {
+    body.add(at(mesh(cap(1.1, 0.5), L.hatColour), 0, headY + headR * 0.08, 0, -0.12, 0, 0));
+    const visor = new THREE.CylinderGeometry(headR * 0.7, headR * 0.7, 0.014, 16, 1, false, -Math.PI / 2, Math.PI); visor.scale(1, 1, 0.9);
+    body.add(at(mesh(visor, L.hatColour), 0, headY + headR * 0.32, headR * 0.72, 0.18, 0, 0));
+  } else if (L.hat === 'scarf') { // a headscarf over the hair, knotted at the nape
+    body.add(at(mesh(cap(1.13, 0.62), L.hatColour), 0, headY + headR * 0.04, -headR * 0.08, -0.45, 0, 0));
+    body.add(at(mesh(new THREE.SphereGeometry(headR * 0.22, 8, 6), mix(L.hatColour, PAL.ink, 0.1)), 0, headY - headR * 0.45, -headR * 0.95));
+    for (const sd of [-1, 1]) body.add(at(mesh(new THREE.ConeGeometry(headR * 0.14, headR * 0.6, 6), L.hatColour), sd * headR * 0.15, headY - headR * 0.8, -headR * 1.0, 0.2, 0, sd * 0.35));
+  }
+  root.add(mergeByMaterial(body, 'body'));
+  // arms: a sleeve and a bare forearm, tapered, with a round hand; they swing from the shoulder
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group(); arm.name = s < 0 ? 'armL' : 'armR';
+    arm.position.set(s * 0.165 * w, shoulderY - 0.05, 0);
+    const len = kid ? 0.42 : 0.56;
+    const sleeve = taperTube(new THREE.CatmullRomCurve3([V(0, 0, 0), V(s * 0.03, -len * 0.25, 0.01), V(s * 0.045, -len * 0.45, 0.02)]), 0.052, 0.044, 6, 9);
+    const fore = taperTube(new THREE.CatmullRomCurve3([V(s * 0.045, -len * 0.42, 0.02), V(s * 0.05, -len * 0.7, 0.04), V(s * 0.045, -len * 0.92, 0.06)]), 0.036, 0.03, 6, 8);
+    arm.add(mesh(sleeve, L.top), mesh(fore, L.skin), at(mesh(new THREE.SphereGeometry(0.042, 10, 8), L.skin), s * 0.045, -len * 0.96, 0.065));
+    root.add(mergeByMaterial(arm, arm.name));
+  }
+  // the basket (or a tote) on the right arm, where the goods go
+  const handR = new THREE.Vector3(0.165 * w + 0.05, shoulderY - 0.05 - (kid ? 0.4 : 0.54), 0.07);
+  const bag = new THREE.Group(); bag.name = 'bag';
+  if (!L.carry) {
+    // nothing to carry: the goods go into their arms
+  } else if (L.carry === 'basket') {
+    const basket = mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.12, 14, 1, true), PAL.woodLight, { hatch: 1 });
+    basket.material.side = THREE.DoubleSide;
+    bag.add(at(basket, 0.05, -0.12, 0.04), at(mesh(new THREE.TorusGeometry(0.11, 0.012, 5, 16, Math.PI), PAL.wood), 0.05, -0.06, 0.04));
+  } else {
+    const tote = new THREE.CylinderGeometry(0.11, 0.12, 0.2, 4, 1); tote.rotateY(Math.PI / 4); tote.scale(1, 1, 0.35);
+    bag.add(at(mesh(tote, mix(PAL.cream, L.top, 0.25)), 0.04, -0.14, 0.03), at(mesh(new THREE.TorusGeometry(0.06, 0.008, 4, 12, Math.PI), PAL.cream), 0.04, -0.03, 0.03));
+  }
+  bag.position.copy(handR);
+  root.add(bag);
+  root.userData.basket = handR.clone().add(V(0.05, -0.08, 0.04));
+  // legs: trousers (or bare under the dress), rounded shoes
   for (const s of [-1, 1]) {
     const legG = new THREE.Group(); legG.name = s < 0 ? 'legL' : 'legR';
-    legG.position.set(s * 0.08, 0.62, 0);
-    legG.add(at(mesh(new THREE.CapsuleGeometry(0.06, 0.48, 3, 8), look.legs), 0, -0.3, 0));
-    legG.add(at(mesh(box(0.1, 0.06, 0.18), PAL.charcoal), 0, -0.6, 0.04));
-    root.add(legG);
+    legG.position.set(s * 0.075 * w, hipY - 0.04, 0);
+    const legLen = hipY - 0.1;
+    const leg = taperTube(new THREE.LineCurve3(V(0, 0, 0), V(0, -legLen, 0.005)), L.dress ? 0.045 : 0.068, L.dress ? 0.036 : 0.05, 4, 9);
+    legG.add(mesh(leg, L.dress ? L.skin : L.bottom));
+    const shoe = new THREE.SphereGeometry(0.065, 12, 8); shoe.scale(0.85, 0.55, 1.45);
+    legG.add(at(mesh(shoe, PAL.charcoal), 0, -legLen - 0.02, 0.04));
+    root.add(mergeByMaterial(legG, legG.name));
   }
+  root.userData.scale = L.height / (kid ? 1.25 : 1.6);
+  root.scale.setScalar(root.userData.scale);
   return root;
+}
+
+// a neighbour's own stall at the big yard sale (v0.13, P29-5: "more sellers"): generic yard-sale
+// goods, set out on a table like hers: jars and a lamp, or a stack of books and a folded blanket
+// (no crops, no logos, no prices)
+export function stallGoods(seed = 0) {
+  const g = new THREE.Group(); g.name = 'StallGoods';
+  const top = 0.645;
+  if (seed % 2 === 0) {
+    for (let k = 0; k < 4; k++) { // jars with cloth lids
+      const x = -0.38 + k * 0.14; const z = -0.08 + (k % 2) * 0.12;
+      g.add(at(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.1, 12), k % 2 ? PAL.flower : mix(PAL.red, PAL.flower, 0.4)), x, top + 0.05, z));
+      g.add(at(mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.02, 12), k % 2 ? PAL.red : PAL.cream), x, top + 0.11, z));
+    }
+    // a table lamp: a turned wooden base and a cream shade
+    g.add(at(mesh(lathe([[0, 0], [0.07, 0], [0.06, 0.03], [0.02, 0.05], [0.02, 0.22], [0, 0.22]], 14), PAL.woodLight, { hatch: 1 }), 0.3, top, 0));
+    g.add(at(mesh(lathe([[0.12, 0], [0.07, 0.14], [0, 0.14]], 16), PAL.cream), 0.3, top + 0.2, 0));
+  } else {
+    // a stack of books, a little askew
+    const spines = [PAL.red, PAL.denim, PAL.leaf, PAL.flower, PAL.woodLight];
+    for (let k = 0; k < 5; k++) g.add(at(mesh(box(0.24 - k * 0.012, 0.045, 0.17), spines[k]), -0.25, top + 0.023 + k * 0.046, 0, 0, (k % 2 ? 0.12 : -0.08), 0));
+    // a folded blanket, two soft layers with a stripe
+    const fold = new THREE.CapsuleGeometry(0.06, 0.24, 4, 10); fold.rotateZ(Math.PI / 2); fold.scale(1, 0.55, 2.2);
+    g.add(at(mesh(fold, mix(PAL.red, PAL.cream, 0.45)), 0.22, top + 0.035, 0.02));
+    g.add(at(mesh(fold.clone(), mix(PAL.denim, PAL.cream, 0.35)), 0.22, top + 0.095, 0.02));
+    g.add(at(stroke(0.33, 0.006, 0.02), 0.22, top + 0.132, 0.02));
+  }
+  return mergeByMaterial(g, 'StallGoods');
 }
 
 // a dust puff (v0.12 DIY time): three or four soft paper-white blobs in ink, scaled and faded
@@ -393,6 +494,101 @@ export function gravelPath(left, right) {
     line.userData.noFit = true;
     g.add(line);
   }
+  return g;
+}
+
+// ---------------- D08 path (G1), v0.13: stepping stones with grass between ----------------
+// The captain: "the road looks cheap, I imagine is a placeholder"; answer 2 "Stepping stones"
+// (spec v0.13 P29-3): the drawn winding path laid as a run of flat stepping stones between its two
+// drawn boundaries, from the door to the frame's edge: irregular rounded slabs about 0.35-0.6 m
+// across, two abreast where the path is wide and one where it narrows at the door, flush with the
+// ground, each in the farm's stone grey (D11, D12) with hatching on its shaded side and its ink
+// line; between them short ink tufts of grass on the paper (green only when the finale greens the
+// ground: world.js). left/right: matching arrays of ground points along the path. Merged.
+export function stonePath(left, right) {
+  const g = new THREE.Group(); g.name = 'D08_Path';
+  const r = rng(808);
+  const n = left.length;
+  const mid = left.map((q, i) => q.clone().lerp(right[i], 0.5));
+  const len = [0];
+  for (let i = 1; i < n; i++) len.push(len[i - 1] + mid[i].distanceTo(mid[i - 1]));
+  const total = len[n - 1];
+  const at = (s) => { // centre, across (unit), along (unit) and half-width at arc length s
+    let i = 1; while (i < n - 1 && len[i] < s) i++;
+    const t = Math.max(0, Math.min(1, (s - len[i - 1]) / Math.max(1e-6, len[i] - len[i - 1])));
+    const c = mid[i - 1].clone().lerp(mid[i], t);
+    const l = left[i - 1].clone().lerp(left[i], t); const rr = right[i - 1].clone().lerp(right[i], t);
+    const across = rr.clone().sub(l); const half = across.length() / 2; across.normalize();
+    const along = mid[i].clone().sub(mid[i - 1]).normalize();
+    return { c, across, along, half };
+  };
+  const stones = new THREE.Group();
+  const tufts = [];
+  const rims = []; // each slab's ink line, drawn on the ground around it with an uneven pressure
+  let row = 0;
+  for (let s = 0.3; s < total - 0.2; row++) {
+    const { c, across, along, half } = at(s);
+    const two = half * 2 > 1.25;
+    const yaw = Math.atan2(along.x, along.z);
+    const k = two ? 2 : 1;
+    let deep = 0;
+    for (let j = 0; j < k; j++) {
+      const wide = two ? Math.min(0.58, half * 0.78) : Math.min(0.6, half * 1.3); // across, m
+      const size = wide * (0.82 + r() * 0.25);
+      const lengthM = 0.36 + r() * 0.16; // along
+      deep = Math.max(deep, lengthM);
+      const off = two ? (j ? 1 : -1) * half * (0.42 + (r() - 0.5) * 0.08) + (row % 2 ? 0.05 : -0.05) : (r() - 0.5) * half * 0.3;
+      const geo = stoneGeometry(0.2, 11 + ((row * 3 + j) % 9), 2).clone();
+      geo.scale(size / 0.46, 0.22, lengthM / 0.4);
+      const m = new THREE.Mesh(geo, toon((row + j) % 3 ? PAL.stone : mix(PAL.stone, PAL.paper, 0.16), { hatch: 1 }));
+      m.position.copy(c).addScaledVector(across, off).addScaledVector(along, (r() - 0.5) * 0.06).setY(0.0);
+      m.rotation.y = yaw + (r() - 0.5) * 0.6;
+      m.castShadow = false; m.receiveShadow = true;
+      stones.add(m);
+      const pts = [];
+      const seg = 22;
+      const sd = row * 7 + j;
+      for (let q = 0; q < seg; q++) {
+        const a = (q / seg) * Math.PI * 2;
+        const wob = 1 + 0.07 * Math.sin(a * 3 + sd) + 0.05 * (hash3(sd, q, 5) - 0.5);
+        pts.push(new THREE.Vector2(Math.cos(a) * size * 0.53 * wob, Math.sin(a) * lengthM * 0.53 * wob));
+      }
+      const rim = strokeGeometry(pts, (u) => 0.014 + 0.012 * Math.abs(Math.sin(u * Math.PI * 2 + sd)), true);
+      rim.rotateX(-Math.PI / 2);
+      rim.rotateY(m.rotation.y);
+      rim.translate(m.position.x, 0.006, m.position.z);
+      rims.push(rim);
+    }
+    // grass in the gaps: a tuft between this stone and the next, now and then one at the edge
+    const gap = 0.12 + r() * 0.08;
+    const tuftAt = c.clone().addScaledVector(along, deep / 2 + gap / 2).addScaledVector(across, (r() - 0.5) * half * (two ? 1.2 : 0.8));
+    tufts.push(tuftAt);
+    if (two) tufts.push(c.clone().addScaledVector(across, (r() < 0.5 ? -1 : 1) * half * 0.05));
+    if (row % 3 === 1) tufts.push(c.clone().addScaledVector(across, (r() < 0.5 ? -1 : 1) * half * 0.98));
+    s += deep + gap;
+  }
+  const merged = mergeByMaterial(stones, 'D08_Path_Stones');
+  // tufts: two to four short pen strokes each, facing the camera, in ink on the paper
+  const tg = [];
+  tufts.forEach((p, t) => {
+    const n2 = 2 + (t % 3);
+    for (let k = 0; k < n2; k++) {
+      const x0 = (k - (n2 - 1) / 2) * 0.03 + (r() - 0.5) * 0.015;
+      const h = 0.07 + r() * 0.06; const lean = (k - (n2 - 1) / 2) * 0.025;
+      const pts = [];
+      for (let q = 0; q <= 4; q++) { const u = q / 4; pts.push(new THREE.Vector2(x0 + lean * u * u, h * u)); }
+      const geo = strokeGeometry(pts, (u) => 0.011 * (1 - 0.7 * u));
+      geo.translate(p.x, 0.008, p.z);
+      tg.push(geo);
+    }
+  });
+  const grass = new THREE.Mesh(mergeGeometries(tg, false), new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide }));
+  grass.userData.noOutline = true; grass.userData.noFit = true; grass.castShadow = false;
+  grass.name = 'D08_Path_Tufts';
+  const ink = new THREE.Mesh(mergeGeometries(rims, false), new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+  ink.userData.noOutline = true; ink.userData.noFit = true; ink.castShadow = false;
+  ink.name = 'D08_Path_Ink';
+  g.add(merged, ink, grass);
   return g;
 }
 

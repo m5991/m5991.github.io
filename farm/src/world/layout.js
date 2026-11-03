@@ -108,8 +108,16 @@ export const STATIONS = [
   { id: 'T0', kind: 'site', u: 68.5, v: 87.5, r: 0.8, label: 'raised bed' },
   // the yard-sale table (v0.12), where the market crate stood: beside the path bend, on the way
   // between the crops and the house
-  { id: 'table', kind: 'table', u: 47, v: 59, r: 0.5, label: 'yard-sale table' },
+  { id: 'table', kind: 'table', u: 47, v: 59, r: 0.5, label: 'yard-sale table', table: 0 },
+  // v0.13 (captain: "as your house is growing ... more tables appear"): one more table with each
+  // house stage, set up end to end beside hers in one row clear of the path (so the buyers stand
+  // behind the row and never between her and the goods), four at most
+  { id: 'table2', kind: 'table', u: 53.2, v: 59.3, r: 0.5, label: 'yard-sale table', table: 1 },
+  { id: 'table3', kind: 'table', u: 59.4, v: 59.6, r: 0.5, label: 'yard-sale table', table: 2 },
+  { id: 'table4', kind: 'table', u: 65.6, v: 59.9, r: 0.5, label: 'yard-sale table', table: 3 },
 ];
+// v0.13: the neighbours' own stalls at the last stage (the home, H4), beside her four tables
+export const NEIGHBOUR_STALLS = [{ u: 72.4, v: 60.3 }, { u: 72.8, v: 67.2 }];
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
 export const BOUNDS = { uMin: 1, uMax: 99, vMin: 40, vMax: 99 };

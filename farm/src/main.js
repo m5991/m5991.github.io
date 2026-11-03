@@ -28,14 +28,20 @@
 // or selling: the next build's needs count down at the bottom and become its DIY button, which
 // works at the part; DIY is a hop, dust and comic hammering; sticks drop around the tree and go if
 // left; weeds creep over planted crops; Help me finish (Pause) turns those two off.
+// v0.13 (captain's v0.12 playtest): lesson messages are a slim note at the top edge (a tap folds
+// it); the yard sale grows with the house (a table per house stage, more buyers); a tool taken
+// once comes to her at the job; the DIY button pulses as soon as she has everything, and after
+// 10 s an arrow and a sparkle show the part; the finale walks her to her place.
 import * as THREE from 'three';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
 import { BASE_STAGE, CAPACITY, HAMMERED, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, tableFull, recipe,
+  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
+  tableCap, tables,
 } from './game/ledger.js';
+import { createDiyHint } from './game/hints.js';
 import { buildBar, PATCH_NAME, WOOD_SOURCES } from './game/guide.js';
 import { E21_COINS, found, SONGS, songsDue } from './game/songs.js';
 import { Hammering } from './world/build.js';
@@ -43,7 +49,7 @@ import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
 import * as G from './world/greybox.js';
 import { createPrefs } from './game/prefs.js';
-import { Finale } from './world/finale.js';
+import { Finale, FINALE_YAW } from './world/finale.js';
 import { Opening } from './world/opening.js';
 import { playsOpening, saveNotice } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
@@ -52,7 +58,7 @@ import {
   atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, toolBlocked, wantedTool,
 } from './game/interaction.js';
 import { nextGoal } from './game/guide.js';
-import { coachPrompt, kindOf, learned, LINGER_MS, MOVED_M, tutorialStep } from './game/tutorial.js';
+import { coachPrompt, dropLesson, kindOf, learned, LINGER_MS, MOVED_M, tutorialStep } from './game/tutorial.js';
 import { fitRect, PRESETS, Projection, projectedExtent } from './world/projection.js';
 import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
@@ -275,7 +281,8 @@ async function boot() {
             }
           }
           const n = l.table.C + l.table.S + l.table.T;
-          hud.announce(n >= 6 ? 'The table is full: time for a yard sale' : `On the table: ${n} of 6`);
+          const cap6 = tableCap(l);
+          hud.announce(n >= 6 ? `${n} out of ${cap6}: time for a yard sale` : `On the table: ${n} of 6`);
           if (n >= 6 && !data.session.firstSaleSeen) hud.toast('The table is full! Tap Yard Sale, or the table, to sell it all.', 4200);
           break;
         }
@@ -286,6 +293,8 @@ async function boot() {
           for (const c of ['C', 'S', 'T']) for (let k = 0; k < e.items[c]; k++) order.push(c);
           saleShowing = true;
           world.yardSale(order, {
+            sale: e.sale,
+            tables: e.tables,
             onSign: () => sfx.cue('confirm'),
             onCoins: (res, from) => {
               world.flight('coin', from.clone().setY(from.y + 0.2), hero.position.clone().setY(1.2), 380).then(() => { sfx.cue('coin'); hud.bump('coins'); });
@@ -360,12 +369,22 @@ async function boot() {
           // the part goes together once she has hopped to it (v0.12)
           const lead = hammered ? Hammering.leadMs(reducedMotion()) : 0;
           if (lead) world.holdReveal(e.stage, data.ledger);
+          // v0.13 (P29-5): a house stage brings one more yard-sale table, set up as its DIY ends
+          const moreTables = ['H1', 'H2', 'H3'].includes(e.stage) && tables(data.ledger) > (world.tablesShown ?? 1);
+          if (moreTables) world.tableHold = true;
           world.tweens.wait(lead).then(() => world.reveal(e.stage, s.workMs, data.ledger)).then(() => {
             sfx.cue('complete');
             if (s.crop && first) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel. The yard-sale table is set up: walk past it with your ${PATCH_NAME[data.ledger.crop]}.`, 4800);
             else if (s.crop) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel.`, 4200);
             if (s.hire) hud.toast('The first elf archer is hired. Archers and birds come in a later build.', 5000);
             if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, another crop plot and the walls.', 5000);
+            if (moreTables) {
+              world.tableHold = false;
+              world.sync(data.ledger, true); // the new table pops up in dust
+              sfx.cue('thud');
+              const n = tables(data.ledger);
+              hud.toast(n >= 4 ? 'The big yard sale! A fourth table, and two neighbours set up stalls of their own.' : `More neighbours are coming: a ${n === 2 ? 'second' : 'third'} yard-sale table.`, 4200);
+            }
             if (e.stage === 'H4') finale.start(); // H4 is saved; last, the drawing gets its colour (P25-2)
           });
           break;
@@ -410,6 +429,15 @@ async function boot() {
   // v0.12: DIY at the site she stands at, once she has everything; the Yard Sale once the table
   // is full and she is at it (the button, E / Space, or a tap on the stand; spec v0.12 P28-1: out
   // of reach the button says to go to the table, and the arrow points there)
+  // v0.13 DIY hint: the button shows as soon as she has everything; pressed away from the part it
+  // shows the way at once (the arrow and the sparkle)
+  const diyHint = createDiyHint();
+  let diyState = { stage: null, pulse: false, point: false };
+  function diyAway(bar) {
+    diyHint.nudge();
+    const where = STAGES[bar.stage]?.label && ['H1', 'H2', 'H3', 'H4'].includes(bar.stage) ? 'the house' : `the ${bar.label}`;
+    hud.toast(`${cap(bar.label)}: all here. Go to ${where}`, 3000);
+  }
   function doDiy(stage) {
     const r = commit({ t: 'build', stage });
     if (r.ok) sfx.cue('confirm');
@@ -418,11 +446,11 @@ async function boot() {
   let saleShowing = false;
   const SALE_REACH_M = 1.6;
   function atTheTable() {
-    const t = ctxTargets.find((x) => x.kind === 'table');
-    return !!t && inReach({ x: hero.body.position.x, z: hero.body.position.z }, t, SALE_REACH_M);
+    const hp = { x: hero.body.position.x, z: hero.body.position.z };
+    return ctxTargets.some((x) => x.kind === 'table' && inReach(hp, x, SALE_REACH_M));
   }
   function doYardSale() {
-    if (saleShowing || !tableFull(data.ledger)) return;
+    if (saleShowing || !saleReady(data.ledger)) return;
     if (!atTheTable()) { hud.toast('Yard Sale: go to the table.', 2200); return; }
     commit({ t: 'yardSale' });
   }
@@ -434,9 +462,10 @@ async function boot() {
     zone: $('stick-zone'), base: $('stick-base'), knob: $('stick-knob'),
     onAction: () => {
       if (cards.isOpen || loop.paused) return;
-      if (hud.diyShown) hud.triggerDiy();
+      if (hud.diyHere) hud.triggerDiy();
       else if (hud.saleShown) hud.triggerSale();
-      else hud.triggerContext();
+      else if (!$('context').hidden) hud.triggerContext();
+      else if (hud.diyShown) hud.triggerDiy(); // away from the part: show the way
     },
     onTap: (x, y) => tapWorld(x, y),
     onEscape: () => { if (cards.isOpen) return; if (opening.active) { if (opening.phase === 'running') opening.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) openPause(); },
@@ -450,7 +479,7 @@ async function boot() {
   let debugCarried = null;
   let highlight = null; // the collectible the ground ring marks: { target, inReach } or null
   // first-actions coach: session-only facts (the rest derives from the ledger, tutorial.js)
-  const tut = { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null };
+  const tut = { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null, dropNoted: false };
   let coachState = null; // decided in the world step, drawn in the render step
   function worldStep(dt) {
     hero.setInput(debugSteer ?? input.read());
@@ -461,7 +490,7 @@ async function boot() {
     ctxTargets = world.targets(data.ledger);
     const heroXZ = { x: hero.body.position.x, z: hero.body.position.z };
     goal = goalFor(data.ledger, heroXZ);
-    toolCtx = { want: wantedTool(data.ledger, goal, heroXZ, ctxTargets), toolsComeToMe: data.settings.toolsComeToMe };
+    toolCtx = { want: wantedTool(data.ledger, goal, heroXZ, ctxTargets), toolsComeToMe: data.settings.helpMeFinish }; // Help me finish brings every tool (P29-7)
     const evs = hammering.active ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
     const working = ix.working;
@@ -479,7 +508,7 @@ async function boot() {
     const still = !isMoving({ moving: hero.moving, speed: hero.groundSpeed });
     const mode = working ? 'work' : highlight?.inReach ? (still ? 'settle' : 'reach') : 'near';
     world.updateMarker(dt, highlight && { target: highlight.target, mode, progress: ix.workProgress }, reducedMotion());
-    updateContext(heroXZ);
+    updateContext(heroXZ, dt);
     updateCoachState(dt, heroXZ, working);
     hud.setGoal(goal.text);
   }
@@ -488,7 +517,7 @@ async function boot() {
   let goal = { text: '', target: null };
   let toolCtx = { want: null, toolsComeToMe: false };
   function goalFor(l, heroXZ) {
-    const g = nextGoal(l);
+    const g = nextGoal(l, { toolsCome: data.settings.helpMeFinish });
     const wood = WOOD_SOURCES.includes(g.target);
     if (!(g.target in ROCKS) && !wood) return g;
     let best = null;
@@ -511,7 +540,13 @@ async function boot() {
     tut.lingerMs = highlight?.inReach && !working && hero.moving ? tut.lingerMs + dt : 0;
     tut.lingerHold = tut.lingerMs >= LINGER_MS ? 1800 : Math.max(0, tut.lingerHold - dt);
     const l = data.ledger;
-    const step = tutorialStep(l, { moved: tut.moved });
+    const step = tutorialStep(l, { moved: tut.moved, toolsCome: data.settings.helpMeFinish });
+    // v0.13 (P29-1): the pile lesson is a one-time edge note near the pile, never the arrow
+    if (!tut.dropNoted) {
+      const y = world.stations.yard.pos;
+      const note = dropLesson(l, Math.hypot(y.x - heroXZ.x, y.z - heroXZ.z));
+      if (note) { tut.dropNoted = true; hud.toast(note, 4000); }
+    }
     // a soft cue each time the first-actions guide moves on to a new step (its text shows it too)
     if (step?.phase && tut.phase && step.phase !== tut.phase) sfx.cue('cue');
     tut.phase = step?.phase ?? null;
@@ -530,12 +565,13 @@ async function boot() {
     if (e.type === 'unit') { if (e.result.ok) world.markerPop(0.16); }
   }
 
-  function updateContext(heroXZ) {
+  function updateContext(heroXZ, dt = 0) {
     // v0.12: the build line (the site she stands at, or the goal line's next build) and its DIY
     const site = atSite(heroXZ, ctxTargets);
     const bar = finale.active || opening.active ? null : buildBar(data.ledger, site?.id ?? null);
-    hud.setBuild(bar, bar?.ready && bar.here ? () => doDiy(bar.stage) : null);
-    hud.setSale(tableFull(data.ledger) && !saleShowing && !finale.active, doYardSale);
+    diyState = diyHint.update(dt, bar && !hammering.active ? bar : null);
+    hud.setBuild(bar, bar?.ready ? (bar.here ? () => doDiy(bar.stage) : () => diyAway(bar)) : null);
+    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale);
     // at the tools: the explicit way to take the one the next job needs (P25-4)
     const tools = ctxTargets.find((x) => x.kind === 'tools');
     if (tools && toolCtx.want && inReach(heroXZ, tools)) {
@@ -554,7 +590,7 @@ async function boot() {
     } else if (hammering.active) {
       text = `DIY time! Building the ${STAGES[hammering.stage].label}…`;
     } else {
-      const need = data.settings.toolsComeToMe ? null : toolBlocked(data.ledger, heroXZ, ctxTargets);
+      const need = toolBlocked(data.ledger, heroXZ, ctxTargets, toolCtx);
       if (need) text = `You need the ${need}. It leans by the house.`;
       // a weed on a patch that is not open yet (P27-4)
       const waiting = !text && ctxTargets.find((x) => x.kind === 'weed' && inReach(heroXZ, x) && !data.ledger.weeds[x.id] && weedPresent(data.ledger, x.id) && !weedOpen(data.ledger, x.id));
@@ -566,7 +602,8 @@ async function boot() {
       const table = !text && ctxTargets.find((x) => x.kind === 'table' && inReach(heroXZ, x, 1.2));
       if (table) {
         const n = data.ledger.table.C + data.ledger.table.S + data.ledger.table.T;
-        text = saleShowing ? 'Yard sale!' : n >= 6 ? 'The table is full: tap Yard Sale' : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
+        const capN = tableCap(data.ledger);
+        text = saleShowing ? 'Yard sale!' : n >= capN ? 'The tables are full: tap Yard Sale' : n >= 6 ? `Yard-sale tables · ${n} of ${capN}. Tap Yard Sale, or bring more.` : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
       }
       const near = ctxTargets.filter((x) => ['node', 'stick', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
       for (const n of near) {
@@ -586,17 +623,18 @@ async function boot() {
   // v0.12: a tap on the world that lands on the yard-sale stand holds the sale (the captain:
   // "you click the stand is more intuitive")
   function tapWorld(x, y) {
-    if (!session.playing || loop.paused || !tableFull(data.ledger)) return;
-    const st = world.stations.table;
-    if (!st?.obj.visible) return;
+    if (!session.playing || loop.paused || !saleReady(data.ledger)) return;
     const ndc = new THREE.Vector2((x / view.w) * 2 - 1, -(y / view.h) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, rig.camera);
-    const onTable = ray.intersectObject(st.obj, true).length > 0;
-    // or close to it on screen (a finger is wide)
-    tmpP.copy(st.pos).setY(0.6).project(rig.camera);
-    const px = Math.hypot(((tmpP.x + 1) / 2) * view.w - x, ((1 - tmpP.y) / 2) * view.h - y);
-    if (onTable || px < 56) doYardSale();
+    // any of her tables (v0.13), or close to one on screen (a finger is wide)
+    for (const st of world.tableStations()) {
+      if (!st.obj.visible) continue;
+      const onTable = ray.intersectObject(st.obj, true).length > 0;
+      tmpP.copy(st.pos).setY(0.6).project(rig.camera);
+      const px = Math.hypot(((tmpP.x + 1) / 2) * view.w - x, ((1 - tmpP.y) / 2) * view.h - y);
+      if (onTable || px < 56) { doYardSale(); return; }
+    }
   }
 
   // ---------- session: title, pause, whole farm, overlay ----------
@@ -648,26 +686,27 @@ async function boot() {
     document.body.classList.remove('booting');
     data = structuredClone(d);
     ix.reset();
-    Object.assign(tut, { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null });
+    Object.assign(tut, { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null, dropNoted: false });
     coachState = null;
     highlight = null;
     const pos = data.vanessa.x === null ? proj.groundAt(VANESSA_START.u, VANESSA_START.v) : new THREE.Vector3(data.vanessa.x, 0, data.vanessa.z);
     hero.place(pos.x, pos.z);
     rig.snap = true;
     rig.wholeBlend = 0;
+    world.tableHold = false;
     world.sync(data.ledger);
     world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from H4 (P25-2)
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
+    diyHint.reset();
     burst.hide();
     world.endSale();
     saleShowing = false;
     $('btn-replay').hidden = !mainComplete(data.ledger);
     hud.render(data.ledger);
-    hud.setGoal(nextGoal(data.ledger).text);
+    hud.setGoal(nextGoal(data.ledger, { toolsCome: data.settings.helpMeFinish }).text);
     persist();
     settleLedger(); // e.g. a test save from before v0.9 whose corn-plot weeds are already cleared
-    $('set-tools').checked = data.settings.toolsComeToMe;
     $('set-help').checked = data.settings.helpMeFinish;
     titleEl.hidden = true;
     session.playing = true;
@@ -689,7 +728,7 @@ async function boot() {
     if (withOverlay) {
       const g = proj.groundAt(VANESSA_START.u, VANESSA_START.v);
       hero.place(g.x, g.z);
-      hero.yaw = 0; hero.yawTarget = 0; hero.view.rotation.y = 0;
+      hero.yaw = FINALE_YAW; hero.yawTarget = FINALE_YAW; hero.view.rotation.y = FINALE_YAW; // A29-10, as in the finale
       hero.halt();
       hero.showFinalePose(true); // the drawing's hands-on-hips pose, nothing on her head (V9)
       world.showHeldTool(false); // nor in her hands
@@ -822,8 +861,6 @@ async function boot() {
   // every button answers with a light tap, unless its own handler just played a cue (Confirm)
   document.addEventListener('click', (ev) => { if (ev.target.closest?.('button')) sfx.cue('tap'); });
   $('btn-pause').onclick = openPause;
-  // P25-4 accessibility setting: the needed tool comes to her hand at the job (saved)
-  $('set-tools').onchange = (ev) => { data.settings.toolsComeToMe = ev.target.checked; persist(); };
   // v0.12: Help me finish: no weeds creep over the crops and no stick is lost (saved)
   $('set-help').onchange = (ev) => { data.settings.helpMeFinish = ev.target.checked; persist(); };
   $('btn-resume').onclick = closePause;
@@ -896,7 +933,9 @@ async function boot() {
     setLookResolution(renderer); // constant-width ink and screen-space paper grain
     const whole = rig.mode === 'whole';
     view.w = w; view.h = h;
-    view.top = whole ? 0 : $('hud').getBoundingClientRect().bottom;
+    // v0.13 (P29-2): while the edge note is open the play area starts under it, so the camera
+    // centres Vanessa below it and it never covers her
+    view.top = whole ? 0 : Math.max($('hud').getBoundingClientRect().bottom, hud.noteRect?.bottom ?? 0);
     view.bottom = whole ? 0 : h - $('controls').getBoundingClientRect().top;
     const r = fitRect(w, h);
     Object.assign($('overlay').style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
@@ -925,14 +964,18 @@ async function boot() {
   // layout (which measured an empty goal line and so centred Vanessa too high): re-measure the
   // bands whenever the HUD changes size; the camera eases to the new centre (camera.js). The
   // coach arrow stays below the HUD and the carried stack is capped to the room above her head.
-  const live = { hudBottom: 0, ctlTop: 0, capAt: 0 };
+  const live = { hudBottom: 0, playTop: 0, ctlTop: 0, capAt: 0 };
   const measureBands = () => {
     live.hudBottom = $('hud').getBoundingClientRect().bottom;
+    live.playTop = Math.max(live.hudBottom, hud.noteRect?.bottom ?? 0); // under the edge note (v0.13)
     live.ctlTop = $('controls').getBoundingClientRect().top;
+    document.documentElement.style.setProperty('--note-top', `${Math.round(live.hudBottom + 6)}px`); // the edge note (v0.13)
     live.capAt = 0;
     layout();
   };
   new ResizeObserver(measureBands).observe($('hud'));
+  new ResizeObserver(measureBands).observe($('toast')); // the note opens, folds or goes
+  hud.onNote = () => requestAnimationFrame(measureBands);
   window.addEventListener('resize', measureBands);
   measureBands();
   const capA = new THREE.Vector3();
@@ -940,13 +983,15 @@ async function boot() {
   // how many units fit between the top of her head and the HUD, through the actual camera
   function updateStackCap(now) {
     if (now < live.capAt) return;
-    live.capAt = now + 500;
+    live.capAt = now + 250;
     const p = hero.position;
     capA.set(p.x, STACK_BASE_Y, p.z).project(rig.camera);
     capB.set(p.x, STACK_BASE_Y + 1, p.z).project(rig.camera);
     const pxPerM = ((capB.y - capA.y) / 2) * view.h;
     const base = ((1 - capA.y) / 2) * view.h;
-    if (pxPerM > 0) hero.stack.cap = stackCap((base - live.hudBottom - 30) / pxPerM);
+    // v0.13 (P29-2): the stack's room is measured from the edge note's bottom while it is open
+    const top = live.playTop || live.hudBottom;
+    if (pxPerM > 0) hero.stack.cap = stackCap((base - top - 30) / pxPerM);
   }
 
   // "+N" over the stack's top when more is carried than the screen lets it draw
@@ -973,11 +1018,20 @@ async function boot() {
   }
 
   function updateCoach() {
-    if (loop.paused || rig.mode === 'whole' || !session.playing || !coachState) { coach.hideAll(); badge.hidden = true; return; }
-    if (hammering.active) { coach.hideAll(); return; } // nothing over the build
+    if (loop.paused || rig.mode === 'whole' || !session.playing || !coachState) { coach.hideAll(); badge.hidden = true; coach.sparkle(null); return; }
+    if (hammering.active) { coach.hideAll(); coach.sparkle(null); return; } // nothing over the build
     const { step, prompt, point } = coachState;
     // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
     const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : step?.target ? [{ id: step.target }] : [];
+    // v0.13 DIY hint: 10 s after she has everything (or at once when DIY is pressed away), the
+    // arrow leads to the part, which sparkles
+    const hintAt = diyState.point && world.stations[diyState.stage] ? diyState.stage : null;
+    if (hintAt && !aims.some((a) => a.id === hintAt)) aims.push({ id: hintAt });
+    if (hintAt) {
+      world.buildPoint(hintAt, tmpP).setY(Math.max(0.5, tmpP.y + 0.2)).project(rig.camera);
+      const sx = ((tmpP.x + 1) / 2) * view.w; const sy = ((1 - tmpP.y) / 2) * view.h;
+      coach.sparkle(tmpP.z < 1 && sx > 0 && sx < view.w && sy > (live.playTop || live.hudBottom) && sy < live.ctlTop ? { x: sx + 34, y: sy - 4 } : null); // beside the arrow's tip
+    } else coach.sparkle(null);
     const arrows = [];
     for (const aim of aims) {
       const st = world.stations[aim.id];
@@ -987,7 +1041,7 @@ async function boot() {
       if (atTarget) continue;
       tmpP.copy(st.pos).setY(st.obj.position.y + (ARROW_H[st.def.kind] ?? 0.6)).project(rig.camera);
       const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
-      const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.hudBottom, bottom: live.ctlTop });
+      const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop });
       arrows.push(aim.colour ? { ...a, colour: aim.colour } : a);
     }
     coach.arrows(arrows);
@@ -1141,7 +1195,7 @@ async function boot() {
         for (const st of stages.length ? stages : STAGE_ORDER) one(st);
         return done;
       },
-      finale, prefs, toggleBlueprint, opening, paper, hammering, burst,
+      finale, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
       holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),
     };

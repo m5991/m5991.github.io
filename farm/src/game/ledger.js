@@ -10,10 +10,14 @@
 // once she has everything (`build`: no partial deposits, no Return); sticks drop at random spots
 // around the tree and go if left (`sticks`); weeds creep back over planted crops and a plant left
 // under one wilts (`overgrown`); the raised bed is built with sticks (T0); the tool upgrades are gone.
+// v0.13 (captain's v0.12 playtest): the yard sale grows with the house: one table per house stage,
+// four at most (`tables`), each holding six, and a sale needs six at least (`saleReady`); a tool she
+// has once taken comes to her hand at the job from then on (`toolComes`, read from the farm:
+// spec v0.13 P29-7, no save field).
 import {
   BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, MATERIALS, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES,
   PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES, STAGE_ORDER, STICK,
-  STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TOOLS, WEEDS, WEED_PLOT, YARD_MATERIALS,
+  SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TOOLS, WEEDS, WEED_PLOT, YARD_MATERIALS,
 } from './data.js';
 
 const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
@@ -115,9 +119,16 @@ export function houseStage(l) {
 }
 // the yard-sale table appears when her first crop's patch is planted (its stage commits)
 export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
+// v0.13: the tables standing now: one, and one more per house stage, TABLES_MAX at most
+export const tables = (l) => Math.min(TABLES_MAX, 1 + houseStage(l));
+// what the tables hold at most now (six each)
+export const tableCap = (l) => TABLE_CAP * tables(l);
+// the goods set out on the tables
 export const tableCount = (l) => sum(l.table);
-export const tableRoom = (l) => TABLE_CAP - tableCount(l);
-export const tableFull = (l) => tableCount(l) >= TABLE_CAP;
+export const tableRoom = (l) => Math.max(0, tableCap(l) - tableCount(l));
+export const tableFull = (l) => tableCount(l) >= tableCap(l);
+// a yard sale can be held: six at least on the tables (whatever their number)
+export const saleReady = (l) => tableAvailable(l) && tableCount(l) >= SALE_MIN;
 export const tableValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 export const mainComplete = (l) => isCommitted(l, 'H4');
 
@@ -245,13 +256,13 @@ export function settle(l0) {
 // ---------- transactions ----------
 // tx: { t: 'tick', ms, calm? } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'drop', r? }
 //   | { t: 'stock' } | { t: 'yardSale' } | { t: 'build', stage } | { t: 'commitFree', stage }
-//   | { t: 'takeTool', tool } | { t: 'returnTool' } | { t: 'dig', id }
+//   | { t: 'takeTool', tool, come? } | { t: 'returnTool' } | { t: 'dig', id }
 export function apply(l0, tx) {
   switch (tx?.t) {
     case 'tick': return tick(l0, tx.ms, !!tx.calm);
     case 'clearWeed': return clearWeed(l0, tx.id);
     case 'pick': return pick(l0, tx.src);
-    case 'takeTool': return takeTool(l0, tx.tool);
+    case 'takeTool': return takeTool(l0, tx.tool, !!tx.come);
     case 'returnTool': return returnTool(l0);
     case 'dig': return dig(l0, tx.id);
     case 'commitFree': return commitFree(l0, tx.stage);
@@ -362,14 +373,26 @@ function clearWeed(l0, id) {
   return { ok: true, l, events };
 }
 
-// take a tool from its lean (or swap: the held one goes back as she takes the other)
-function takeTool(l0, tool) {
+// take a tool from its lean (or swap: the held one goes back as she takes the other); `come`
+// (v0.13): a tool she has taken once (or any, with Help me finish) flies to her hand at the job
+// instead. `first`: her first take of it.
+function takeTool(l0, tool, come = false) {
   if (!TOOLS.includes(tool)) return fail('unknownTool');
   if (l0.tool === tool) return fail('alreadyHeld');
+  const first = !toolComes(l0, tool);
   const l = clone(l0);
   const from = l.tool;
   l.tool = tool;
-  return { ok: true, l, events: [{ type: 'toolTaken', tool, from }] };
+  return { ok: true, l, events: [{ type: 'toolTaken', tool, from, ...(come ? { come: true } : {}), ...(first ? { first: true } : {}) }] };
+}
+// v0.13 (P29-7): she has taken this tool once, read from the farm: the rake once any weed is
+// raked or it is in her hand, the shovel once any spot is dug (a wilted plant's spot was dug) or
+// it is in her hand. From then on it comes to her hand at the job.
+export function toolComes(l, tool) {
+  if (l.tool === tool) return true;
+  if (tool === 'rake') return Object.values(l.weeds ?? {}).some((w) => w === true);
+  if (tool === 'shovel') return Object.values(l.nodes ?? {}).some((n) => n?.dug) || Object.values(l.wilted ?? {}).some(Boolean);
+  return false;
 }
 function returnTool(l0) {
   if (l0.tool === null) return fail('noTool');
@@ -451,7 +474,8 @@ function drop(l0, r = null) {
 }
 
 // v0.12: the crops on her head onto the yard-sale table as she walks past it, corn, sunflowers,
-// tomatoes, until it holds TABLE_CAP; what does not fit stays on her head
+// tomatoes, until it holds TABLE_CAP; what does not fit stays on her head (v0.13: until the tables
+// standing now hold six each)
 function stock(l0) {
   if (!tableAvailable(l0)) return fail('noTable');
   if (tableFull(l0)) return fail('tableFull');
@@ -468,9 +492,10 @@ function stock(l0) {
 }
 
 // v0.12: the yard sale, once the table is full: every item on it sells at its fixed price (§6.1)
+// (v0.13: once six at least are set out, on however many tables stand)
 function yardSale(l0) {
   if (!tableAvailable(l0)) return fail('noTable');
-  if (!tableFull(l0)) return fail('notFull');
+  if (!saleReady(l0)) return fail('tooFew');
   const l = clone(l0);
   const items = { ...l.table };
   const coins = tableValue(l);
@@ -478,7 +503,7 @@ function yardSale(l0) {
   l.purse += coins;
   l.lifetimeCoins += coins;
   l.sales += 1;
-  return { ok: true, l, events: [{ type: 'yardSale', items, coins, sale: l.sales }] };
+  return { ok: true, l, events: [{ type: 'yardSale', items, coins, sale: l.sales, tables: tables(l) }] };
 }
 
 function pick(l0, src) {
@@ -521,7 +546,8 @@ export function validateLedger(l) {
   if (!sameKeys(l.carried, RESOURCES)) e('carried keys');
   else for (const r of RESOURCES) if (!isInt(l.carried[r], 0, CAPACITY)) e(`carried ${r} outside 0..${CAPACITY}`);
   if (!sameKeys(l.yard, YARD_MATERIALS) || !YARD_MATERIALS.every((r) => isInt(l.yard[r]))) e('yard');
-  if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c])) || sum(l.table) > TABLE_CAP) e('table');
+  if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c])) || sum(l.table) > TABLE_CAP * TABLES_MAX) e('table');
+  else if (l.stages && sum(l.table) > tableCap(l)) e('table holds more than its tables');
   else if (sum(l.table) > 0 && !BASE_STAGES.some((id) => l.stages?.[id]?.committed)) e('table stocked before any crop plot');
   if (!isInt(l.sales)) e('sales');
   if (!(l.crop === null || CROPS.includes(l.crop))) e('crop');

@@ -11,9 +11,13 @@
 // v0.12: the same at the yard-sale table (`table`) with crops on her head: they go onto the table
 // until it is full. Nothing is armed any more: there is no delivery and no selling menu; a build
 // is one DIY press at its site (`atSite`), and the yard sale one press of its button.
+// v0.13 (captain: "tools come to me is automatic after going to pick them up at least once
+// each"): a tool she has once taken at the tools comes to her hand at the job (`comes`), in the
+// same 0.5 s; she can still walk to the tools and take it there. The tables grow with the house:
+// her crops go onto any table that stands.
 import { CAPACITY, CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, nodeEstablished, sourceResource, tableAvailable, tableFull, toolJobs, weedOpen,
+  available, digOpen, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, weedOpen,
 } from './ledger.js';
 
 export const REACH_M = 0.9; // 1.5 Vanessa collision diameters with the 0.6 m base hero sphere
@@ -22,6 +26,9 @@ export const HIGHLIGHT_RANGE_M = 3.5; // the ground ring marks the nearest colle
 export const YARD_REACH_M = 1.2; // P27-1: within about 1.2 m of the pile her load drops
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+// the tool comes to her hand at the job: taken once (v0.13, P29-7), or any tool with Help me
+// finish (opts.toolsComeToMe)
+export const comes = (l, tool, opts = {}) => !!opts.toolsComeToMe || toolComes(l, tool);
 const WORK_KINDS = new Set(['weed', 'pile', 'stick', 'rock', 'node', 'dig', 'tools']);
 const SOURCE_KINDS = new Set(['pile', 'stick', 'rock', 'node']);
 // the tool a job target needs
@@ -50,11 +57,12 @@ export function wantedTool(l, goal, hero, targets) {
   return best && best.tool !== l.tool ? best.tool : null;
 }
 
-// in reach of an open job while holding the wrong tool (or none): the tool it needs, else null
-export function toolBlocked(l, hero, targets) {
+// in reach of an open job while holding the wrong tool (or none) that will not come to her: the
+// tool it needs, else null
+export function toolBlocked(l, hero, targets, opts = {}) {
   for (const t of targets) {
     const tool = TOOL_FOR[t.kind];
-    if (!tool || l.tool === tool || !inReach(hero, t)) continue;
+    if (!tool || l.tool === tool || comes(l, tool, opts) || !inReach(hero, t)) continue;
     if (t.kind === 'weed' ? weedOpen(l, t.id) : digOpen(l, t.id)) return tool;
   }
   return null;
@@ -70,11 +78,11 @@ export function inReach(hero, target, reach = REACH_M) {
   return dist(hero, target) - (target.r ?? 0) <= reach;
 }
 
-// opts: { want: the tool to take at the tools (wantedTool), toolsComeToMe: setting }
+// opts: { want: the tool to take at the tools (wantedTool), toolsComeToMe: Help me finish }
 export function isWorkEligible(l, t, opts = {}) {
   if (t.hold) return false; // presentation hold: a branch still in the tree or falling (P25-5)
-  if (t.kind === 'weed') return weedOpen(l, t.id) && (l.tool === 'rake' || !!opts.toolsComeToMe);
-  if (t.kind === 'dig') return digOpen(l, t.id) && (l.tool === 'shovel' || !!opts.toolsComeToMe);
+  if (t.kind === 'weed') return weedOpen(l, t.id) && (l.tool === 'rake' || comes(l, 'rake', opts));
+  if (t.kind === 'dig') return digOpen(l, t.id) && (l.tool === 'shovel' || comes(l, 'shovel', opts));
   if (t.kind === 'tools') return !!opts.want && opts.want !== l.tool;
   if (SOURCE_KINDS.has(t.kind)) {
     if (t.kind === 'node' && !nodeEstablished(l, t.id)) return false;
@@ -103,7 +111,7 @@ export function workUnitMs(t, timing = TIMING, l = null) {
 export function workTx(l, t, want = null) {
   if (t.kind === 'tools') return { t: 'takeTool', tool: want };
   const first = toolFirst(l, t);
-  if (first) return { t: 'takeTool', tool: first }; // Tools come to me: the tool arrives at the job
+  if (first) return { t: 'takeTool', tool: first, come: true }; // the tool arrives at the job
   if (t.kind === 'weed') return { t: 'clearWeed', id: t.id };
   if (t.kind === 'dig') return { t: 'dig', id: t.id };
   return { t: 'pick', src: t.id };
@@ -126,7 +134,7 @@ export function pickWorkTarget(l, hero, targets, selectedId = null, opts = {}) {
 export function pickHighlight(l, hero, targets, selectedId = null, range = HIGHLIGHT_RANGE_M, opts = {}) {
   const here = pickWorkTarget(l, hero, targets, selectedId, opts);
   if (here) return { target: here, inReach: true };
-  if (!opts.toolsComeToMe && toolBlocked(l, hero, targets)) {
+  if (toolBlocked(l, hero, targets, opts)) {
     const tools = targets.find((t) => t.kind === 'tools');
     if (tools) return { target: tools, inReach: inReach(hero, tools) };
   }
@@ -153,8 +161,7 @@ export function atYard(hero, targets) {
 // she carries crops and the yard-sale table has room
 export const hasCrops = (l) => CROPS.some((c) => l.carried[c] > 0);
 export function atTable(hero, targets) {
-  const y = targets.find((t) => t.kind === 'table');
-  return !!y && inReach(hero, y, TABLE_REACH_M);
+  return targets.some((t) => t.kind === 'table' && inReach(hero, t, TABLE_REACH_M));
 }
 
 export function createInteraction({ getLedger, commit, timing = TIMING }) {
@@ -179,7 +186,7 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
     get workDoing() { return s.work ? workTx(getLedger(), s.work.target, s.want).t : null; },
 
     // ctx: { hero: {x,z}, moving: boolean (input held), speed: m/s, targets: [{id, kind, x, z, r}],
-    //        want?: the tool to take at the tools, toolsComeToMe?: setting,
+    //        want?: the tool to take at the tools, toolsComeToMe?: Help me finish (every tool comes),
     //        tableBusy?: a yard sale is being shown (the table takes nothing until the buyers go) }
     update(dtMs, ctx) {
       const events = [];

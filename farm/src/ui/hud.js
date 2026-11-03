@@ -1,7 +1,12 @@
 // DOM HUD (annex §D.9; spec §11.1): carried counters with names, icons and the plain count, the
 // coin purse (v0.11: wood and stone include the yard pile), the goal line, one contextual action,
 // a nonmodal progress label and a polite live region. v0.12: the build line at the bottom (the
-// next build's needs counting down, then its DIY button) and the Yard Sale button. It only presents ledger and controller state. Counters show just the number (captain,
+// next build's needs counting down, then its DIY button) and the Yard Sale button. v0.13 (captain's
+// v0.12 playtest: "the tutorial text boxes ... get in the way and dont let you see the main
+// character"; answer 1 "Edge note"): the lesson messages are a slim note pinned to the top edge
+// under the HUD, never over Vanessa; a tap folds it to one line (and unfolds it), and the game
+// keeps going; the DIY button shows as soon as she has everything, pulsing, and away from the part
+// it says where to go. It only presents ledger and controller state. Counters show just the number (captain,
 // 2026-11-01): the 12-unit cap is told at the refusal moment (toast and status), not here.
 import { RESOURCE_NAMES } from '../game/data.js';
 
@@ -35,6 +40,19 @@ export function createHud(root = document) {
   const progress = $('progress');
   const live = $('live');
   const toast = $('toast');
+  const toastText = toast.querySelector('.text');
+  let folded = false; // the player's choice for this session: later notes arrive folded (P29-2)
+  const showFold = () => {
+    toast.classList.toggle('folded', folded);
+    toast.setAttribute('aria-expanded', String(!folded));
+    toast.title = folded ? 'Unfold the note' : 'Fold the note to one line';
+  };
+  // a tap (or Enter / Space with it focused: it is a button) folds and unfolds it; it never
+  // moves Vanessa or starts the stick
+  toast.addEventListener('click', (e) => { e.stopPropagation(); folded = !folded; showFold(); });
+  toast.addEventListener('pointerdown', (e) => e.stopPropagation());
+  showFold();
+  let leaving = 0;
   const buildbar = $('buildbar');
   const need = buildbar.querySelector('.need');
   const diy = $('btn-diy');
@@ -47,14 +65,22 @@ export function createHud(root = document) {
   let announceTimer = 0;
   let toastTimer = 0;
   const toastQueue = [];
+  // each note stays its time plus 1 s (P29-2), then slides up out of the way and the next slides in
   function showNext() {
     const q = toastQueue[0];
-    if (!q) { toast.hidden = true; return; }
-    toast.textContent = q.text;
+    if (!q) { toast.hidden = true; onNote?.(); return; }
+    toastText.textContent = q.text;
+    toast.classList.remove('leaving');
     toast.hidden = false;
+    onNote?.();
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastQueue.shift(); showNext(); }, toastQueue.length > 1 ? Math.min(q.ms, 2200) : q.ms);
+    toastTimer = setTimeout(() => {
+      toast.classList.add('leaving');
+      clearTimeout(leaving);
+      leaving = setTimeout(() => { toastQueue.shift(); showNext(); }, 200);
+    }, (toastQueue.length > 1 ? Math.min(q.ms, 2200) : q.ms) + 1000);
   }
+  let onNote = null;
   context.addEventListener('click', () => contextHandler?.());
   diy.addEventListener('click', () => diyHandler?.());
   sale.addEventListener('click', () => saleHandler?.());
@@ -88,23 +114,29 @@ export function createHud(root = document) {
       buildKey = key;
       buildbar.hidden = !bar;
       if (!bar) return;
-      const button = bar.ready && bar.here;
+      // v0.13: the button as soon as everything is in hand (it pulses); away from the part it
+      // says where to go, and pressing it there shows the way (main.js)
+      const button = bar.ready;
       diy.hidden = !button;
       need.hidden = button;
-      need.classList.toggle('go', bar.ready && !bar.here);
+      diy.classList.toggle('away', bar.ready && !bar.here);
       if (button) {
         diy.querySelector('.verb').textContent = bar.verb === 'DIY' ? 'DIY!' : bar.verb;
-        diy.querySelector('.what').textContent = bar.label;
-        diy.setAttribute('aria-label', `${bar.verb}: ${bar.label}`);
+        diy.querySelector('.what').textContent = bar.here ? bar.label : `${bar.label} · go there`;
+        diy.setAttribute('aria-label', bar.here ? `${bar.verb}: ${bar.label}` : bar.text);
         return;
       }
       const cap = bar.label[0].toUpperCase() + bar.label.slice(1);
-      if (bar.ready) { need.textContent = bar.text; return; }
       const items = [['W', bar.short.W], ['R', bar.short.R], ['coins', bar.short.coins]].filter(([, n]) => n > 0);
       need.innerHTML = `<span class="label">${cap}:</span>${items.map(([k, n]) => `<span class="item">${ICONS[k]}${n}</span>`).join('')}`;
       need.setAttribute('aria-label', bar.text);
     },
     get diyShown() { return !diy.hidden && !buildbar.hidden; },
+    get diyHere() { return !diy.hidden && !buildbar.hidden && !diy.classList.contains('away'); },
+    get noteRect() { return toast.hidden ? null : toast.getBoundingClientRect(); },
+    // main.js: the note opened, changed or closed (the play area's top moves under it)
+    set onNote(fn) { onNote = fn; },
+    get noteFolded() { return folded; },
     triggerDiy() { if (!diy.hidden && !buildbar.hidden) diyHandler?.(); },
     // v0.12: the Yard Sale button, shown while the table is full
     setSale(on, handler = null) { saleHandler = handler; sale.hidden = !on; },

@@ -82,12 +82,37 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 @keyframes diy-ready { 0%, 100% { transform: rotate(-2deg) scale(1); } 50% { transform: rotate(-2deg) scale(1.05); } }
 #btn-sale { pointer-events: auto; min-height: 56px; padding: 6px 18px; white-space: nowrap; background: var(--paper); color: #b53e36; border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 24px; transform: rotate(1.5deg); animation: diy-ready 1.6s ease-in-out infinite; }
 #btn-sale.coach-pulse, #btn-diy.coach-pulse { animation: coach-pulse 1.4s ease-out infinite; }
-@media (prefers-reduced-motion: reduce) { #btn-diy, #btn-sale { animation: none; } }
+/* v0.13: the DIY button pulses as soon as she has everything; away from the part it is the
+   paper-and-ink way there (a press shows the arrow) */
+#btn-diy, #btn-diy.coach-pulse { animation: diy-ready 1.6s ease-in-out infinite, diy-pulse 1.4s ease-out infinite; }
+@keyframes diy-pulse { 0% { box-shadow: 0 4px 0 var(--ink), 0 0 0 0 rgba(230, 184, 62, 0.75); } 70%, 100% { box-shadow: 0 4px 0 var(--ink), 0 0 0 16px rgba(230, 184, 62, 0); } }
+#btn-diy.away { background: var(--paper); }
+#btn-diy.away .what { font-style: italic; }
+/* v0.13 DIY hint: the sparkle over the part */
+#diy-sparkle { width: 60px; height: 60px; margin: -30px 0 0 -30px; }
+#diy-sparkle svg { display: block; width: 60px; height: 60px; filter: drop-shadow(0 1px 0 rgba(37, 51, 71, 0.3)); }
+/* one hand-drawn ink twinkle in the flower yellow (P29-6, V2's one exception): it blinks slowly */
+#diy-sparkle .twinkle { transform-origin: 30px 30px; animation: twinkle 1.8s ease-in-out infinite; }
+@keyframes twinkle { 0%, 100% { transform: scale(0.6); opacity: 0.55; } 50% { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #diy-sparkle .twinkle { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #btn-diy, #btn-sale, #btn-diy.coach-pulse { animation: none; } #btn-diy { border-width: 4px; } }
 #context { pointer-events: auto; max-width: min(60vw, 320px); min-height: 56px; background: var(--navy); color: var(--paper); border-color: var(--navy); font-weight: 600; }
 #context.coach-pulse, dialog#card button.coach-pulse { animation: coach-pulse 1.4s ease-out infinite; }
 @keyframes coach-pulse { 0% { box-shadow: 0 0 0 0 rgba(40, 100, 189, 0.6); } 70%, 100% { box-shadow: 0 0 0 14px rgba(40, 100, 189, 0); } }
 #progress { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--edge-b) + 108px); max-width: calc(100vw - 2 * var(--edge)); padding: 6px 12px; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; font-size: 14px; text-align: center; pointer-events: none; }
-#toast { position: fixed; left: 50%; transform: translateX(-50%); top: 42%; max-width: min(92vw, 440px); padding: 10px 14px; background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 0 3px 0 rgba(37, 51, 71, 0.25); text-align: center; pointer-events: none; }
+/* v0.13 the lesson note (answer 1 "Edge note"): slim, pinned to the top edge under the HUD
+   (--note-top, main.js), never over Vanessa; a tap folds it to one line */
+#toast { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: var(--note-top, 30%); display: flex; align-items: flex-start; gap: 6px; min-height: 0; min-width: 0; margin: 0; padding: 5px 2px 6px 10px; background: rgba(255, 247, 229, 0.95); color: var(--ink); border: 0; border-bottom: 1.5px solid var(--ink); border-radius: 0; box-shadow: none; font-size: 15px; line-height: 1.3; font-weight: 400; text-align: left; pointer-events: auto; cursor: pointer; animation: note-in 0.2s ease-out; transition: opacity 0.2s ease-out, transform 0.2s ease-out; }
+#toast[hidden] { display: none; }
+#toast.leaving { opacity: 0; transform: translateY(-10px); }
+#toast .text { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#toast.folded .text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#toast .fold { flex: none; width: 22px; height: 20px; display: grid; place-items: center; }
+#toast .fold svg { width: 14px; height: 14px; transition: transform 0.15s ease-out; }
+#toast.folded .fold svg { transform: rotate(180deg); }
+@keyframes note-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes note-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #toast { animation: note-fade 0.15s linear; transition: opacity 0.15s linear; } #toast.leaving { transform: none; } }
 
 /* ---------- count badge over a stack taller than the screen allows (carry.js) ---------- */
 #stack-badge { position: fixed; left: 0; top: 0; margin: -30px 0 0 -22px; min-width: 44px; padding: 2px 8px; background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 999px; font-size: 14px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
@@ -140,6 +165,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
   #coach-tip { bottom: calc(var(--edge-b) + 8px); }
   #coach-tip.raised { bottom: calc(var(--edge-b) + 50px); }
   #coach-demo { bottom: calc(var(--edge-b) + 56px); }
+  #toast { font-size: 14px; padding-top: 3px; padding-bottom: 4px; }
 }
 /* ---------- phones: icon-only Sound and Blueprint, so the utility row keeps the width it had
    before the Blueprint toggle and the goal line keeps its room; their names stay accessible ---------- */

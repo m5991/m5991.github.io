@@ -12,8 +12,8 @@
 //   3. take the shovel and dig: `Now take the shovel`, `Stand still to dig` (with the tomatoes,
 //      the raised bed is built first: the DIY lesson, step 8, comes there);
 //   4. gather while it grows: `Stand still to gather` at the first branch pile and rock R1;
-//   5. drop: once the wood and stone she needs are on her head, the arrow leads to the material
-//      pile by the house, `Walk through the pile to drop your load`;
+//   5. drop: (v0.13, P29-1) an edge note, never the arrow: the first time she nears the pile
+//      by the house carrying wood or stone, `Walk through the pile by the house to drop your load`;
 //   6. set out: with crops in hand before the first sale, the arrow leads to the yard-sale
 //      table, `Walk past the table to set out your crops`;
 //   7. yard sale: once the table is full, a hand points at the Yard Sale button;
@@ -23,7 +23,7 @@
 // lingering in reach of a collectible while moving says "Stand still to ...".
 import { HAMMERED, isWeedId, MATERIALS, NODES, PILES, ROCKS, STAGES, STICK_SLOTS } from './data.js';
 import { choiceTargets, nextGoal } from './guide.js';
-import { digOpen, isCommitted, tableAvailable, tableFull, tableRoom } from './ledger.js';
+import { digOpen, isCommitted, saleReady, tableAvailable, tableRoom } from './ledger.js';
 
 export const TUTORIAL_STAGE = 'H1'; // the tutorial ends when the house foundation stands
 export const MOVED_M = 1.2; // metres of travel that count as "has moved"
@@ -65,28 +65,23 @@ export function kindOf(id, l = null) {
 }
 
 // -> null when learned, else { phase, target, kind, tool?, choice? }
-// phase: 'move' (not moved yet) | 'take' | 'choose' | 'work' | 'dig' | 'gather' | 'drop' |
+// phase: 'move' (not moved yet) | 'take' | 'choose' | 'work' | 'dig' | 'gather' |
 //        'stock' | 'sale' | 'build' (a step to teach at `target`) | 'go' (an arrow to the goal
 //        line's target, nothing new there). `choice` (phase 'choose'): [{ crop, target, colour }],
 //        one arrow per crop patch.
-export function tutorialStep(l, { moved = false } = {}) {
+export function tutorialStep(l, { moved = false, toolsCome = false } = {}) {
   const k = learned(l);
   if (k.delivered) return null;
-  // the first yard sale: crops in hand go onto the table, and a full table sells
-  if (!k.sold && tableAvailable(l)) {
-    if (tableFull(l)) return { phase: 'sale', target: 'table', kind: 'table' };
-    if (sellable(l) > 0 && tableRoom(l) > 0) return { phase: 'stock', target: 'table', kind: 'table' };
-  }
-  const goal = nextGoal(l);
-  let { target } = goal;
+  // v0.13 (P29-1, the captain's "design bug"): the arrows always point where the goal line points;
+  // gathering, harvesting, setting crops out or dropping a load never moves or hides them. The
+  // first yard sale's two steps are the goal line's own table target.
+  const goal = nextGoal(l, { toolsCome });
+  const { target } = goal;
   if (!target) return null;
-  let kind = kindOf(target, l);
-  // the load she needs is on her head: show her the pile by the house once
-  // (not when a build's site is next: DIY takes it straight from her head)
-  if (k.gathered && !k.dropped && MATERIALS.some((r) => l.carried[r] > 0) && !['source', 'tools', 'dig', 'site'].includes(kind)) {
-    target = 'yard';
-    kind = 'yard';
-    return { phase: 'drop', target, kind };
+  const kind = kindOf(target, l);
+  if (!k.sold && target === 'table' && tableAvailable(l)) {
+    if (saleReady(l) && (goal.sale || sellable(l) === 0 || tableRoom(l) === 0)) return { phase: 'sale', target: 'table', kind: 'table' };
+    if (sellable(l) > 0 && tableRoom(l) > 0) return { phase: 'stock', target: 'table', kind: 'table' };
   }
   let phase = 'go';
   if (!moved && !k.tookRake) phase = 'move';
@@ -99,6 +94,17 @@ export function tutorialStep(l, { moved = false } = {}) {
   else if (kind === 'source' && !k.gathered) phase = 'gather';
   else if (kind === 'site' && !k.built && HAMMERED.includes(target)) phase = 'build';
   return goal.tool ? { phase, target, kind, tool: goal.tool } : { phase, target, kind };
+}
+
+// v0.13 (P29-1): the pile lesson is an edge note, never the arrow: the first time she comes within
+// DROP_NOTE_M of the yard pile carrying wood or stone, before any drop or DIY (main.js shows it
+// once). -> the note's text, or null
+export const DROP_NOTE_M = 6;
+export const DROP_NOTE = 'Walk through the pile by the house to drop your load';
+export function dropLesson(l, distToYardM) {
+  const k = learned(l);
+  if (k.delivered || k.dropped || k.built || !MATERIALS.some((r) => l.carried[r] > 0)) return null;
+  return distToYardM <= DROP_NOTE_M ? DROP_NOTE : null;
 }
 
 const VERB = { weed: 'rake the weeds', source: 'gather', node: 'harvest', dig: 'dig' };
@@ -122,7 +128,6 @@ export function coachPrompt(s) {
   if (!step) return null;
   if (step.phase === 'move') return mode === 'keyboard' ? 'Move with WASD or the arrow keys' : 'Drag anywhere to move';
   if (step.phase === 'choose') return 'Choose your first crop: rake any patch';
-  if (step.phase === 'drop') return 'Walk through the pile to drop your load';
   if (step.phase === 'stock') return 'Walk past the table to set out your crops';
   if (step.phase === 'sale') return mode === 'keyboard' ? 'The table is full: press E for Yard Sale' : 'The table is full: tap Yard Sale';
   if (step.phase === 'take' && step.tool === 'shovel' && here !== 'tools' && !working) return 'Now take the shovel';

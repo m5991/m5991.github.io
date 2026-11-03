@@ -162,8 +162,16 @@ export const STONE_REQUIRED = ROUTE.reduce((n, id) => n + STAGES[id].R, 0);
 // sign and when she has a certain amount people come and the goods disappear"): walking past the
 // yard-sale table with crops on her head sets them out on it, up to TABLE_CAP; when it is full a
 // Yard Sale button appears (tapping the stand works too), and the sale pays PRICES per item.
-export const TABLE_CAP = 6;
+export const TABLE_CAP = 6; // one table holds six
 export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her crops go onto it
+// v0.13 (captain's v0.12 playtest: "as your house is growing more people come and more tables
+// appear (the only minimum is 6 produce items always), but the maximum keeps increasing"; answer 3
+// "1 table per stage"): one table at the start and one more with each house stage, four at most
+// (by the roof, H3); a sale always needs SALE_MIN on the tables and holds up to six per table.
+// Buyers come in a crowd that grows with the tables (BUYERS[tables - 1], [least, most]).
+export const SALE_MIN = 6;
+export const TABLES_MAX = 4;
+export const BUYERS = [[2, 3], [4, 5], [6, 7], [8, 10]];
 
 // v0.12 (captain: "weeds keep appearing even over planted crops, you remove them because if not
 // you can lose the crop"; answer 1 "One plant wilts"): from the house foundation until the home

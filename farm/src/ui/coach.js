@@ -36,6 +36,7 @@ export function createCoach(root = document) {
   const hand = $('coach-hand');
   const demo = $('coach-demo');
   const context = $('context');
+  const sparkle = $('diy-sparkle');
   const toggle = (el, on) => { if (el.classList.contains('on') !== on) el.classList.toggle('on', on); };
   // v0.11: the crop choice shows three arrows at once, one per patch in its crop's colour; the
   // extra two are copies of the guide's arrow, made on first use
@@ -90,6 +91,12 @@ export function createCoach(root = document) {
       hand.style.transform = `translate(${(r.left + r.width / 2).toFixed(1)}px, ${r.top.toFixed(1)}px)`;
     },
     pointAtContext(on) { this.pointAt(on ? context : null); },
+    // v0.13 DIY hint: the sparkle over the part at screen point { x, y }, or null to hide
+    sparkle(at) {
+      if (!sparkle) return;
+      toggle(sparkle, !!at);
+      if (at) sparkle.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+    },
     hideAll() {
       this.arrow(null);
       this.tip(null);

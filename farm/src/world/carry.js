@@ -314,7 +314,7 @@ export class UnitPile {
     for (let i = 0; i < Math.max(types.length, this.slots.length); i++) {
       const res = types[i];
       const s = this.slots[i];
-      if (!res) { freeUnit(s.obj); continue; }
+      if (!res) { if (s) freeUnit(s.obj); this.slots[i] = undefined; continue; } // an empty place (v0.13: a good a buyer took)
       const k = (seen[res] = (seen[res] ?? -1) + 1);
       if (s && s.res === res) continue;
       if (s) freeUnit(s.obj);
@@ -338,7 +338,7 @@ export class UnitPile {
 
   update(dtMs, reducedMotion = false) {
     for (const s of this.slots) {
-      if (s.pop < 0) continue;
+      if (!s || s.pop < 0) continue;
       s.pop += dtMs / 1000;
       s.obj.scale.setScalar(this.scale * (reducedMotion ? 1 : popScale(s.pop)));
       if (s.pop > 0.4) { s.pop = -1; s.obj.scale.setScalar(this.scale); }

@@ -22,13 +22,19 @@
 // sticks drop from the tree onto random spots around it and fade if left; weeds creep over planted
 // crops and a plant left under one wilts; the raised bed is built (its outline until T0); dust
 // puffs up when she builds.
+// v0.13 (captain's v0.12 playtest): the yard sale grows with the house: a table more per house
+// stage pops up in a burst of dust (four at most); the buyers are a crowd of sixteen different
+// neighbours, 2-3 at one table up to 8-10 at four, each walking to a table and filling their
+// basket; at the home two neighbours set up stalls of their own beside hers; the path is a run of
+// flat hand-drawn stepping stones with grass between.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, YARD_SHOWN } from '../game/data.js';
-import { digOpen, isCommitted, tableAvailable, weedPresent } from '../game/ledger.js';
+import { digOpen, isCommitted, mainComplete, tableAvailable, tables, weedPresent } from '../game/ledger.js';
+import { buyerCount, crowdFor, LOOKS, SELLERS } from '../game/crowd.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, STEPPING, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, NEIGHBOUR_STALLS, PATH, SKY, STATIONS, STEPPING, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
 import { TABLE_SHOWN, tableSlot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
@@ -56,11 +62,14 @@ export function stationScale(def) {
 
 // v0.12 yard sale timings (ms): the sign goes down, the buyers walk up, each takes their goods,
 // they walk off; reduced motion: everything fades in place within about a second
-export const SALE_MS = { sign: 320, walkIn: 1500, take: 260, pause: 220, walkOut: 1300, linger: 500 };
+export const SALE_MS = { sign: 320, walkIn: 1250, take: 240, pause: 160, walkOut: 1050, linger: 250, stagger: 70 }; // v0.13: about 4 s in all
 // where the buyers come from and stand, in drawing units relative to the table (u, v): across
 // the stall from the camera, facing it, so the goods stay in view as they go
-const BUYER_FROM = [[11, -4], [14, -1.5], [12, 1]];
+// where buyers come from (drawing units from the first table, off to the right) and where they
+// stand behind a table (from that table)
+const BUYER_FROM = [[11, -4], [14, -1.5], [12, 1], [16, -3], [15, 3], [18, 0], [13, 5], [17, 6], [19, -5], [20, 3]];
 const BUYER_AT = [[-1.6, -2.4], [0.3, -2.8], [2.1, -2.3]];
+const GOODS_PER_TABLE = TABLE_SHOWN;
 export const SIGN_SCALE = 1.45;
 const PUFF_SIZE = 2.4; // a dust puff read at phone size: about 0.6 m across at its fullest
 
@@ -346,7 +355,8 @@ export class World {
     this.physics.addBody(body);
   }
 
-  // D08: the blueprint's dashed edges before G1, and the gravel path G1 lays between them
+  // D08: the blueprint's dashed edges before G1, and the path G1 lays between them (v0.13: flat
+  // stepping stones with grass between, no longer a grey gravel ribbon)
   buildPathOutline() {
     const p = this.proj;
     const pts = PATH.map(([u, v]) => p.groundAt(u, v));
@@ -371,7 +381,7 @@ export class World {
       edges.push(edge);
     }
     this.pathCurve = curve;
-    const gravel = G.gravelPath(edges[0], edges[1]);
+    const gravel = G.stonePath(edges[0], edges[1]); // v0.13: stepping stones with grass between
     this.root.add(gravel);
     return { dashes, gravel };
   }
@@ -387,6 +397,12 @@ export class World {
       this.root.add(o);
       return { obj: o, mat: o.children[0].material, pos: o.position };
     });
+    // v0.13: the path's grass tufts green with the ground in the finale, like the sprouts
+    const tufts = this.parts.D08?.model?.root.getObjectByName('D08_Path_Tufts');
+    if (tufts) {
+      const mid = this.pathCurve.getPoint(0.5);
+      this.sprouts.push({ obj: tufts, mat: tufts.material, pos: new THREE.Vector3(mid.x, 0, mid.z) });
+    }
   }
 
   buildSky() {
@@ -466,9 +482,10 @@ export class World {
     if (def.kind === 'yard') this.piles.yard = new UnitPile(obj, yardSlot, 1.4);
     obj.scale.setScalar(stationScale(def));
     if (def.kind === 'table') {
-      this.piles.table = new UnitPile(obj, tableSlot, 1.3);
-      this.tableBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.33, 0.28)) });
-      this.tableBody.position.set(pos.x, 0.33, pos.z);
+      this.piles[def.id] = new UnitPile(obj, tableSlot, 1.3);
+      const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.33, 0.28)) });
+      body.position.set(pos.x, 0.33, pos.z);
+      this.stations[def.id].body = body;
     }
   }
 
@@ -500,20 +517,40 @@ export class World {
     sign.rotation.y = -0.25;
     sign.scale.setScalar(SIGN_SCALE);
     this.root.add(sign);
-    const buyers = [0, 1, 2].map((i) => {
-      const b = G.buyer(i);
+    // v0.13: the crowd, sixteen different neighbours made once (game/crowd.js)
+    const buyers = LOOKS.map((look) => {
+      const b = G.buyer(look);
       b.visible = false;
+      b.userData.look = look;
       this.root.add(b);
       return b;
     });
     this.sale = { sign, buyers, active: false, goods: null, token: 0, table: t };
+    // the neighbours' stalls at the home: a table each, their goods and the neighbour behind it
+    this.stalls = NEIGHBOUR_STALLS.map((p, i) => {
+      const g = new THREE.Group(); g.name = `Stall_${i}`;
+      const table = G.yardTable();
+      table.add(G.stallGoods(i));
+      g.add(table);
+      g.position.copy(this.ground(p.u, p.v));
+      g.visible = false;
+      this.root.add(g);
+      const seller = buyers[SELLERS[i]];
+      const at = this.ground(p.u + 0.4, p.v - 2.6);
+      const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.33, 0.28)) });
+      body.position.set(g.position.x, 0.33, g.position.z);
+      return { group: g, seller, at, body, face: g.position.clone() };
+    });
+    this.stallsShown = false;
   }
+  // v0.13: her tables, first to last
+  tableStations() { return STATIONS.filter((d) => d.kind === 'table').map((d) => this.stations[d.id]); }
 
   // targets for the interaction controller (positions in metres on the ground)
   targets(l) {
     const out = [];
     for (const [id, s] of Object.entries(this.stations)) {
-      if (s.def.kind === 'table' && !tableAvailable(l)) continue;
+      if (s.def.kind === 'table' && (!tableAvailable(l) || s.def.table >= tables(l))) continue;
       if (s.def.kind === 'site' && isCommitted(l, id)) continue; // built
       if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
@@ -555,14 +592,28 @@ export class World {
         const n = (r) => Math.max(0, Math.min(YARD_SHOWN[r], l.yard[r] - this.inFlight('yard', r)));
         this.piles.yard.set([...Array(n('W')).fill('W'), ...Array(n('R')).fill('R')], { pop: animate });
         this.yardHidden = Math.max(0, l.yard.W - YARD_SHOWN.W) + Math.max(0, l.yard.R - YARD_SHOWN.R);
-      } else if (kind === 'table') {
+      } else if (kind === 'table' && s.def.table === 0) {
         // v0.12: the table appears with her first crop plot; its goods, each as its flight lands,
-        // and during a sale the sold goods until the buyers take them
-        if (tableAvailable(l) && !s.obj.visible && !this.revealing?.has('table') && !this.playHidden) s.obj.visible = true;
+        // and during a sale the sold goods until the buyers take them. v0.13: one more table per
+        // house stage (it pops up in dust), the goods six to a table in order
+        // a new table waits for its house stage's DIY to end (`tableHold`, main.js)
+        let n = tableAvailable(l) ? tables(l) : 0;
+        if (this.tableHold) n = Math.min(n, Math.max(1, this.tablesShown ?? 1));
+        this.tablesShown = n;
         const shown = this.sale.goods ? [...this.sale.goods] : [];
-        for (const c of ['C', 'S', 'T']) for (let i = l.table[c] - this.inFlight('table', c); i > 0 && shown.length < TABLE_SHOWN; i--) shown.push(c);
-        this.piles.table.set(shown, { pop: animate });
-        if (tableAvailable(l) && !this.tableBody.world) this.physics.addBody(this.tableBody);
+        for (const c of ['C', 'S', 'T']) for (let i = l.table[c] - this.inFlight('table', c); i > 0 && shown.length < GOODS_PER_TABLE * n; i--) shown.push(c);
+        for (const st of this.tableStations()) {
+          const k = st.def.table;
+          const want = k < n;
+          if (want && !st.obj.visible && !this.revealing?.has(st.def.id) && !this.playHidden) {
+            if (k > 0 && animate) this.popTable(st); else st.obj.visible = true;
+          }
+          if (!want && st.obj.visible && !this.revealing?.has(st.def.id)) st.obj.visible = false;
+          this.piles[st.def.id].set(want ? shown.slice(k * GOODS_PER_TABLE, (k + 1) * GOODS_PER_TABLE) : [], { pop: animate });
+          if (want && !st.body.world) this.physics.addBody(st.body);
+          if (!want && st.body.world) this.physics.removeBody(st.body);
+        }
+        this.syncStalls(n, animate);
       }
     }
     this.lastLedger = l;
@@ -771,7 +822,11 @@ export class World {
       if (k >= 1) s.obj.visible = false;
       s.obj.scale.setScalar(stationScale(s.def) * Math.max(0.01, 1 - k));
     }
-    if (k > 0) { this.marker.obj.visible = false; this.sale.sign.visible = false; for (const b of this.sale.buyers) b.visible = false; }
+    if (k > 0) {
+      this.marker.obj.visible = false; this.sale.sign.visible = false;
+      for (const b of this.sale.buyers) b.visible = false;
+      if (this.stallsShown) { this.stallsShown = false; for (const st of this.stalls) { st.group.visible = false; } }
+    }
     if (k === 0) {
       for (const s of Object.values(this.stations)) {
         if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard'].includes(s.def.kind)) continue;
@@ -1090,7 +1145,62 @@ export class World {
   yardSlotWorld(res, k) { return this.piles.yard.slotWorld(res, Math.min(k, YARD_SHOWN[res] - 1), k); }
   yardTopWorld(res, n) { return this.yardSlotWorld(res, Math.max(0, Math.min(n, YARD_SHOWN[res] - 1))).setY(0.3); }
   // v0.12: where the i-th good on the yard-sale table sits
-  tableSlotWorld(res, i) { return this.piles.table.slotWorld(res, 0, Math.min(TABLE_SHOWN - 1, i)); }
+  // (v0.13: six to a table, in table order)
+  tableSlotWorld(res, i) {
+    const list = this.tableStations();
+    const k = Math.min(list.length - 1, Math.floor(i / GOODS_PER_TABLE));
+    return this.piles[list[k].def.id].slotWorld(res, 0, i - k * GOODS_PER_TABLE);
+  }
+
+  // v0.13: a new table pops up beside hers in a burst of dust, set up at once
+  popTable(st) {
+    this.revealing ??= new Set();
+    this.revealing.add(st.def.id);
+    const o = st.obj;
+    o.visible = true;
+    const p = st.pos;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      this.puff(new THREE.Vector3(p.x + Math.cos(a) * 0.55, 0.15, p.z + Math.sin(a) * 0.35), { scale: 0.8, delay: i * 40, seed: i });
+    }
+    this.onPop?.();
+    const k = stationScale(st.def);
+    if (this.reducedMotion()) { o.scale.setScalar(k); this.revealing.delete(st.def.id); return; }
+    o.scale.setScalar(0.01);
+    this.tweens.wait(120).then(() => this.tweens.run(380, (t) => o.scale.setScalar(k * Math.max(0.01, ease.outBack(t))))).then(() => {
+      o.scale.setScalar(k);
+      this.revealing.delete(st.def.id);
+    });
+  }
+
+  // v0.13 (P29-5): with the fourth table two neighbours set up stalls of their own beside hers,
+  // in the same dust; they hide in the finale (V9, D24) and come back after
+  syncStalls(nTables, animate = false) {
+    const want = nTables >= 4 && !this.finaleActive && !this.playHidden;
+    if (want === this.stallsShown) return;
+    this.stallsShown = want;
+    for (const st of this.stalls) {
+      st.group.visible = want;
+      st.seller.visible = want;
+      if (want) {
+        st.seller.position.copy(st.at);
+        st.seller.rotation.y = Math.atan2(st.face.x - st.at.x, st.face.z - st.at.z);
+        if (!st.body.world) this.physics.addBody(st.body);
+      } else if (st.body.world) this.physics.removeBody(st.body);
+      if (want && animate && !this.reducedMotion()) {
+        const p = st.group.position;
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          this.puff(new THREE.Vector3(p.x + Math.cos(a) * 0.6, 0.15, p.z + Math.sin(a) * 0.4), { scale: 0.8, delay: i * 40, seed: i });
+        }
+        for (const o of [st.group, st.seller]) {
+          const k = o.userData.scale ?? 1;
+          o.scale.setScalar(0.01);
+          this.tweens.wait(120).then(() => this.tweens.run(300, (t) => o.scale.setScalar(k * Math.max(0.01, ease.outBack(t))))).then(() => o.scale.setScalar(k));
+        }
+      }
+    }
+  }
 
   // the point of a build she hammers at (spec v0.11 §10.10): the house's front, or the part
   // beside its station
@@ -1149,10 +1259,12 @@ export class World {
   }
 
   // The yard sale (presentation only; the ledger already sold the goods and paid the coins):
-  // the "Yard Sale!" sign goes down beside the table, two or three neighbours walk up, each puts
-  // their goods into their basket while coins pop toward Vanessa (`onCoins`), and they walk off.
-  // `items` [res...] in table order. Resolves when it is over; the table takes nothing until then.
-  async yardSale(items, { onCoins = null, onSign = null } = {}) {
+  // the "Yard Sale!" sign goes down beside the table, neighbours walk up (v0.13: a different few
+  // each sale, more as the tables grow: 2-3 at one table, about 8-10 at four), each to a table,
+  // puts that table's goods into their basket while coins pop toward Vanessa (`onCoins`), and they
+  // walk off. `items` [res...] in table order (six to a table). Resolves when it is over; the
+  // tables take nothing until then.
+  async yardSale(items, { onCoins = null, onSign = null, sale: saleNo = 1, tables: nTables = 1 } = {}) {
     const sale = this.sale;
     const token = ++sale.token;
     sale.active = true;
@@ -1170,46 +1282,83 @@ export class World {
       this.puff(sign.position.clone(), { scale: 0.6 });
     }
     if (!live()) return;
-    const n = Math.min(3, Math.max(2, Math.ceil(items.length / 3)));
-    const per = Math.ceil(items.length / n);
-    const buyers = sale.buyers.slice(0, n);
-    const from = buyers.map((_, i) => this.ground(tdef.u + BUYER_FROM[i][0], tdef.v + BUYER_FROM[i][1]));
-    const to = buyers.map((_, i) => this.ground(tdef.u + BUYER_AT[i][0], tdef.v + BUYER_AT[i][1]));
-    const walk = (b, a, z, ms, phase = 0) => this.tweens.run(ms, (u) => {
-      if (!live()) return;
-      const e = ease.inOut(u);
-      b.position.lerpVectors(a, z, e);
-      b.rotation.y = Math.atan2(z.x - a.x, z.z - a.z);
-      const step = Math.sin((u * ms) / 140 + phase);
-      b.getObjectByName('legL').rotation.x = step * 0.5;
-      b.getObjectByName('legR').rotation.x = -step * 0.5;
-      b.getObjectByName('body').position.y = Math.abs(step) * 0.03;
+    // who comes, and to which table: every table that stands, in turn (at least two each)
+    const used = Math.max(1, Math.min(nTables, tablesListLen(this)));
+    // (P29-5: when there are more buyers than goods, the rest browse and leave with a nod)
+    const n = buyerCount(nTables, saleNo);
+    const who = crowdFor(saleNo, n, this.stallsShown ? SELLERS : []);
+    const buyers = who.map((i) => sale.buyers[i]);
+    sale.showing = buyers;
+    const tablesList = this.tableStations();
+    const plan = buyers.map((b, i) => ({ b, k: i % used, slot: Math.floor(i / used) }));
+    // each table's goods (their indexes in `items`) shared out among its buyers
+    for (const p of plan) p.goods = [];
+    for (let k = 0; k < used; k++) {
+      const mine = plan.filter((p) => p.k === k);
+      for (let j = k * GOODS_PER_TABLE, c = 0; j < Math.min(items.length, (k + 1) * GOODS_PER_TABLE); j++, c++) mine[c % mine.length]?.goods.push(j);
+    }
+    const from = plan.map((_, i) => this.ground(tdef.u + BUYER_FROM[i % BUYER_FROM.length][0], tdef.v + BUYER_FROM[i % BUYER_FROM.length][1]));
+    const to = plan.map((p) => {
+      const d = tablesList[p.k].def;
+      const [du, dv] = BUYER_AT[p.slot % BUYER_AT.length];
+      return this.ground(d.u + du + Math.floor(p.slot / 3) * 0.6, d.v + dv - Math.floor(p.slot / 3) * 1.2);
     });
+    const walk = (b, a, z, ms, phase = 0) => {
+      const rate = 140 / (b.userData.look?.walk ?? 1);
+      return this.tweens.run(ms, (u) => {
+        if (!live()) return;
+        const e = ease.inOut(u);
+        b.position.lerpVectors(a, z, e);
+        b.rotation.y = Math.atan2(z.x - a.x, z.z - a.z);
+        const step = Math.sin((u * ms) / rate + phase);
+        b.getObjectByName('legL').rotation.x = step * 0.5;
+        b.getObjectByName('legR').rotation.x = -step * 0.5;
+        b.getObjectByName('armL').rotation.x = -step * 0.35;
+        b.getObjectByName('armR').rotation.x = step * 0.2;
+        b.getObjectByName('body').position.y = Math.abs(step) * 0.03;
+      });
+    };
+    const stand = (b, k) => {
+      const tp = tablesList[k].pos;
+      b.rotation.y = Math.atan2(tp.x - b.position.x, tp.z - b.position.z);
+      for (const nm of ['legL', 'legR', 'armL', 'armR']) b.getObjectByName(nm).rotation.x = 0;
+      b.getObjectByName('body').position.y = 0;
+    };
     if (reduced) {
-      buyers.forEach((b, i) => { b.position.copy(to[i]); b.rotation.y = Math.atan2(t.pos.x - b.position.x, t.pos.z - b.position.z); b.visible = true; setOpacity(b, 0); });
+      plan.forEach((p, i) => { p.b.position.copy(to[i]); stand(p.b, p.k); p.b.visible = true; setOpacity(p.b, 0); });
       await this.tweens.run(200, (u) => buyers.forEach((b) => setOpacity(b, u)));
       buyers.forEach((b) => setOpacity(b, 1));
     } else {
-      buyers.forEach((b, i) => { b.position.copy(from[i]); b.visible = true; });
-      await Promise.all(buyers.map((b, i) => this.tweens.wait(i * 220).then(() => walk(b, from[i], to[i], SALE_MS.walkIn, i))));
-      buyers.forEach((b) => { b.rotation.y = Math.atan2(t.pos.x - b.position.x, t.pos.z - b.position.z); b.getObjectByName('legL').rotation.x = 0; b.getObjectByName('legR').rotation.x = 0; });
+      plan.forEach((p, i) => { p.b.position.copy(from[i]); p.b.visible = true; });
+      await Promise.all(plan.map((p, i) => this.tweens.wait(i * SALE_MS.stagger).then(() => walk(p.b, from[i], to[i], SALE_MS.walkIn, i)).then(() => stand(p.b, p.k))));
     }
     if (!live()) return;
-    // each takes their goods into the basket, a coin popping out for each
-    for (const [i, b] of buyers.entries()) {
-      for (let k = 0; k < per && sale.goods.length; k++) {
-        const res = sale.goods.pop();
-        const slot = sale.goods.length;
-        const fromP = this.tableSlotWorld(res, slot);
+    // each takes their goods into the basket, a coin popping out for each; the buyers take
+    // theirs at the same time, a little apart
+    const take = async (p, i) => {
+      if (!reduced) await this.tweens.wait(i * 60);
+      if (!p.goods.length && !reduced) { // a browser: a look at the table and a nod
+        const head = p.b.getObjectByName('body');
+        await this.tweens.run(500, (u) => { head.rotation.x = Math.sin(u * Math.PI * 2) * 0.08; });
+        head.rotation.x = 0;
+        return;
+      }
+      for (const j of p.goods) {
+        if (!live()) return;
+        const res = items[j];
+        const fromP = this.tableSlotWorld(res, j);
+        sale.goods[j] = null;
         this.sync(this.lastLedger, false);
-        const basket = b.localToWorld(new THREE.Vector3(0.3, 0.85, 0.08));
+        p.b.updateMatrixWorld(true);
+        const basket = p.b.localToWorld(p.b.userData.basket.clone());
         const fly = this.flight(res, fromP, basket, reduced ? 150 : SALE_MS.take);
         onCoins?.(res, fromP);
         await fly;
-        if (!live()) return;
+        if (!reduced) await this.tweens.wait(SALE_MS.pause * 0.5);
       }
-      if (!reduced) await this.tweens.wait(SALE_MS.pause);
-    }
+    };
+    await Promise.all(plan.map((p, i) => take(p, i)));
+    if (!live()) return;
     sale.goods = null;
     this.sync(this.lastLedger, false);
     // they walk off; the sign comes up again
@@ -1218,14 +1367,14 @@ export class World {
       buyers.forEach((b) => { b.visible = false; setOpacity(b, 1); });
       sign.visible = false; setOpacity(sign, 1);
     } else {
-      await Promise.all(buyers.map((b, i) => this.tweens.wait(i * 160).then(() => walk(b, b.position.clone(), from[i], SALE_MS.walkOut, i))));
+      await Promise.all(plan.map((p, i) => this.tweens.wait(i * SALE_MS.stagger).then(() => walk(p.b, p.b.position.clone(), from[i], SALE_MS.walkOut, i))));
       buyers.forEach((b) => { b.visible = false; });
       await this.tweens.wait(SALE_MS.linger);
       await this.tweens.run(260, (u) => sign.scale.setScalar(SIGN_SCALE * Math.max(0.01, 1 - u * u)));
       sign.visible = false;
       sign.scale.setScalar(SIGN_SCALE);
     }
-    if (live()) { sale.active = false; this.sync(this.lastLedger, false); }
+    if (live()) { sale.active = false; sale.showing = null; this.sync(this.lastLedger, false); }
   }
   // load, New farm or the finale: no sale on show
   endSale() {
@@ -1235,7 +1384,8 @@ export class World {
     sale.goods = null;
     sale.sign.visible = false;
     sale.sign.scale.setScalar(SIGN_SCALE);
-    for (const b of sale.buyers) b.visible = false;
+    sale.showing = null;
+    for (const [i, b] of sale.buyers.entries()) if (!(this.stallsShown && SELLERS.includes(i))) b.visible = false;
   }
 
   // v0.12: a weed creeps over a planted crop: it grows up out of the soil over 0.6 s
@@ -1425,6 +1575,7 @@ const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();
 const tmpU = new THREE.Vector3();
 
+const tablesListLen = (w) => w.tableStations().filter((st) => st.obj.visible).length;
 function setOpacity(root, a) {
   root.traverse((m) => {
     if (!m.material) return;
