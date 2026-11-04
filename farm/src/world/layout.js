@@ -31,7 +31,8 @@ export const BORDER_POLYLINE = [
   [[11, 65.5], [18, 65], [24, 66], [25.5, 70], [26, 73.5]],
   [[3.5, 70], [2, 74], [1.8, 78], [3, 82], [8, 83.5], [13, 83.5], [18, 83]],
 ];
-export const STEPPING = [[48.5, 39.5], [47.5, 42], [47.5, 44.7], [48, 47.2], [47.6, 49.5]];
+// D12 stepping stones: v0.15 lays them on a half circle round the house's right side, worked out
+// from the fitted house (world.js steppingPlaces, STEPPING_ARC), no longer from drawn points
 export const PATH = [[36, 47], [38, 52], [40, 57.5], [39.5, 62], [36.5, 68], [31, 74], [25.5, 78], [20, 81]];
 
 // Sky layers (camera-facing): centre and drawn radius / width in drawing units
@@ -60,7 +61,7 @@ export const ROCK_PLACES = {
 // v0.11 (captain 2026-11-02): the weeds sit where the crops will grow, two on each crop patch
 // right in front of the first two plants (corn c1/c2, sunflowers s1/s2, the tomato stems in the
 // raised bed: `bed` places them on the bed's soil at that stem); C1 and S1 keep their two each.
-// Every build has a station: the house (H1-H4 share the house mat; the next stage shows), the
+// Every build has a station: the house (H1-H5 share the house mat; the next stage shows), the
 // path, the bench, the stepping stones, the tree border, and a station per crop patch for the
 // crops that cost coins. `yard` is the material pile by the house's side wall, beside the tools.
 export const SUNFLOWER_NODES = ['s1', 's2', 's3', 's4']; // at SUNFLOWERS[i]
@@ -91,13 +92,15 @@ export const STATIONS = [
   { id: 'yard', kind: 'yard', u: 45.8, v: 47.2, r: 0.5, label: 'yard pile' },
   // v0.12 (answer 3, "No spots at all"): every build has a site, but nothing marks it: the part's
   // own blueprint outline shows where it goes, and the DIY button works within reach of the site.
-  // The house (H1-H4 share the house front; the next stage shows), the path bend, the bench, the
+  // The house (H1-H5 share the house front; the next stage shows), the path bend, the bench, the
   // stepping stones, the border gap, the archer's post, the crop plots that cost coins, and the
   // raised bed (T0, built with sticks).
-  ...['H1', 'H2', 'H3', 'H4'].map((id) => ({ id, kind: 'site', u: 41, v: 52.5, r: 0.9, label: 'house', house: true })),
+  ...['H1', 'H2', 'H3', 'H4', 'H5'].map((id) => ({ id, kind: 'site', u: 41, v: 52.5, r: 0.9, label: 'house', house: true })),
   { id: 'G1', kind: 'site', u: 39, v: 62, r: 0.7, label: 'path' },
   { id: 'G2', kind: 'site', u: 23, v: 72, r: 0.7, label: 'bench' },
-  { id: 'G3', kind: 'site', u: 50, v: 46, r: 0.6, label: 'stepping stones' },
+  // v0.15: the middle stone of the half circle round the house (world.js places the site there
+  // exactly, from the fitted house; this is where it lands at the play fit)
+  { id: 'G3', kind: 'site', u: 47, v: 43, r: 0.6, label: 'stepping stones' },
   { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
@@ -116,7 +119,7 @@ export const STATIONS = [
   { id: 'table3', kind: 'table', u: 59.4, v: 59.6, r: 0.5, label: 'yard-sale table', table: 2 },
   { id: 'table4', kind: 'table', u: 65.6, v: 59.9, r: 0.5, label: 'yard-sale table', table: 3 },
 ];
-// v0.13: the neighbours' own stalls at the last stage (the home, H4), beside her four tables
+// v0.13: the neighbours' own stalls at the last stage (v0.15: the home, H5), beside her four tables
 export const NEIGHBOUR_STALLS = [{ u: 72.4, v: 60.3 }, { u: 72.8, v: 67.2 }];
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)

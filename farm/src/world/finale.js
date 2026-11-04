@@ -1,4 +1,4 @@
-// The colour finale (spec v0.9 §5 and §10.9, P25-2): after H4 is saved, the play elements
+// The colour finale (spec v0.9 §5 and §10.9, P25-2): after the home (v0.15: H5) is saved, the play elements
 // hide (V9), the camera eases to the drawing, Vanessa settles at D17 with her hands on her hips,
 // anything still in outline takes its colour, the ground animates into grass from her feet, the
 // sky turns blue from the horizon and, last, the sun turns yellow; then a hold, inside the

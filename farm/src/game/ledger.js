@@ -15,9 +15,10 @@
 // has once taken comes to her hand at the job from then on (`toolComes`, read from the farm:
 // spec v0.13 P29-7, no save field).
 import {
-  BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, MATERIALS, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES,
-  PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES, STAGE_ORDER, STICK,
-  SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TOOLS, WEEDS, WEED_PLOT, YARD_MATERIALS,
+  BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, LAST_STAGE, MATERIALS, NODE_FIRST_READY_MS,
+  NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
+  STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TOMATO_GROWTH, TOOLS, WEEDS, WEED_PLOT,
+  YARD_MATERIALS,
 } from './data.js';
 
 const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
@@ -44,6 +45,9 @@ export function createLedger() {
     stickSeq: 0, // sticks dropped so far (the seed of the next slot)
     // a crop node is a dig spot once its stage commits, and productive once dug (P25-4)
     nodes: Object.fromEntries(Object.keys(NODES).map((id) => [id, { remaining: 0, readyAt: null, dug: false }])),
+    // v0.15: how many times each planted node's crop has come ready since it was dug (a tomato
+    // plant grows with it, `plantSize`)
+    grown: Object.fromEntries(Object.keys(NODES).map((id) => [id, 0])),
     // v0.12: a weed creeping over a planted node: the active time it sprouted, else null
     overgrown: Object.fromEntries(Object.keys(NODES).map((id) => [id, null])),
     wilted: Object.fromEntries(Object.keys(NODES).map((id) => [id, false])), // its plant wilted: replant it
@@ -114,7 +118,7 @@ export function recipe(l, id) {
 export const isFree = (l, id) => { const r = recipe(l, id); return r.coins + r.W + r.R === 0; };
 export function houseStage(l) {
   let n = 0;
-  for (const h of ['H1', 'H2', 'H3', 'H4']) if (isCommitted(l, h)) n++;
+  for (const h of HOUSE_STAGES) if (isCommitted(l, h)) n++;
   return n;
 }
 // the yard-sale table appears when her first crop's patch is planted (its stage commits)
@@ -133,7 +137,14 @@ export const tableFull = (l) => tableCount(l) >= tableCap(l);
 // a yard sale can be held: six at least on the tables (whatever their number)
 export const saleReady = (l) => tableAvailable(l) && tableCount(l) >= SALE_MIN;
 export const tableValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
-export const mainComplete = (l) => isCommitted(l, 'H4');
+export const mainComplete = (l) => isCommitted(l, LAST_STAGE);
+// v0.15: how big a crop plant is drawn (1 = as planted). A tomato plant grows one TOMATO_GROWTH
+// step for every round after its first crop, `steps` at most; other crops keep their size.
+export function plantSize(l, id) {
+  if (NODES[id]?.res !== 'T') return 1;
+  const rounds = Math.max(0, (l.grown?.[id] ?? 0) - 1);
+  return 1 + TOMATO_GROWTH.step * Math.min(TOMATO_GROWTH.steps, rounds);
+}
 
 // wood or stone she has for building: on her head plus at the pile
 export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
@@ -291,7 +302,8 @@ function tick(l0, ms, calm = false) {
     if (n.readyAt !== null && n.remaining === 0 && now >= n.readyAt) {
       n.remaining = NODES[id].yield;
       n.readyAt = null;
-      events.push({ type: 'ready', src: id });
+      l.grown[id] += 1;
+      events.push({ type: 'ready', src: id, round: l.grown[id] });
     }
   }
   // sticks: one left too long is gone; a new one falls on a free slot
@@ -332,6 +344,7 @@ function tick(l0, ms, calm = false) {
       // the one plant under it wilts: its spot needs digging again, the rest is untouched
       l.overgrown[id] = null;
       l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
+      l.grown[id] = 0;
       l.wilted[id] = true;
       events.push({ type: 'wilted', id, weed: `wr-${id}` });
     }
@@ -416,6 +429,7 @@ function dig(l0, id) {
   const l = clone(l0);
   const replanted = l.wilted[id];
   l.nodes[id] = { remaining: 0, readyAt: l.activeMs + NODE_FIRST_READY_MS, dug: true };
+  l.grown[id] = 0; // a new plant
   l.wilted[id] = false;
   return { ok: true, l, events: [{ type: 'dug', id, stage: NODES[id].stage, ...(replanted ? { replanted: true } : {}) }] };
 }
@@ -459,7 +473,7 @@ function build(l0, stage) {
   l.paymentEvents.push(stage);
   // a crop stage's new nodes open as dig spots (P25-4): nothing grows until each is dug
   for (const [id, node] of Object.entries(NODES)) {
-    if (node.stage === stage) l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
+    if (node.stage === stage) { l.nodes[id] = { remaining: 0, readyAt: null, dug: false }; l.grown[id] = 0; }
   }
   return { ok: true, l, events: [{ type: 'built', stage, took }, { type: 'committed', stage }] };
 }
@@ -596,6 +610,7 @@ export function validateLedger(l) {
       else if (!node.dug && (node.remaining > 0 || node.readyAt !== null)) e(`node ${id} growing before it is dug`);
     }
   }
+  if (!sameKeys(l.grown, Object.keys(NODES)) || !Object.keys(NODES).every((id) => isInt(l.grown[id]) && (l.nodes?.[id]?.dug || l.grown[id] === 0))) e('grown');
   if (!sameKeys(l.overgrown, Object.keys(NODES))) e('overgrown keys');
   else {
     for (const id of Object.keys(NODES)) {

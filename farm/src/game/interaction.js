@@ -163,6 +163,14 @@ export const hasCrops = (l) => CROPS.some((c) => l.carried[c] > 0);
 export function atTable(hero, targets) {
   return targets.some((t) => t.kind === 'table' && inReach(hero, t, TABLE_REACH_M));
 }
+// v0.15 (captain: "Vanessa should click the yard sale buttom from the north of the table"): she
+// holds the sale from behind her tables, on their north side (the far side from the camera, smaller
+// z), within SALE_REACH_M of one; the buyers come up to the south side. Walking past still sets her
+// crops out from either side.
+export const SALE_REACH_M = 1.6;
+export function atSellingSide(hero, targets, reach = SALE_REACH_M) {
+  return targets.some((t) => t.kind === 'table' && inReach(hero, t, reach) && hero.z < t.z);
+}
 
 export function createInteraction({ getLedger, commit, timing = TIMING }) {
   const s = {

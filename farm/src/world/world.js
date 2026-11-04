@@ -29,12 +29,12 @@
 // flat hand-drawn stepping stones with grass between.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_MAX, YARD_SHOWN } from '../game/data.js';
-import { digOpen, isCommitted, mainComplete, tableAvailable, tables, weedPresent } from '../game/ledger.js';
+import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_MAX, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
+import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS, SELLERS } from '../game/crowd.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, NEIGHBOUR_STALLS, PATH, SKY, STATIONS, STEPPING, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, NEIGHBOUR_STALLS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
 import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
@@ -53,8 +53,11 @@ const tmpV = new THREE.Vector3();
 export const REDUCED_FLIGHT_MS = 150; // reduced motion: a unit fades, never arcs (V8)
 
 // a station model's own scale: the bed's weeds a little smaller, the yard pile drawn large enough
-// to read on a phone
+// to read on a phone. v0.15 (captain: "Weed should be bigger and more noticeable"): weeds are
+// drawn a third bigger, and a weed that creeps over the crops half as big again as that
+export const WEED_SCALE = { clump: 1.35, regrow: 1.7, bed: 0.8 };
 export function stationScale(def) {
+  if (def.kind === 'weed') return (def.regrow ? WEED_SCALE.regrow : WEED_SCALE.clump) * (def.bed ? WEED_SCALE.bed : 1);
   if (def.bed) return 0.8;
   if (def.kind === 'yard') return 1.25;
   if (def.kind === 'stick') return 0.85;
@@ -71,10 +74,28 @@ export const SALE_MS = { sign: 320, walkIn: 1250, take: 240, pause: 160, walkOut
 // v0.14: where they come in, in metres: this far past the right end of the row and this far
 // behind it; how fast they walk the way in or out (m/s, a brisk yard-sale pace), how long a way may
 // take at most, and the part of it they fade in or out over
-const BUYER_IN = { out: 1.2, lane: 0.35, speed: 3.2, maxMs: 1600, fade: 0.2 };
-const BUYER_AT = [[-1.6, -2.4], [0.3, -2.8], [2.1, -2.3]];
+// v0.15 (captain: "the yard sale people should arrive from the south of the map"): they come up
+// from the south (`out` metres in front of the southmost table or stall, the near side), each to a
+// place on the south side of a table, and go back the same way; Vanessa sells from the north side
+const BUYER_IN = { out: 2.4, lane: 0.5, speed: 3.2, maxMs: 1600, fade: 0.2 };
+const BUYER_AT = [[-1.6, 2.4], [0.3, 2.8], [2.1, 2.3]];
+const SELL_BEHIND_M = 0.95; // her selling spot, this far north of the first table's centre
 export const SIGN_SCALE = 1.45;
 const PUFF_SIZE = 2.4; // a dust puff read at phone size: about 0.6 m across at its fullest
+// v0.15: the house model's node for each stage's part (greybox.js house())
+export const HOUSE_NODES = { H1: 'D01_House_H1_Plinth', H2: 'D01_House_H2_Walls', H3: 'D01_House_H3_Roof', H4: 'D01_House_H4_Chimney', H5: 'D01_House_H5_Details' };
+// v0.15 the chimney's smoke (as the drawing has it): three puffs rising from the chimney top in
+// turn, each over `ms`, `rise` metres up and drifting `drift` to the side, growing as it thins
+export const SMOKE = { puffs: 4, ms: 3200, rise: 2.0, drift: 0.6, size: [2.4, 5.0], opacity: 0.9 };
+// v0.15 (captain: "the stepping stones next to the house form a semi circle around the house in
+// the original drawing"): the stones lie on a half circle round the house's right side, `r` house
+// units from its centre (the cottage is 4 x 3.3 units; about 3.3 m at the play fit), from a little
+// past straight behind it (`from` degrees, 0 = behind) round to its front right (`to`), short of
+// the path at the door. Past `tuck` degrees the ring draws in to `rFront` units, so it passes
+// between the walls and the foot of the leaning tools and the yard pile; a stone that would still
+// lie under a tool's foot or on the pile is left out (`clear` metres). Each stone is drawn `size`
+// times the old ones so the ring reads.
+export const STEPPING_ARC = { r: 3.6, rFront: 3.0, tuck: [70, 105], from: -15, to: 140, stones: 9, size: 1.3, clear: { tool: 0.4, yard: 0.75 } };
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -155,10 +176,12 @@ export class World {
     const house = fitted('D01', G.house());
     this.addBox(house, G.HOUSE.w + 0.3, G.HOUSE.d + 0.3, 3);
     const node = (n) => house.getObjectByName(n);
-    for (const st of ['H1', 'H2', 'H3', 'H4']) {
-      const name = { H1: 'D01_House_H1_Plinth', H2: 'D01_House_H2_Walls', H3: 'D01_House_H3_Roof', H4: 'D01_House_H4_Details' }[st];
+    // v0.15: five stages, each only its own part: foundation, walls, roof, chimney, home
+    for (const st of HOUSE_STAGES) {
+      const name = HOUSE_NODES[st];
       this.addPart(st, { model: node(name), before: [node(`D01_House_Ghost_${st}`), ...(st === 'H1' ? [node('D01_House_H0_Footprint')] : [])] });
     }
+    this.buildSmoke(house);
     const tree = fitted('D09', G.tree());
     this.addCylinder(tree.position, TREE_TRUNK_R * tree.scale.x);
     this.faders = [G.fadeable(tree)];
@@ -202,7 +225,9 @@ export class World {
       units.position.copy(at);
       this.root.add(units);
       const ground = at.clone().setY(0);
-      this.nodeViews[id] = { dig, units };
+      // v0.15: the plant itself, which grows a size step with each round (plantSize)
+      const plant = bedPlants.getObjectByName(`D19_Tomato_${id}`);
+      this.nodeViews[id] = { dig, units, plant, size: 1, want: 1 };
       this.stations[id] = { def: { id, kind: 'node', r: 0.3, label: 'tomatoes' }, obj: units, pos: ground };
     }
     // the tools at their drawn lean; `home` is where each returns (P25-4)
@@ -305,9 +330,9 @@ export class World {
     this.addPart('D11', { model: arranged, radial: true, before: [paintable(scattered, { colour: 0 })] });
     const ovals = new THREE.Group(); ovals.name = 'D12_Stones_Outlines';
     const setStones = new THREE.Group(); setStones.name = 'D12_Stones';
-    STEPPING.forEach(([u, v], i) => {
-      const o = G.steppingOutline(i); o.position.copy(p.groundAt(u, v)); ovals.add(o);
-      const st = G.steppingStone(i); st.position.copy(p.groundAt(u, v)); setStones.add(st);
+    this.steppingPlaces().forEach((at, i) => {
+      const o = G.steppingOutline(i); o.position.copy(at); o.rotation.y = at.userData.yaw; o.scale.set(STEPPING_ARC.size, 1, STEPPING_ARC.size); ovals.add(o);
+      const st = G.steppingStone(i); st.position.copy(at); st.rotation.y = at.userData.yaw; st.scale.set(STEPPING_ARC.size, 1.15, STEPPING_ARC.size); setStones.add(st);
     });
     this.root.add(ovals, setStones);
     this.addPart('D12', { model: setStones, radial: true, before: [ovals] });
@@ -318,6 +343,10 @@ export class World {
 
     // stations
     for (const def of STATIONS) this.buildStation(def);
+    // v0.15: the stepping stones' site is the stone nearest the middle of their half circle
+    const arc = this.steppingPlaces();
+    const mid = (STEPPING_ARC.from + STEPPING_ARC.to) / 2;
+    this.stations.G3.pos.copy(arc.reduce((b, p) => (Math.abs(p.userData.deg - mid) < Math.abs(b.userData.deg - mid) ? p : b))).setY(0);
     this.buildRegrowth();
     this.buildSale();
     this.marker = { obj: G.marker(), id: null, alpha: 0, t: 0, pop: 0, popAmp: 0, scale: 1 };
@@ -358,11 +387,43 @@ export class World {
     this.physics.addBody(body);
   }
 
+  // v0.15: the stepping stones (D12) on their half circle round the house's right side, each
+  // turned along the arc (ground points; `userData.yaw` their turn)
+  steppingPlaces() {
+    if (this.stepping) return this.stepping;
+    const h = this.objects.D01;
+    h.updateMatrixWorld(true);
+    const { r, rFront, tuck, from, to, stones, clear } = STEPPING_ARC;
+    const feet = ['D13', 'D14'].map((id) => this.objects[id]?.position).filter(Boolean);
+    const yard = this.proj.groundAt(...['u', 'v'].map((k) => STATIONS.find((d) => d.id === 'yard')[k]));
+    const out = [];
+    for (let i = 0; i < stones; i++) {
+      const a = THREE.MathUtils.degToRad(from + ((to - from) * i) / (stones - 1));
+      // in the house's own frame: 0 degrees straight behind it (-z), 90 its right side (+x)
+      const k = THREE.MathUtils.smoothstep(THREE.MathUtils.radToDeg(a), tuck[0], tuck[1]);
+      const at = h.localToWorld(new THREE.Vector3(Math.sin(a), 0, -Math.cos(a)).multiplyScalar(r + (rFront - r) * k)).setY(0);
+      at.userData = { yaw: h.rotation.y - a, deg: from + ((to - from) * i) / (stones - 1) };
+      const near = (p, d) => Math.hypot(p.x - at.x, p.z - at.z) < d;
+      if (feet.some((p) => near(p, clear.tool)) || near(yard, clear.yard)) continue;
+      out.push(at);
+    }
+    this.stepping = out;
+    return out;
+  }
+  // v0.15 (captain: "the way to the house should arrive to the door of the house"): the door
+  // step's front edge, and a point straight out from it, on the ground
+  doorPoints() {
+    const h = this.objects.D01;
+    const step = h.userData.doorStep;
+    return [h.localToWorld(step.clone()).setY(0), h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, 1.4))).setY(0)];
+  }
+
   // D08: the blueprint's dashed edges before G1, and the path G1 lays between them (v0.13: flat
-  // stepping stones with grass between, no longer a grey gravel ribbon)
+  // stepping stones with grass between, no longer a grey gravel ribbon). v0.15: its last stretch
+  // runs straight out of the door step (PATH's first point, the drawn door end, gives way to it)
   buildPathOutline() {
     const p = this.proj;
-    const pts = PATH.map(([u, v]) => p.groundAt(u, v));
+    const pts = [...this.doorPoints(), ...PATH.slice(1).map(([u, v]) => p.groundAt(u, v))];
     const curve = new THREE.CatmullRomCurve3(pts);
     const samples = curve.getPoints(60);
     const dashes = [];
@@ -546,6 +607,8 @@ export class World {
     });
     this.stallsShown = false;
   }
+  // v0.15: where she holds a sale from: behind (north of) her first table, the buyers' far side
+  sellSpot(out = new THREE.Vector3()) { return out.copy(this.stations.table.pos).add(new THREE.Vector3(0, 0, -SELL_BEHIND_M)); }
   // v0.13: her tables, first to last
   tableStations() { return STATIONS.filter((d) => d.kind === 'table').map((d) => this.stations[d.id]); }
 
@@ -636,6 +699,7 @@ export class World {
       // an open dig spot (P25-4), once the weed on it is raked (v0.11 P27-4)
       if (!this.revealing?.has(id)) c.dig.visible = committed && !dug;
       if (c.units) showUnits(c.units, l.nodes[id].remaining);
+      if (c.plant) { c.want = plantSize(l, id); if (!animate) this.sizePlant(c, c.want); }
     }
     this.syncTool(l.tool, animate);
     this.applyParts(l);
@@ -799,7 +863,7 @@ export class World {
     if (!reduced && buildMs > 0) {
       // house parts rise from the plinth line and a dug corn plant grows, in ink; a part already
       // drawn in outline (plants, the bench, the stones) simply waits for its colour
-      const kind = (x) => (['H1', 'H2', 'H3', 'H4', 'D18'].includes(x.id) ? 'rise' : ['c1', 'c2', 'c3', 'c4'].includes(x.id) ? 'grow' : null);
+      const kind = (x) => ([...HOUSE_STAGES, 'D18'].includes(x.id) ? 'rise' : ['c1', 'c2', 'c3', 'c4'].includes(x.id) ? 'grow' : null);
       await this.tweens.run(buildMs, (t) => {
         for (const x of models) {
           const k = kind(x);
@@ -1280,6 +1344,46 @@ export class World {
   }
   updatePiles(dtMs, reducedMotion) { for (const p of Object.values(this.piles)) p.update(dtMs, reducedMotion); }
 
+  // ---------- v0.15: the chimney's smoke ----------
+  // Puffs of the dust's paper-white blobs in ink rise from the chimney top in turn, once the
+  // chimney (H4) is built, in play, the finale and after. Reduced motion: they hold still, a
+  // short column over the chimney.
+  buildSmoke(house) {
+    house.updateMatrixWorld(true);
+    const top = house.localToWorld(house.userData.chimneyTop.clone());
+    const puffs = [];
+    for (let i = 0; i < SMOKE.puffs; i++) {
+      const o = G.dustPuff(i + 2);
+      const mats = fadeable(o);
+      o.visible = false;
+      o.name = `D03_Smoke_${i}`;
+      this.root.add(o);
+      puffs.push({ o, mats });
+    }
+    this.smoke = { top, puffs, t: 0, k: house.scale.x };
+  }
+  // per frame (real time); -> whether the smoke shows
+  updateSmoke(dtMs) {
+    const sm = this.smoke;
+    if (!sm) return false;
+    const part = this.parts.H4;
+    const on = !!this.lastLedger && this.partDone(part, this.lastLedger) && !this.revealing?.has('H4');
+    const still = this.reducedMotion();
+    if (!still) sm.t += dtMs;
+    sm.puffs.forEach(({ o, mats }, i) => {
+      o.visible = on;
+      if (!on) return;
+      const u = still ? (i + 0.5) / SMOKE.puffs : ((sm.t / SMOKE.ms) + i / SMOKE.puffs) % 1;
+      const size = (SMOKE.size[0] + (SMOKE.size[1] - SMOKE.size[0]) * u) * sm.k * 0.5;
+      o.scale.setScalar(size);
+      o.position.set(sm.top.x + SMOKE.drift * sm.k * u * u, sm.top.y + SMOKE.rise * sm.k * u, sm.top.z);
+      o.rotation.y = i * 1.7 + u * 0.8;
+      const a = still ? SMOKE.opacity * (1 - 0.5 * u) : SMOKE.opacity * Math.min(1, u / 0.12) * (1 - u);
+      for (const m of mats) m.opacity = a;
+    });
+    return on;
+  }
+
   // ---------- v0.12: DIY time, the dust and the yard sale ----------
   // A dust puff at `pos`: a few paper-white blobs in ink billow up and out, then thin away
   // (about 0.7 s). Reduced motion: none.
@@ -1304,7 +1408,7 @@ export class World {
     const at = this.buildPoint(stage);
     this.puff(at.clone().setY(Math.max(0.05, at.y - 0.3)), { scale: 0.9 + 0.3 * k, seed: k });
     if (this.reducedMotion()) return;
-    const part = { H1: 'H1', H2: 'H2', H3: 'H3', H4: 'H4', G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11', T0: 'D18' }[stage];
+    const part = HOUSE_STAGES.includes(stage) ? stage : { G1: 'D08', G2: 'D10', G3: 'D12', G4: 'D11', T0: 'D18' }[stage];
     const root = this.parts[part]?.model?.root;
     if (!root || root.userData.jolting) return;
     root.userData.jolting = true;
@@ -1362,16 +1466,15 @@ export class World {
     const to = plan.map((p) => {
       const d = tablesList[p.k].def;
       const [du, dv] = BUYER_AT[p.slot % BUYER_AT.length];
-      return this.ground(d.u + du + Math.floor(p.slot / 3) * 0.6, d.v + dv - Math.floor(p.slot / 3) * 1.2);
+      return this.ground(d.u + du + Math.floor(p.slot / 3) * 0.6, d.v + dv + Math.floor(p.slot / 3) * 1.2);
     });
-    // v0.14 (captain: "the customers right now can go through the tables"): they come in from
-    // beyond the right end of the row (past the stalls at the big sale), along the back of it,
-    // each the shortest way round the tables, stalls and sellers to their place, and go back
-    // the same way; they fade in and out at the far end, so nobody pops up
+    // v0.14 (captain: "the customers right now can go through the tables"): each takes the
+    // shortest way round the tables, stalls and sellers to their place, and goes back the same
+    // way; they fade in and out at the far end, so nobody pops up. v0.15: they come up from the
+    // south, from a little apart below the southmost table or stall, to the tables' south side
     const boxes = this.saleBoxes(used, big);
-    const right = Math.max(...boxes.map((q) => q.hi[0]));
-    const back = Math.min(...boxes.slice(0, used).map((q) => q.lo[1]));
-    const from = plan.map((_, i) => new THREE.Vector3(right + BUYER_IN.out + (i % 3) * 0.4, 0, back - BUYER_IN.lane - (i % 4) * 0.28));
+    const front = Math.max(...boxes.map((q) => q.hi[1]));
+    const from = plan.map((_, i) => new THREE.Vector3(to[i].x + ((i % 3) - 1) * BUYER_IN.lane, 0, front + BUYER_IN.out + (i % 4) * 0.3));
     const routes = plan.map((_, i) => routeAround({ x: from[i].x, z: from[i].z }, { x: to[i].x, z: to[i].z }, boxes));
     sale.routes = routes; // checks only
     const walk = (b, pts, ms, phase = 0, fade = 0) => {
@@ -1486,9 +1589,21 @@ export class World {
     this.revealing.delete(id);
     if (this.lastLedger) this.sync(this.lastLedger, false);
   }
+  // v0.15: a tomato plant at its size (its fruit grows with it, hanging on the bigger stem)
+  sizePlant(c, k) {
+    c.size = k;
+    c.plant.scale.setScalar(k);
+    c.units.scale.setScalar(k);
+  }
   // v0.12 per frame: a regrown weed grows from a tuft to a full clump over REGROW.growMs, and once
-  // it is choking its plant the plant leans a little (spec v0.12 P28-4)
-  updateRegrowth(l) {
+  // it is choking its plant the plant leans a little (spec v0.12 P28-4). v0.15: a tomato plant
+  // that has come round again grows to its new size over about half a second
+  updateRegrowth(l, dtMs = 50) {
+    for (const c of Object.values(this.nodeViews)) {
+      if (!c.plant || c.size === c.want) continue;
+      const step = this.reducedMotion() ? Infinity : (dtMs / 500) * TOMATO_GROWTH.step;
+      this.sizePlant(c, c.want > c.size ? Math.min(c.want, c.size + step) : Math.max(c.want, c.size - step));
+    }
     for (const node of Object.keys(NODES)) {
       const st = this.stations[`wr-${node}`];
       if (!st || this.revealing?.has(st.def.id)) continue;
@@ -1496,6 +1611,12 @@ export class World {
       const k = stationScale(st.def);
       const age = since === null ? 0 : Math.max(0, l.activeMs - since);
       if (since !== null && st.obj.visible) st.obj.scale.setScalar(k * (0.45 + 0.55 * Math.min(1, age / REGROW.growMs)));
+      // v0.15: a weed over the crops sways, a little more once it is choking the plant, so the
+      // eye finds it (none with reduced motion)
+      st.sway = (st.sway ?? 0) + dtMs;
+      const amp = since === null || this.reducedMotion() ? 0 : age >= REGROW.growMs ? 0.16 : 0.08;
+      st.obj.rotation.z = amp * Math.sin(st.sway / 260);
+      st.obj.rotation.x = amp * 0.5 * Math.sin(st.sway / 410 + 1);
       const lean = since !== null && age >= REGROW.growMs ? 0.18 : 0;
       for (const p of Object.keys(this.parts)) {
         const dug = PARTS[p].dug ?? [];

@@ -23,6 +23,7 @@ export const FLORA = {
   seed: mix(PAL.wood, PAL.ink, 0.5),
   petalDeep: mix(PAL.flower, PAL.wood, 0.14),
   weed: mix(PAL.leaf, PAL.wood, 0.22),
+  weedDark: mix(PAL.leaf, PAL.ink, 0.4), // v0.15: the weeds' darker blades
   puff: PAL.paper,
   beet: mix(PAL.red, PAL.ink, 0.38),
   moss: mix(PAL.leaf, PAL.flower, 0.22),
@@ -243,7 +244,9 @@ export function sunflower(variant = 0) {
 
 // ---------------- weeds: broad removable clumps (distinct from the fine D20 sprouts) ----------------
 // A ragged tuft of blades leaning out, a low jagged rosette and two dandelion clocks, so a
-// clump reads as "weeds" and not as a crop.
+// clump reads as "weeds" and not as a crop. v0.15 (captain: "Weed should be bigger and more
+// noticeable"): taller, darker blades, a wider rosette and two open dandelion flowers in the
+// flower yellow beside the two clocks, so a clump stands out against the paper and the crops.
 let weedGeo = null;
 export function weedGeometry() {
   if (weedGeo) return weedGeo;
@@ -251,21 +254,28 @@ export function weedGeometry() {
   const parts = [];
   for (let k = 0; k < 11; k++) {
     const az = (k / 11) * Math.PI * 2 + (r() - 0.5) * 0.5; const d = dirAz(az);
-    const len = 0.28 + r() * 0.2; const out = 0.25 + r() * 0.35;
+    const len = 0.38 + r() * 0.26; const out = 0.25 + r() * 0.35;
     const b = d.clone().multiplyScalar(0.03);
     const pts = [b, b.clone().addScaledVector(d, len * out * 0.4).addScaledVector(UP, len * 0.55), b.clone().addScaledVector(d, len * out).addScaledVector(UP, len * (0.85 - out * 0.4))];
-    parts.push(paint(blade(pts, { width: strap(0.018, 0.8), across: acrossAz(az), thick: 0.3, cup: 0.3, segs: 4, radial: 4 }), k % 3 ? FLORA.weed : PAL.leaf));
+    parts.push(paint(blade(pts, { width: strap(0.022, 0.8), across: acrossAz(az), thick: 0.3, cup: 0.3, segs: 4, radial: 4 }), k % 3 ? FLORA.weed : FLORA.weedDark));
   }
   for (let k = 0; k < 5; k++) { // low jagged rosette leaves lying on the ground
     const az = k * 1.3 + 0.4; const d = dirAz(az);
-    const pts = [d.clone().multiplyScalar(0.02).setY(0.02), d.clone().multiplyScalar(0.12).setY(0.05), d.clone().multiplyScalar(0.22).setY(0.02)];
-    parts.push(paint(blade(pts, { width: (s) => 0.035 * Math.sin(Math.PI * s) ** 0.7 * (0.75 + 0.25 * Math.abs(Math.sin(s * 14))), across: acrossAz(az), thick: 0.15, cup: 0.1, segs: 7, radial: 4 }), FLORA.weed));
+    const pts = [d.clone().multiplyScalar(0.02).setY(0.02), d.clone().multiplyScalar(0.15).setY(0.05), d.clone().multiplyScalar(0.29).setY(0.02)];
+    parts.push(paint(blade(pts, { width: (s) => 0.045 * Math.sin(Math.PI * s) ** 0.7 * (0.75 + 0.25 * Math.abs(Math.sin(s * 14))), across: acrossAz(az), thick: 0.15, cup: 0.1, segs: 7, radial: 4 }), FLORA.weed));
   }
-  for (const [x, z, h] of [[0.06, -0.03, 0.4], [-0.08, 0.05, 0.3]]) { // dandelion clocks
-    parts.push(paint(taperTube(new THREE.CatmullRomCurve3([V(x * 0.3, 0, z * 0.3), V(x * 0.8, h * 0.5, z), V(x, h, z)]), 0.006, 0.005, 6, 5), FLORA.weed));
-    const puff = lumpy(new THREE.SphereGeometry(0.032, 9, 6), 0.004, 80, x * 10);
-    puff.translate(x, h + 0.025, z);
+  for (const [x, z, h] of [[0.06, -0.03, 0.5], [-0.08, 0.05, 0.38]]) { // dandelion clocks
+    parts.push(paint(taperTube(new THREE.CatmullRomCurve3([V(x * 0.3, 0, z * 0.3), V(x * 0.8, h * 0.5, z), V(x, h, z)]), 0.007, 0.006, 6, 5), FLORA.weed));
+    const puff = lumpy(new THREE.SphereGeometry(0.04, 8, 5), 0.005, 80, x * 10);
+    puff.translate(x, h + 0.03, z);
     parts.push(paint(puff, FLORA.puff));
+  }
+  for (const [x, z, h] of [[-0.02, -0.1, 0.33], [0.12, 0.07, 0.27]]) { // open dandelions
+    parts.push(paint(taperTube(new THREE.CatmullRomCurve3([V(x * 0.3, 0, z * 0.3), V(x * 0.8, h * 0.5, z), V(x, h, z)]), 0.007, 0.006, 4, 4), FLORA.weed));
+    const head = new THREE.SphereGeometry(0.05, 7, 4);
+    head.scale(1, 0.55, 1);
+    head.translate(x, h + 0.015, z);
+    parts.push(paint(head, PAL.flower));
   }
   weedGeo = bake(parts);
   return weedGeo;
@@ -361,7 +371,16 @@ export function bedPlants() {
   const greens = new THREE.Group(); greens.name = 'D19_Greens';
   greens.add(vmesh(bake([...lettuce(-0.86, 0.12, 0.15, 1), ...lettuce(-0.58, -0.18, 0.13, 4), ...beet(-0.32, 0.2), ...herb(-1.04, -0.26, 7), ...herb(1.05, 0.2, 9)])));
   const tomatoes = new THREE.Group(); tomatoes.name = 'D19_TomatoStems'; // unfruited until T0
-  tomatoes.add(vmesh(bake([...tomatoPlant(0.45, 0.08, 21), ...tomatoPlant(0.8, -0.16, 25)])));
+  // v0.15: each plant on its own, its origin at its stem's foot on the soil, so it can grow
+  // round by round (world.js, ledger plantSize)
+  for (const [id, x, z, seed] of [['t1', 0.45, 0.08, 21], ['t2', 0.8, -0.16, 25]]) {
+    const geo = bake(tomatoPlant(0, 0, seed));
+    geo.translate(0, -SOIL_Y, 0);
+    const m = vmesh(geo);
+    m.name = `D19_Tomato_${id}`;
+    m.position.set(x, SOIL_Y, z);
+    tomatoes.add(m);
+  }
   const who = whoKnows(); who.position.set(0.1, 0, -0.02);
   g.add(greens, tomatoes, who);
   return g;

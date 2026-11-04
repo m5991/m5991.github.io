@@ -7,7 +7,7 @@
 // of the three crop patches (corn, sunflowers or the tomato bed) -> rake its other clump (its
 // stage commits free) -> take the shovel -> dig its two spots -> gather wood and stone while it
 // grows (they can go onto the material pile by the house) -> harvest -> sell -> build the house
-// foundation. After that the goal line walks the whole route to H4: every station has a Build
+// foundation. After that the goal line walks the whole route to the home (H5): every station has a Build
 // card, the other two crops open after the first harvest, and Vanessa hammers each build up. A
 // goal that needs a tool she is not holding points at the tools (`target: 'tools'`, `tool`).
 // v0.12 (captain's v0.11 playtest): coins come from the yard-sale table (walk past it with crops,
@@ -85,7 +85,7 @@ function gather(l, label, r, n) {
 // coins for a stage: a full table sells with Yard Sale; crops on her head go onto the table;
 // otherwise harvest (or wait for the crops to grow)
 function coinsGoal(l, label, short) {
-  if (sellNow(l, short)) return { text: `${label} · ${short} more coins: the goods are out, go to the table and tap Yard Sale`, target: 'table', sale: true };
+  if (sellNow(l, short)) return { text: `${label} · ${short} more coins: the goods are out, go to the back of the table and tap Yard Sale`, target: 'table', sale: true };
   const nodes = pickable(l);
   const cropReady = anyReady(l, nodes);
   // to the table once what she carries fills it, or nothing more is ready to pick

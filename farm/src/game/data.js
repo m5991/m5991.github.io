@@ -99,6 +99,12 @@ export const STONE_IN_ROCKS = Object.values(ROCKS).reduce((n, r) => n + r.units,
 // (corn/sunflower 15 s, tomato 20 s).
 export const NODE_FIRST_READY_MS = 5000;
 export const NODE_RENEW_MS = { C: 15000, S: 15000, T: 20000 };
+// v0.15 (captain: "can you make tomato plant be bigger after another round of growing"): each
+// time a planted node's crop comes ready its round count goes up (`grown` in the ledger; digging
+// or replanting starts it at 0). A tomato plant is drawn one size step bigger for every round
+// after its first crop, up to `steps` steps: 1x for the first crop, 1.25x for the second, 1.5x
+// from the third on. A wilted plant is a new plant: back to 1x.
+export const TOMATO_GROWTH = { step: 0.25, steps: 2 };
 export const NODES = {
   c1: { res: 'C', yield: 3, stage: 'C0' },
   c2: { res: 'C', yield: 3, stage: 'C0' },
@@ -140,14 +146,22 @@ export const STAGES = {
   G2: { label: 'bench', prereq: ['H1'], coins: 10, W: 4, R: 0, workMs: 2000 },
   G3: { label: 'stepping stones', prereq: ['H1'], coins: 8, W: 0, R: 3, workMs: 2000 },
   G4: { label: 'tree-border stones', prereq: ['H1'], coins: 8, W: 0, R: 4, workMs: 2000 },
-  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 26, W: 2, R: 2, workMs: 4000 },
-  H4: { label: 'home', prereq: ['H3', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
+  // v0.15 (captain: "the walls should only be walls, roof only be roof, add an extra step for
+  // chimney, last step still the home with door and window"): five house stages. The old H3
+  // (roof and chimney: 26 coins, 2 wood, 2 stone, 4 s) is split between the roof (its wood) and
+  // the chimney (its stone, a stack of stones and mortar), so the house costs what it did; the
+  // home is the old H4 with the door frame and step the walls used to bring.
+  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 14, W: 2, R: 0, workMs: 2500 },
+  H4: { label: 'chimney', prereq: ['H3'], coins: 12, W: 0, R: 2, workMs: 2000 },
+  H5: { label: 'home', prereq: ['H4', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
 };
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
-export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4'];
+export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4', 'H5'];
 // the stages the farm needs (all of them)
 export const ROUTE = STAGE_ORDER;
-export const HOUSE_STAGES = ['H1', 'H2', 'H3', 'H4'];
+// v0.15: foundation, walls, roof, chimney, home; the last one finishes the farm (the finale)
+export const HOUSE_STAGES = ['H1', 'H2', 'H3', 'H4', 'H5'];
+export const LAST_STAGE = 'H5';
 export const CROP_STAGES = STAGE_ORDER.filter((id) => STAGES[id].crop);
 // stages Vanessa hammers up herself: the house, the property builds and the raised bed (other
 // crop plots are dug, A1 is hired)
@@ -176,12 +190,15 @@ export const BUYERS = [[2, 3], [4, 5], [6, 7], [8, 10]];
 
 // v0.12 (captain: "weeds keep appearing even over planted crops, you remove them because if not
 // you can lose the crop"; answer 1 "One plant wilts"): from the house foundation until the home
-// (H4), a weed creeps onto one planted crop spot every REGROW.everyMs of active time, one at a
-// time. It grows for REGROW.growMs (a first warning at warnMs, a second as it is grown and choking
-// the plant); raked (the rake, 1 s) it is gone; left REGROW.wiltMs in all, the one plant under it
-// wilts and its spot is a dig spot again (`Replant`, free with the shovel). Help me finish turns
-// it off and clears an open one. (Spec v0.12 P28-4 defaults, as firstmate relayed them.)
-export const REGROW = { after: 'H1', until: 'H4', everyMs: 120000, warnMs: 20000, growMs: 60000, wiltMs: 120000 };
+// (v0.15: H5), a weed creeps onto one planted crop spot every REGROW.everyMs of active time, one
+// at a time. It grows for REGROW.growMs (a first warning at warnMs, a second as it is grown and
+// choking the plant); raked (the rake, 1 s) it is gone; left REGROW.wiltMs in all, the one plant
+// under it wilts and its spot is a dig spot again (`Replant`, free with the shovel). Help me finish
+// turns it off and clears an open one. (Spec v0.12 P28-4 defaults, as firstmate relayed them.)
+// v0.15 (captain: "Weed should be bigger and more noticeable, grow faster on crops"): a weed comes
+// back after 75 s instead of 120 s, shows as a clump after 10 s and is grown and choking after
+// 30 s instead of 60 s; the wilt stays bounded: one plant, 120 s after its weed came, as before.
+export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 75000, warnMs: 10000, growMs: 30000, wiltMs: 120000 };
 // a regrowth weed's id: `wr-` and the crop node it covers
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);

@@ -25,9 +25,11 @@ export const BLUEPRINT_FADE_MS = 200; // hiding and showing the blueprint (P25-3
 export const PARTS = {
   // D01 house, part by part (answer 3: "House has color as its vuild")
   H1: { d: 'D01', what: 'plinth and floor', stage: 'H1', before: 'ghost' },
-  H2: { d: 'D01', what: 'front and right walls, door frame, window openings', stage: 'H2', before: 'ghost' },
-  H3: { d: 'D02/D03', what: 'roof, eaves, ridge, chimney', stage: 'H3', before: 'ghost' },
-  H4: { d: 'D04-D07', what: 'round, square and side windows, red door and handle, trim', stage: 'H4', before: 'ghost' },
+  // v0.15: walls only walls, roof only roof, the chimney a stage of its own, the home last
+  H2: { d: 'D01', what: 'front and right walls', stage: 'H2', before: 'ghost' },
+  H3: { d: 'D02', what: 'roof, eaves, ridge', stage: 'H3', before: 'ghost' },
+  H4: { d: 'D03', what: 'chimney and its smoke', stage: 'H4', before: 'ghost' },
+  H5: { d: 'D04-D07', what: 'round, square and side windows, door frame, red door and handle, door step, trim', stage: 'H5', before: 'ghost' },
   D08: { d: 'D08', what: 'path', stage: 'G1', before: 'ghost' },
   D09: { d: 'D09', what: 'tree', stage: null },
   D10: { d: 'D10', what: 'bench', stage: 'G2', before: 'outline' },
@@ -105,7 +107,7 @@ export function partShown(l, id, { blueprint = true, pinned = false } = {}) {
 // ---------- Q25-1 (approved): the bench is usable only once G2 restores it ----------
 // "bench maybe colorless until you fix it and then you can interact with it": colour means
 // usable. Sitting, bird stains and Clean, and so E05, E17, E19 and E27, wait for G2. G2 is on
-// the main route (required for H4), so none of the four songs becomes missable. The bird
+// the main route (required for the home, H5), so none of the four songs becomes missable. The bird
 // rotation skips the bench perch until then (§7).
 export const BENCH_STAGE = 'G2';
 export const BENCH_RITUALS = ['E05', 'E17', 'E19', 'E27'];
@@ -115,7 +117,7 @@ export const ritualGate = (eggId) => (BENCH_RITUALS.includes(eggId) ? BENCH_STAG
 export const ritualOpen = (l, eggId) => { const g = ritualGate(eggId); return g === null || isCommitted(l, g); };
 
 // ---------- P25-2: the colour finale, inside the approved 15 s ----------
-// times in ms from the start of the finale (H4 is already saved)
+// times in ms from the start of the finale (the home, H5, is already saved)
 export const FINALE = {
   hide: [0, 2000], // HUD, mats, piles, crate, head stack, leftover rocks, blueprint and ring hide (V9); camera eases to the drawing
   settle: [2000, 3500], // Vanessa settles at D17, hands on hips

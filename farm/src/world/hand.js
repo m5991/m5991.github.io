@@ -116,18 +116,20 @@ function subGeometry(g, gr) {
 
 // ---------------- the cottage D01-D07 ----------------
 // Front gable faces +Z, origin at the footprint centre on the ground. Stage nodes (annex §E.6),
-// each taking its colour as its stage is built (spec v0.9 §10.9, answer 3): H1 the stone
-// plinth; H2 the walls with the door frame, the door step and every drawn opening as a dark
-// recess; H3 the roof (D02) with the red chimney D03 on the right slope toward the front; H4 the
-// round gable window D04, square front window D05, side window D06, red door with handle D07
-// and the window trim.
+// each taking its colour as its stage is built (spec v0.9 §10.9, answer 3). v0.15 (captain:
+// "the walls should only be walls, roof only be roof, add an extra step for chimney"): H1 the
+// stone plinth; H2 the plain walls; H3 the roof (D02); H4 the red chimney D03 on the right slope
+// toward the front (its smoke rises from `chimneyTop`, world.js); H5 the home: the round gable
+// window D04, square front window D05, side window D06, the door frame, the red door with its
+// handle D07, the door step and the window trim (the dark recesses behind them come with them).
 export const COTTAGE = { w: 4.0, d: 3.3, wall: 2.45, roof: 1.55, plinth: 0.24 };
 export function cottage() {
   const W = COTTAGE.w; const D = COTTAGE.d; const Hw = COTTAGE.wall; const R = COTTAGE.roof; const P = COTTAGE.plinth;
   const plinth = new THREE.Group(); plinth.name = 'D01_House_H1_Plinth';
   const walls = new THREE.Group(); walls.name = 'D01_House_H2_Walls';
   const roof = new THREE.Group(); roof.name = 'D01_House_H3_Roof';
-  const details = new THREE.Group(); details.name = 'D01_House_H4_Details';
+  const chimney = new THREE.Group(); chimney.name = 'D01_House_H4_Chimney';
+  const details = new THREE.Group(); details.name = 'D01_House_H5_Details';
   const recess = mix(PAL.ink, PAL.cream, 0.45); // an opening before its window or door is fitted
   const opening = (w, h, x, y, z, ry = 0) => at(mesh(new THREE.PlaneGeometry(w, h), recess, { ink: false, shadow: false }), x, y, z, 0, ry, 0);
 
@@ -144,20 +146,20 @@ export function cottage() {
 
   const front = D / 2;
   details.add(windowFrame(0.72, 0.72, { x: -1.08, y: P + 1.35, z: front }));
-  walls.add(opening(0.72, 0.72, -1.08, P + 1.35, front + 0.004));
-  const frame = new THREE.Group(); // the door frame: H2
+  details.add(opening(0.72, 0.72, -1.08, P + 1.35, front + 0.004));
+  const frame = new THREE.Group(); // the door frame: H5 (v0.15)
   for (const [w, h, x, y] of [[0.08, 1.86, -0.47, 0.93], [0.08, 1.86, 0.47, 0.93], [1.02, 0.08, 0, 1.86]]) frame.add(at(mesh(new THREE.BoxGeometry(w, h, 0.12), PAL.ink), x, y, 0));
   frame.add(opening(0.86, 1.78, 0, 0.89, -0.026));
   frame.position.set(0.55, P, front + 0.03);
-  walls.add(frame);
-  const door = new THREE.Group(); // the red door and its handle: H4
+  details.add(frame);
+  const door = new THREE.Group(); // the red door and its handle: H5
   door.add(at(mesh(new THREE.BoxGeometry(0.86, 1.78, 0.08), PAL.red), 0, 0.89, 0));
   const handle = mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 12, Math.PI), PAL.ink, { ink: false });
   handle.position.set(0.28, 0.92, 0.07); handle.rotation.z = Math.PI / 2;
   door.add(handle);
   door.position.set(0.55, P, front + 0.03);
   details.add(door);
-  walls.add(at(mesh(new THREE.BoxGeometry(1.1, 0.1, 0.45), PAL.stone), 0.55, 0.05, front + 0.3)); // door step
+  details.add(at(mesh(new THREE.BoxGeometry(1.1, 0.1, 0.45), PAL.stone), 0.55, 0.05, front + 0.3)); // door step
   const round = new THREE.Group();
   round.add(mesh(new THREE.CircleGeometry(0.3, 24), PAL.shirt, { ink: false }));
   round.add(at(mesh(new THREE.TorusGeometry(0.31, 0.055, 8, 28), PAL.ink, { ink: false }), 0, 0, 0.02));
@@ -166,11 +168,11 @@ export function cottage() {
   round.position.set(0, P + Hw + R * 0.42, front + 0.015);
   details.add(round);
   const roundHole = at(mesh(new THREE.CircleGeometry(0.33, 24), recess, { ink: false, shadow: false }), 0, P + Hw + R * 0.42, front + 0.004);
-  walls.add(roundHole);
+  details.add(roundHole);
   const side = windowFrame(0.62, 0.68, { x: W / 2, y: P + 1.4, z: -0.15 });
   side.rotation.y = Math.PI / 2;
   details.add(side);
-  walls.add(opening(0.62, 0.68, W / 2 + 0.004, P + 1.4, -0.15, Math.PI / 2));
+  details.add(opening(0.62, 0.68, W / 2 + 0.004, P + 1.4, -0.15, Math.PI / 2));
 
   // roof: two charcoal slabs with eaves, a ridge, three sparse shingle strokes per slope
   const half = W / 2; const pitch = Math.atan2(R, half); const slope = Math.hypot(half, R);
@@ -196,12 +198,13 @@ export function cottage() {
   roof.add(ridge);
   const cx = 0.75; const cz = 0.55;
   const roofY = P + Hw + R - cx * Math.tan(pitch);
-  roof.add(at(mesh(new THREE.BoxGeometry(0.46, 1.5, 0.46), PAL.red, { hatch: 1 }), cx, roofY + 0.45, cz));
-  roof.add(at(mesh(new THREE.BoxGeometry(0.58, 0.12, 0.58), mix(PAL.red, PAL.ink, 0.35)), cx, roofY + 1.24, cz));
+  chimney.add(at(mesh(new THREE.BoxGeometry(0.46, 1.5, 0.46), PAL.red, { hatch: 1 }), cx, roofY + 0.45, cz));
+  chimney.add(at(mesh(new THREE.BoxGeometry(0.58, 0.12, 0.58), mix(PAL.red, PAL.ink, 0.35)), cx, roofY + 1.24, cz));
 
   const g = new THREE.Group();
-  g.add(mergeByMaterial(plinth), mergeByMaterial(walls), mergeByMaterial(roof), mergeByMaterial(details));
+  g.add(mergeByMaterial(plinth), mergeByMaterial(walls), mergeByMaterial(roof), mergeByMaterial(chimney), mergeByMaterial(details));
   g.userData.chimneyTop = new THREE.Vector3(cx, roofY + 1.35, cz);
+  g.userData.doorStep = new THREE.Vector3(0.55, 0, front + 0.3 + 0.225); // the door step's front edge
   return g;
 }
 function windowFrame(w, h, { x, y, z }) {

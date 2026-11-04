@@ -12,7 +12,7 @@
 // from the tree (P25-5) and stone comes from finite rocks (P25-6).
 // Spec v0.9 (captain phone test of build v6): parts of the drawing take their colour when
 // finished (game/reveal.js, world.js), the Blueprint toggle and the B key show or hide the
-// outlines of unbuilt things (game/prefs.js), and H4 ends in the colour finale (world/finale.js).
+// outlines of unbuilt things (game/prefs.js), and the home (v0.15: H5) ends in the colour finale (world/finale.js).
 // Spec v0.10 §4.1 (A26-1…A26-3): a device's first launch opens on the redrawn drawing on paper
 // (game/opening.js, world/opening.js, ui/paper.js); its first tap starts the theme and the
 // opening, any later tap or key skips, and it ends on the play start set up by start(). There
@@ -36,7 +36,7 @@ import * as THREE from 'three';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { BASE_STAGE, CAPACITY, HAMMERED, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { BASE_STAGE, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
   apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
   tableCap, tables,
@@ -55,7 +55,7 @@ import { playsOpening, saveNotice } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
 import { createSaveData, createSaveManager } from './game/save.js';
 import {
-  atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, toolBlocked, wantedTool,
+  atSellingSide, atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, SALE_REACH_M, toolBlocked, wantedTool,
 } from './game/interaction.js';
 import { nextGoal } from './game/guide.js';
 import { coachPrompt, dropLesson, kindOf, learned, LINGER_MS, MOVED_M, tutorialStep } from './game/tutorial.js';
@@ -385,7 +385,7 @@ async function boot() {
               const n = tables(data.ledger);
               hud.toast(n >= 4 ? 'The big yard sale! A fourth table, room for everything, and at every sale two neighbours bring stalls of their own.' : `More neighbours are coming: a ${n === 2 ? 'second' : 'third'} yard-sale table.`, 4200);
             }
-            if (e.stage === 'H4') finale.start(); // H4 is saved; last, the drawing gets its colour (P25-2)
+            if (e.stage === LAST_STAGE) finale.start(); // the home (v0.15: H5) is saved; last, the drawing gets its colour (P25-2)
           });
           break;
         }
@@ -435,7 +435,7 @@ async function boot() {
   let diyState = { stage: null, pulse: false, point: false };
   function diyAway(bar) {
     diyHint.nudge();
-    const where = STAGES[bar.stage]?.label && ['H1', 'H2', 'H3', 'H4'].includes(bar.stage) ? 'the house' : `the ${bar.label}`;
+    const where = STAGES[bar.stage]?.label && HOUSE_STAGES.includes(bar.stage) ? 'the house' : `the ${bar.label}`;
     hud.toast(`${cap(bar.label)}: all here. Go to ${where}`, 3000);
   }
   function doDiy(stage) {
@@ -444,14 +444,19 @@ async function boot() {
     else hud.toast(r.reason === 'short' ? 'Not everything is here yet.' : 'This cannot be built yet.');
   }
   let saleShowing = false;
-  const SALE_REACH_M = 1.6;
+  // v0.15: she sells from behind the tables, their north side (interaction.js atSellingSide)
   function atTheTable() {
     const hp = { x: hero.body.position.x, z: hero.body.position.z };
-    return ctxTargets.some((x) => x.kind === 'table' && inReach(hp, x, SALE_REACH_M));
+    return atSellingSide(hp, ctxTargets);
   }
   function doYardSale() {
     if (saleShowing || !saleReady(data.ledger)) return;
-    if (!atTheTable()) { hud.toast('Yard Sale: go to the table.', 2200); return; }
+    if (!atTheTable()) {
+      const hp = { x: hero.body.position.x, z: hero.body.position.z };
+      const near = ctxTargets.some((x) => x.kind === 'table' && inReach(hp, x, SALE_REACH_M));
+      hud.toast(near ? 'Yard Sale: go round to the back of the table.' : 'Yard Sale: go to the back of the table.', 2200);
+      return;
+    }
     commit({ t: 'yardSale' });
   }
 
@@ -501,7 +506,7 @@ async function boot() {
     if (!debugCarried) hero.setCounts(data.ledger.carried);
     world.updateHeldTool();
     world.updatePiles(dt, reducedMotion());
-    world.updateRegrowth(data.ledger);
+    world.updateRegrowth(data.ledger, dt);
     tweens.update(dt);
     // the ground ring: nearest collectible, solid in reach, filling while she works
     highlight = hammering.active ? null : pickHighlight(data.ledger, heroXZ, ctxTargets, ix.state.selectedId, HIGHLIGHT_RANGE_M, toolCtx);
@@ -697,7 +702,7 @@ async function boot() {
     rig.wholeBlend = 0;
     world.tableHold = false;
     world.sync(data.ledger);
-    world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from H4 (P25-2)
+    world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from the home (P25-2)
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
     diyHint.reset();
@@ -775,7 +780,7 @@ async function boot() {
   for (const b of bpButtons) b.onclick = toggleBlueprint;
   showBlueprint();
 
-  // ---------- the colour finale (P25-2): after H4, presentation only, skippable ----------
+  // ---------- the colour finale (P25-2): after the home (H5), presentation only, skippable ----------
   const finale = new Finale({
     world, hero, rig,
     at: () => proj.groundAt(VANESSA_START.u, VANESSA_START.v), // D17
@@ -962,6 +967,7 @@ async function boot() {
   }
 
   const tmpP = new THREE.Vector3();
+  const tmpS = new THREE.Vector3(); // v0.15: the selling spot behind the table
   // The HUD's live bottom edge. It grows when the goal line gets its text, after the first
   // layout (which measured an empty goal line and so centred Vanessa too high): re-measure the
   // bands whenever the HUD changes size; the camera eases to the new centre (camera.js). The
@@ -1039,9 +1045,12 @@ async function boot() {
       const st = world.stations[aim.id];
       if (!st || point) continue;
       const hp = hero.body.position;
-      const atTarget = Math.hypot(st.pos.x - hp.x, st.pos.z - hp.z) - st.def.r <= 0.9;
+      // v0.15: for a sale the arrow shows where she sells from, behind the first table
+      const sell = aim.id === 'table' && step?.sale;
+      const pos = sell ? world.sellSpot(tmpS) : st.pos;
+      const atTarget = sell ? atTheTable() : Math.hypot(pos.x - hp.x, pos.z - hp.z) - st.def.r <= 0.9;
       if (atTarget) continue;
-      tmpP.copy(st.pos).setY(st.obj.position.y + (ARROW_H[st.def.kind] ?? 0.6)).project(rig.camera);
+      tmpP.copy(pos).setY(st.obj.position.y + (ARROW_H[st.def.kind] ?? 0.6)).project(rig.camera);
       const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
       const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop });
       arrows.push(aim.colour ? { ...a, colour: aim.colour } : a);
@@ -1066,6 +1075,7 @@ async function boot() {
     sunLight.target.position.set(sx, 0, sz);
     rig.camera.updateMatrixWorld();
     world.updateLooks(dt);
+    world.updateSmoke(dt);
     world.updateSky(rig.camera);
     if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints()); updateStackCap(performance.now()); }
     updateCoach();

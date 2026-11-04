@@ -61,9 +61,9 @@ function ghost(o, opacity = 0.18) {
   return o;
 }
 
-// ---------- D01-D07 house (direction C, hand.js): H0 footprint, H1 plinth, H2 walls, H3 roof, H4 details ----------
+// ---------- D01-D07 house (direction C, hand.js): H0 footprint, H1 plinth, H2 walls, H3 roof, H4 chimney, H5 details ----------
 // Each part takes its colour as its stage is built (spec v0.9 §10.9, answer 3). Until then the
-// part is the blueprint: a see-through ghost of it, one per stage (`D01_House_Ghost_H1`..`H4`),
+// part is the blueprint: a see-through ghost of it, one per stage (`D01_House_Ghost_H1`..`H5`),
 // over the ink footprint. `world.sync` shows each node when its stage is committed.
 export const HOUSE = { w: COTTAGE.w, d: COTTAGE.d, wall: COTTAGE.wall, roof: COTTAGE.roof, plinth: COTTAGE.plinth };
 export function house() {
@@ -77,12 +77,14 @@ export function house() {
   const plinth = c.getObjectByName('D01_House_H1_Plinth');
   const walls = c.getObjectByName('D01_House_H2_Walls');
   const roof = c.getObjectByName('D01_House_H3_Roof');
-  const details = c.getObjectByName('D01_House_H4_Details');
-  const parts = { H1: plinth, H2: walls, H3: roof, H4: details };
+  const chimney = c.getObjectByName('D01_House_H4_Chimney');
+  const details = c.getObjectByName('D01_House_H5_Details');
+  const parts = { H1: plinth, H2: walls, H3: roof, H4: chimney, H5: details };
   const ghostHome = group('D01_House_Ghost', ...Object.entries(parts).map(([st, n]) => named(ghost(n.clone()), `D01_House_Ghost_${st}`)));
   for (const n of Object.values(parts)) { shadows(addOutline(n)); n.visible = false; }
-  const g = group('D01_House', footprint, plinth, walls, roof, details, ghostHome);
+  const g = group('D01_House', footprint, plinth, walls, roof, chimney, details, ghostHome);
   g.userData.chimneyTop = c.userData.chimneyTop;
+  g.userData.doorStep = c.userData.doorStep;
   return g;
 }
 

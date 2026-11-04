@@ -182,6 +182,38 @@ export function migratePreV013(d0) {
   return d;
 }
 
+// ---------- saves from v0.14 (four house stages, no plant rounds) ----------
+// Still schema v5 (only test saves exist). v0.15 builds the house in five stages: the walls (H2)
+// no longer bring the door frame, the roof (H3) no longer brings the chimney, the chimney is its
+// own stage (H4) and the home is H5 (it was H4). An old farm keeps everything it had built: its
+// home becomes H5, and a roof it had built had its chimney, so H4 counts as built with it; the
+// commit order lists the chimney right after the roof. Each planted node's round count starts at
+// 1 if its crop is up now, else 0 (a tomato plant grows again from its next crop). Returns a new
+// payload; one that already has the v0.15 shape is returned as is.
+export function isPreV015(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && !('grown' in l);
+}
+export function migratePreV015(d0) {
+  if (!isPreV015(d0)) return d0;
+  const d = structuredClone(d0);
+  const l = d.ledger;
+  const st = l.stages ?? {};
+  const home = st.H4?.committed === true;
+  const roof = st.H3?.committed === true;
+  st.H5 = { committed: home };
+  st.H4 = { committed: roof };
+  l.stages = st;
+  if (Array.isArray(l.paymentEvents)) {
+    const ev = l.paymentEvents.filter((id) => id !== 'H4');
+    if (roof) ev.splice(ev.indexOf('H3') + 1, 0, 'H4');
+    if (home) ev.push('H5');
+    l.paymentEvents = ev;
+  }
+  l.grown = Object.fromEntries(Object.keys(NODES).map((id) => [id, l.nodes?.[id]?.dug && l.nodes[id].remaining > 0 ? 1 : 0]));
+  return d;
+}
+
 // The stone invariant (§6.6 point 1): if the stone in the rocks, carried and at the pile no longer
 // covers the stone still required, the recovery rock RX at R1's place gets the missing units.
 // -> { data, added } (a new payload when it changed)
@@ -201,13 +233,13 @@ function withSettingDefaults(d) {
   return { ...d, settings: { ...d.settings, ...Object.fromEntries(missing.map((k) => [k, false])) } };
 }
 
-// what a stored payload becomes before validation: older test saves brought up to v0.13
+// what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d)))));
+  return migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))));
 }
 
-// `mainComplete` derives from H4 even if endingSeen is false (spec §12).
+// `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).
 export const derivedMainComplete = (d) => mainComplete(d.ledger);
 
 function probeStorage(storage) {
@@ -234,7 +266,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };
