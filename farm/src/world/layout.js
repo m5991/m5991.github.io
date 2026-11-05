@@ -31,8 +31,11 @@ export const BORDER_POLYLINE = [
   [[11, 65.5], [18, 65], [24, 66], [25.5, 70], [26, 73.5]],
   [[3.5, 70], [2, 74], [1.8, 78], [3, 82], [8, 83.5], [13, 83.5], [18, 83]],
 ];
-// D12 stepping stones: v0.15 lays them on a half circle round the house's right side, worked out
-// from the fitted house (world.js steppingPlaces, STEPPING_ARC), no longer from drawn points
+// D12 stepping stones: v0.16 lays them in a short line from the back of the house to the left of
+// the corn field, worked out from the fitted house (world.js steppingPlaces, STEPPING)
+// D11: v0.16 settles the border stones on one ring round the tree and the bench, its only gap in
+// front of the bench where the path ends (world.js ringPlaces, RING); BORDER_POLYLINE gives its
+// extent, and PATH's last point the side its gap faces
 export const PATH = [[36, 47], [38, 52], [40, 57.5], [39.5, 62], [36.5, 68], [31, 74], [25.5, 78], [20, 81]];
 
 // Sky layers (camera-facing): centre and drawn radius / width in drawing units
@@ -98,9 +101,10 @@ export const STATIONS = [
   ...['H1', 'H2', 'H3', 'H4', 'H5'].map((id) => ({ id, kind: 'site', u: 41, v: 52.5, r: 0.9, label: 'house', house: true })),
   { id: 'G1', kind: 'site', u: 39, v: 62, r: 0.7, label: 'path' },
   { id: 'G2', kind: 'site', u: 23, v: 72, r: 0.7, label: 'bench' },
-  // v0.15: the middle stone of the half circle round the house (world.js places the site there
-  // exactly, from the fitted house; this is where it lands at the play fit)
-  { id: 'G3', kind: 'site', u: 47, v: 43, r: 0.6, label: 'stepping stones' },
+  // v0.15: one of the stones (v0.16: the middle one of their line from the back of the house to
+  // the corn; world.js places the site there exactly, from the fitted house; this is where it
+  // lands at the play fit)
+  { id: 'G3', kind: 'site', u: 47, v: 44.5, r: 0.6, label: 'stepping stones' },
   { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
@@ -118,9 +122,12 @@ export const STATIONS = [
   { id: 'table2', kind: 'table', u: 53.2, v: 59.3, r: 0.5, label: 'yard-sale table', table: 1 },
   { id: 'table3', kind: 'table', u: 59.4, v: 59.6, r: 0.5, label: 'yard-sale table', table: 2 },
   { id: 'table4', kind: 'table', u: 65.6, v: 59.9, r: 0.5, label: 'yard-sale table', table: 3 },
+  // v0.16 (captain: "Remove the extra sellers, just produce an extra table every progression of
+  // the house"): the chimney and the home bring a fifth and a sixth table to the row, where the
+  // neighbours' stalls used to stand at the big sale
+  { id: 'table5', kind: 'table', u: 71.8, v: 60.2, r: 0.5, label: 'yard-sale table', table: 4 },
+  { id: 'table6', kind: 'table', u: 78.0, v: 60.5, r: 0.5, label: 'yard-sale table', table: 5 },
 ];
-// v0.13: the neighbours' own stalls at the last stage (v0.15: the home, H5), beside her four tables
-export const NEIGHBOUR_STALLS = [{ u: 72.4, v: 60.3 }, { u: 72.8, v: 67.2 }];
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
 export const BOUNDS = { uMin: 1, uMax: 99, vMin: 40, vMax: 99 };

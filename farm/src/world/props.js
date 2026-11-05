@@ -121,7 +121,9 @@ export function tool(kind) {
     const brace = new THREE.CatmullRomCurve3([V(-0.12, 0.15, 0.005), V(0, 0.17, 0.006), V(0.12, 0.15, 0.005)]);
     g.add(new THREE.Mesh(taperTube(brace, 0.007, 0.007, 8, 5), toon(steel)));
   }
-  g.rotation.z = kind === 'shovel' ? 0.12 : -0.1; // the lean (kept by the merge)
+  // the lean (kept by the merge). v0.16 (captain: "The Shovel and Rake both lean to the left on
+  // the side of the house", as the original drawing has them): both tops to the left, onto the wall
+  g.rotation.z = kind === 'shovel' ? 0.2 : 0.17;
   return mergeByMaterial(g, kind === 'shovel' ? 'D13_Shovel' : 'D14_Rake');
 }
 
@@ -200,22 +202,26 @@ function signTexture() {
   document.fonts?.load('96px "Pencil Title"').then(() => { drawSign(c); signTex.needsUpdate = true; }).catch(() => {});
   return signTex;
 }
-// an A-frame board, 0.46 m wide and 0.6 m tall, lettered on its front face (+Z)
+// v0.16 (captain: "The yard sale sign should be on the north side of the table, be on a stick and
+// be three times as big"): a lettered board on a stick pushed into the ground, in model metres a
+// 0.6 x 0.5 board whose bottom edge is 0.55 up a rough wooden stick; the world draws it at
+// SIGN_SCALE (3), so its face is about three times the v0.15 A-frame's (0.61 m across then, 1.8
+// m now) and its board stands above Vanessa's head behind the tables. Lettered on its front (+Z).
+export const SIGN = { w: 0.6, h: 0.5, foot: 0.55 };
 export function saleSign() {
   const g = new THREE.Group();
-  const post = mix(PAL.wood, PAL.ink, 0.1);
-  const back = at(mesh(box(0.46, 0.56, 0.025), PAL.woodLight), 0, 0.28, -0.1, -0.3, 0, 0);
-  const front = at(mesh(box(0.46, 0.56, 0.025), PAL.woodLight), 0, 0.28, 0.1, 0.3, 0, 0);
-  const hinge = at(mesh(box(0.48, 0.03, 0.04), post), 0, 0.55, 0);
-  g.add(back, front, hinge);
+  const post = mix(PAL.wood, PAL.ink, 0.12);
+  const { w, h, foot } = SIGN;
+  g.add(new THREE.Mesh(taperTube(new THREE.CatmullRomCurve3([V(0, -0.05, -0.02), V(0.006, foot * 0.6, -0.02), V(-0.004, foot + h * 0.85, -0.02)]), 0.022, 0.017, 6, 7), toon(post)));
+  g.add(at(mesh(box(w, h, 0.025), PAL.woodLight), 0, foot + h / 2, 0, 0, 0, 0.015)); // the board
+  g.add(at(mesh(box(w + 0.03, 0.03, 0.03), post), 0, foot + h - 0.005, 0.004, 0, 0, 0.015)); // its top lath
+  for (const x of [-w * 0.32, w * 0.32]) g.add(at(stroke(0.014, 0.014, 0.01), x, foot + h * 0.88, 0.016)); // nail heads
   const merged = mergeByMaterial(g, 'SaleSign');
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.37), new THREE.MeshBasicMaterial({ map: signTexture() }));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.05, h - 0.06), new THREE.MeshBasicMaterial({ map: signTexture() }));
   face.userData.noOutline = true;
-  const holder = new THREE.Group();
-  holder.position.set(0, 0.28, 0.1); holder.rotation.x = 0.3;
-  face.position.set(0, 0.02, 0.0135);
-  holder.add(face);
-  merged.add(holder);
+  face.position.set(0, foot + h / 2, 0.0135);
+  face.rotation.z = 0.015;
+  merged.add(face);
   return merged;
 }
 
@@ -329,32 +335,196 @@ export function buyer(look) {
   return root;
 }
 
-// a neighbour's own stall at the big yard sale (v0.13, P29-5: "more sellers"): generic yard-sale
-// goods, set out on a table like hers: jars and a lamp, or a stack of books and a folded blanket
-// (no crops, no logos, no prices)
-export function stallGoods(seed = 0) {
-  const g = new THREE.Group(); g.name = 'StallGoods';
-  const top = 0.645;
-  if (seed % 2 === 0) {
-    for (let k = 0; k < 4; k++) { // jars with cloth lids
-      const x = -0.38 + k * 0.14; const z = -0.08 + (k % 2) * 0.12;
-      g.add(at(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.1, 12), k % 2 ? PAL.flower : mix(PAL.red, PAL.flower, 0.4)), x, top + 0.05, z));
-      g.add(at(mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.02, 12), k % 2 ? PAL.red : PAL.cream), x, top + 0.11, z));
-    }
-    // a table lamp: a turned wooden base and a cream shade
-    g.add(at(mesh(lathe([[0, 0], [0.07, 0], [0.06, 0.03], [0.02, 0.05], [0.02, 0.22], [0, 0.22]], 14), PAL.woodLight, { hatch: 1 }), 0.3, top, 0));
-    g.add(at(mesh(lathe([[0.12, 0], [0.07, 0.14], [0, 0.14]], 16), PAL.cream), 0.3, top + 0.2, 0));
-  } else {
-    // a stack of books, a little askew
-    const spines = [PAL.red, PAL.denim, PAL.leaf, PAL.flower, PAL.woodLight];
-    for (let k = 0; k < 5; k++) g.add(at(mesh(box(0.24 - k * 0.012, 0.045, 0.17), spines[k]), -0.25, top + 0.023 + k * 0.046, 0, 0, (k % 2 ? 0.12 : -0.08), 0));
-    // a folded blanket, two soft layers with a stripe
-    const fold = new THREE.CapsuleGeometry(0.06, 0.24, 4, 10); fold.rotateZ(Math.PI / 2); fold.scale(1, 0.55, 2.2);
-    g.add(at(mesh(fold, mix(PAL.red, PAL.cream, 0.45)), 0.22, top + 0.035, 0.02));
-    g.add(at(mesh(fold.clone(), mix(PAL.denim, PAL.cream, 0.35)), 0.22, top + 0.095, 0.02));
-    g.add(at(stroke(0.33, 0.006, 0.02), 0.22, top + 0.132, 0.02));
+
+// ---------------- v0.16 the hired archer (A1) ----------------
+// The captain: "The archer should be Dwight from The Office. It should have every feature so it
+// can be easily identified: the shirt, the tie, the hairstyle and the glasses ... Should be a
+// crossbow." An original low-poly character in that style, in the drawing's hand like the
+// neighbours: a tall, square-shouldered man in a short-sleeved mustard dress shirt with its
+// collar and a breast pocket, a dark brown tie held by a tie bar, a belt and brown slacks, black
+// shoes; a long face with a stern straight mouth and heavy brows; dark brown hair parted in the
+// middle with a short, stiff fringe falling to each side of the part; rectangular wire glasses.
+// He holds a crossbow level across his chest: wooden stock and butt, the bow (prod) across its
+// front with its string drawn back to the latch, a bolt loaded, the foot stirrup. Groups: `body`
+// (bobs), `head` (turns), `arms` (with the crossbow, raised to aim), `crossbow`. Built for a
+// 1.88 m man, facing +Z.
+export const ARCHER = { height: 1.88, shirt: 0xcfa93e, tie: 0x3b2c24, slacks: 0x6a5641, hair: 0x3a2a1f, skin: 0xe3b48f, frame: 0x2a2523 };
+export function archer() {
+  const A = ARCHER;
+  const root = new THREE.Group(); root.name = 'Archer';
+  const hipY = 0.97; const shoulderY = 1.5; const headR = 0.118; const headY = shoulderY + 0.1 + headR * 1.02;
+  const body = new THREE.Group(); body.name = 'body';
+  // the shirt: square shoulders, straight down to the belt
+  const shirt = lathe([[0, hipY - 0.02], [0.15, hipY - 0.02], [0.16, hipY + 0.12], [0.165, hipY + 0.32], [0.18, shoulderY - 0.12], [0.19, shoulderY - 0.04], [0.12, shoulderY + 0.03], [0.05, shoulderY + 0.06], [0, shoulderY + 0.06]], 20);
+  shirt.scale(1, 1, 0.74);
+  body.add(mesh(shirt, A.shirt, { hatch: 1 }));
+  // the collar points, a little darker, either side of the knot
+  for (const sd of [-1, 1]) {
+    const c = new THREE.BufferGeometry().setFromPoints([V(0, 0, 0), V(sd * 0.075, 0.035, -0.01), V(sd * 0.025, -0.06, 0.008)]);
+    c.setIndex([0, 1, 2]); c.computeVertexNormals();
+    const m = mesh(c, mix(A.shirt, PAL.ink, 0.14), { ink: false });
+    m.material.side = THREE.DoubleSide;
+    body.add(at(m, sd * 0.01, shoulderY + 0.035, 0.122));
   }
-  return mergeByMaterial(g, 'StallGoods');
+  body.add(at(stroke(0.006, 0.42, 0.006), 0.012, shoulderY - 0.3, 0.128)); // the button placket
+  body.add(at(mesh(box(0.075, 0.075, 0.008), mix(A.shirt, PAL.ink, 0.1), { ink: false }), -0.085, shoulderY - 0.16, 0.13)); // breast pocket
+  body.add(at(stroke(0.012, 0.03, 0.006), -0.068, shoulderY - 0.13, 0.136)); // a pen in it
+  // the tie: knot, a long blade down to the belt, a tie bar
+  body.add(at(mesh(box(0.045, 0.04, 0.03), A.tie), 0, shoulderY + 0.01, 0.128));
+  const tie = new THREE.Shape();
+  tie.moveTo(-0.018, 0); tie.lineTo(0.018, 0); tie.lineTo(0.038, -0.36); tie.lineTo(0, -0.41); tie.lineTo(-0.038, -0.36); tie.closePath();
+  const tg = new THREE.ExtrudeGeometry(tie, { depth: 0.012, bevelEnabled: false });
+  body.add(at(mesh(tg, A.tie), 0, shoulderY - 0.012, 0.124, -0.06, 0, 0));
+  body.add(at(mesh(box(0.07, 0.008, 0.014), 0xc9c4b8, { ink: false }), 0, shoulderY - 0.2, 0.142)); // tie bar
+  // belt with its buckle, and the slacks' seat
+  body.add(at(mesh(new THREE.CylinderGeometry(0.153, 0.153, 0.04, 20).scale(1, 1, 0.75), 0x2d2420), 0, hipY + 0.01, 0));
+  body.add(at(mesh(box(0.045, 0.032, 0.012), 0xc9a646, { ink: false }), 0, hipY + 0.01, 0.118));
+  body.add(mesh(lathe([[0, hipY - 0.12], [0.15, hipY - 0.12], [0.155, hipY - 0.01], [0, hipY - 0.01]]).scale(1, 1, 0.78), A.slacks));
+  body.add(at(mesh(new THREE.CylinderGeometry(0.048, 0.055, 0.1, 10), A.skin), 0, shoulderY + 0.07, 0)); // neck
+  root.add(mergeByMaterial(body, 'body'));
+  // the head: a long face, heavy brows, small eyes behind the glasses, a stern straight mouth
+  const head = new THREE.Group(); head.name = 'head';
+  head.position.set(0, headY, 0);
+  const skull = new THREE.SphereGeometry(headR, 16, 12); skull.scale(0.9, 1.14, 0.95);
+  head.add(mesh(skull, A.skin));
+  head.add(at(mesh(new THREE.SphereGeometry(headR * 0.16, 6, 5), mix(A.skin, PAL.ink, 0.12)), 0, -headR * 0.1, headR * 0.93)); // nose
+  for (const sd of [-1, 1]) {
+    head.add(at(mesh(new THREE.SphereGeometry(headR * 0.085, 6, 5), PAL.ink, { ink: false, shadow: false }), sd * headR * 0.36, headR * 0.12, headR * 0.86)); // eyes
+    head.add(at(mesh(box(headR * 0.42, headR * 0.07, headR * 0.06), A.hair, { ink: false, shadow: false }), sd * headR * 0.37, headR * 0.36, headR * 0.86, 0, 0, sd * -0.12)); // brows, a little stern
+    head.add(at(mesh(new THREE.SphereGeometry(headR * 0.17, 8, 6), A.skin), sd * headR * 0.92, 0, 0)); // ears
+  }
+  head.add(at(mesh(box(headR * 0.5, headR * 0.05, headR * 0.04), PAL.mouth, { ink: false, shadow: false }), 0, -headR * 0.5, headR * 0.86)); // the straight mouth
+  // the glasses: two rectangular wire frames with pale lenses, a bridge, the arms to the ears
+  const frame = (w, h) => {
+    const g = new THREE.Group();
+    const t = headR * 0.045;
+    for (const [bw, bh, x, y] of [[w, t, 0, h / 2], [w, t, 0, -h / 2], [t, h, -w / 2, 0], [t, h, w / 2, 0]]) g.add(at(mesh(box(bw, bh, t), A.frame, { ink: false, shadow: false }), x, y, 0));
+    const lens = mesh(new THREE.PlaneGeometry(w, h), 0xe8f0f2, { ink: false, shadow: false });
+    lens.material = lens.material.clone(); lens.material.transparent = true; lens.material.opacity = 0.45;
+    g.add(lens);
+    return g;
+  };
+  for (const sd of [-1, 1]) {
+    const f = frame(headR * 0.62, headR * 0.4);
+    f.position.set(sd * headR * 0.38, headR * 0.12, headR * 0.98);
+    head.add(f);
+    head.add(at(mesh(box(headR * 0.03, headR * 0.03, headR * 1.0), A.frame, { ink: false, shadow: false }), sd * headR * 0.7, headR * 0.16, headR * 0.45));
+  }
+  head.add(at(mesh(box(headR * 0.16, headR * 0.035, headR * 0.03), A.frame, { ink: false, shadow: false }), 0, headR * 0.17, headR * 1.0));
+  // the hair: a close cap, parted in the middle, the stiff fringe falling to each side
+  const cap = new THREE.SphereGeometry(headR * 1.07, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  head.add(at(mesh(cap, A.hair), 0, headR * 0.12, -headR * 0.04, -0.12, 0, 0));
+  for (const sd of [-1, 1]) {
+    const fringe = new THREE.SphereGeometry(headR * 0.62, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    fringe.scale(1.05, 0.55, 0.7);
+    head.add(at(mesh(fringe, A.hair), sd * headR * 0.42, headR * 0.6, headR * 0.5, 0.55, 0, sd * -0.5));
+  }
+  head.add(at(stroke(headR * 0.03, headR * 0.03, headR * 0.6), 0, headR * 1.12, headR * 0.35, 0.5, 0, 0)); // the part
+  root.add(head);
+  // arms forward, holding the crossbow level at the chest (the `arms` group is raised to aim)
+  const arms = new THREE.Group(); arms.name = 'arms';
+  arms.position.set(0, shoulderY - 0.05, 0);
+  for (const sd of [-1, 1]) {
+    const sleeve = taperTube(new THREE.CatmullRomCurve3([V(sd * 0.19, 0, 0), V(sd * 0.21, -0.12, 0.03), V(sd * 0.2, -0.22, 0.07)]), 0.058, 0.05, 6, 9);
+    const fore = taperTube(new THREE.CatmullRomCurve3([V(sd * 0.2, -0.2, 0.06), V(sd * 0.16, -0.27, 0.18), V(sd * 0.08 + (sd > 0 ? 0.02 : 0), -0.28, 0.3)]), 0.04, 0.034, 6, 8);
+    arms.add(mesh(sleeve, A.shirt), mesh(fore, A.skin), at(mesh(new THREE.SphereGeometry(0.045, 10, 8), A.skin), sd * 0.08 + (sd > 0 ? 0.02 : 0), -0.28, 0.31));
+  }
+  const bow = new THREE.Group(); bow.name = 'crossbow';
+  const wood = mix(PAL.wood, PAL.ink, 0.06);
+  bow.add(at(mesh(box(0.05, 0.05, 0.62), wood, { hatch: 1 }), 0, 0, 0.1)); // the stock, along the shot
+  bow.add(at(mesh(box(0.06, 0.12, 0.16), wood, { hatch: 1 }), 0, -0.04, -0.22, 0.25, 0, 0)); // the butt
+  const prod = new THREE.CatmullRomCurve3([V(-0.34, 0, 0.32), V(-0.18, 0, 0.42), V(0, 0, 0.44), V(0.18, 0, 0.42), V(0.34, 0, 0.32)]);
+  bow.add(mesh(taperTube(prod, 0.018, 0.018, 14, 6), PAL.charcoal)); // the bow across the front
+  const string = new THREE.BufferGeometry().setFromPoints([V(-0.34, 0.004, 0.32), V(0, 0.03, 0.06), V(0.34, 0.004, 0.32)]);
+  const sl = new THREE.Line(string, new THREE.LineBasicMaterial({ color: PAL.ink }));
+  sl.userData.noOutline = true; sl.userData.noFit = true;
+  bow.add(sl);
+  bow.add(at(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.42, 6), 0xd7c7a3), 0, 0.034, 0.27, Math.PI / 2, 0, 0)); // the bolt
+  bow.add(at(mesh(new THREE.ConeGeometry(0.016, 0.05, 6), PAL.charcoal), 0, 0.034, 0.5, Math.PI / 2, 0, 0)); // its head
+  bow.add(at(mesh(new THREE.TorusGeometry(0.05, 0.008, 5, 12, Math.PI), PAL.charcoal), 0, -0.02, 0.47, 0, 0, Math.PI)); // the stirrup
+  bow.position.set(0.02, -0.27, 0.14);
+  arms.add(bow);
+  root.add(arms);
+  // legs in slacks, black shoes
+  for (const sd of [-1, 1]) {
+    const legG = new THREE.Group(); legG.name = sd < 0 ? 'legL' : 'legR';
+    legG.position.set(sd * 0.085, hipY - 0.06, 0);
+    const legLen = hipY - 0.12;
+    legG.add(mesh(taperTube(new THREE.LineCurve3(V(0, 0, 0), V(0, -legLen, 0.005)), 0.072, 0.056, 4, 9), A.slacks));
+    const shoe = new THREE.SphereGeometry(0.068, 12, 8); shoe.scale(0.85, 0.5, 1.5);
+    legG.add(at(mesh(shoe, 0x1f1d1c), 0, -legLen - 0.03, 0.045));
+    root.add(mergeByMaterial(legG, legG.name));
+  }
+  return root;
+}
+
+// ---------------- v0.16 the egg hunt: the bird, the egg, the sparkle ----------------
+// The captain: "When you get an easter egg, a bird flies by and drops an egg. That's the
+// animation of how you get it." The bird is the sky's check-mark bird come down: an ink-blue body
+// with a round head and a yellow beak, two long swept wings (`wingL`, `wingR`, flapping from the
+// shoulder) and a forked tail, about 0.9 m across; it flies along +Z. The egg is a cream Easter
+// egg, painted with a coloured band and dots (one of five colourways), 0.2 m tall, resting on its
+// side a little. The sparkle is the DIY hint's four-point star in ink and the flower yellow.
+export function flyingBird() {
+  const g = new THREE.Group(); g.name = 'EggBird';
+  const ink = PAL.ink;
+  const bodyG = new THREE.SphereGeometry(0.11, 12, 8); bodyG.scale(0.85, 0.75, 1.6);
+  g.add(mesh(bodyG, ink));
+  g.add(at(mesh(new THREE.SphereGeometry(0.075, 10, 8), ink), 0, 0.05, 0.17));
+  g.add(at(mesh(new THREE.ConeGeometry(0.028, 0.08, 6), PAL.flower), 0, 0.04, 0.27, Math.PI / 2, 0, 0));
+  for (const sd of [-1, 1]) g.add(at(mesh(new THREE.SphereGeometry(0.012, 6, 5), PAL.paper, { ink: false, shadow: false }), sd * 0.045, 0.07, 0.22));
+  for (const sd of [-1, 1]) { // the forked tail
+    const t = new THREE.ConeGeometry(0.03, 0.18, 4); t.rotateX(-Math.PI / 2);
+    g.add(at(mesh(t, ink), sd * 0.035, 0, -0.24, 0, sd * 0.25, 0));
+  }
+  for (const sd of [-1, 1]) {
+    const wing = new THREE.Group(); wing.name = sd < 0 ? 'wingL' : 'wingR';
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0.06); sh.quadraticCurveTo(0.22, 0.1, 0.46, -0.02); sh.quadraticCurveTo(0.26, -0.02, 0, -0.08); sh.closePath();
+    const wg = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: false });
+    wg.rotateX(Math.PI / 2); // lie flat, the long edge along +X
+    if (sd < 0) wg.scale(-1, 1, 1);
+    const m = mesh(wg, ink);
+    m.material = m.material.clone(); m.material.side = THREE.DoubleSide;
+    wing.add(m);
+    wing.position.set(sd * 0.06, 0.03, 0.02);
+    g.add(wing);
+  }
+  return g;
+}
+const EGG_COLOURS = [[0xf4eddc, PAL.red, PAL.flower], [0xf6e3c0, PAL.tool, PAL.leafLight], [0xf3dcd5, PAL.leaf, PAL.red], [0xe9eef2, PAL.flower, PAL.tool], [0xf1e8c4, 0x8b6fa8, PAL.leafLight]];
+export function easterEgg(seed = 0) {
+  const [base, band, dot] = EGG_COLOURS[seed % EGG_COLOURS.length];
+  const g = new THREE.Group(); g.name = 'EasterEgg';
+  const shell = new THREE.SphereGeometry(0.075, 16, 12);
+  const p = shell.attributes.position;
+  for (let i = 0; i < p.count; i++) { const y = p.getY(i); p.setY(i, y * 1.32); const k = 1 - 0.18 * (y / 0.075); p.setX(i, p.getX(i) * k); p.setZ(i, p.getZ(i) * k); }
+  shell.computeVertexNormals();
+  g.add(at(mesh(shell, base), 0, 0.1, 0));
+  g.add(at(mesh(new THREE.TorusGeometry(0.072, 0.012, 6, 20), band, { ink: false }), 0, 0.1, 0, Math.PI / 2, 0, 0));
+  g.add(at(mesh(new THREE.TorusGeometry(0.062, 0.006, 5, 18), band, { ink: false }), 0, 0.142, 0, Math.PI / 2, 0, 0));
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    g.add(at(mesh(new THREE.SphereGeometry(0.011, 6, 4), dot, { ink: false, shadow: false }), Math.cos(a) * 0.066, 0.064, Math.sin(a) * 0.066));
+  }
+  g.rotation.z = 0.25;
+  return g;
+}
+export function sparkleStar() {
+  const sh = new THREE.Shape();
+  const n = 8;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.PI / 2;
+    const r = i % 2 ? 0.045 : 0.16;
+    const x = Math.cos(a) * r; const y = Math.sin(a) * r;
+    if (i === 0) sh.moveTo(x, y); else sh.lineTo(x, y);
+  }
+  const g = new THREE.Group(); g.name = 'Sparkle';
+  const fill = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: PAL.flower, side: THREE.DoubleSide, transparent: true }));
+  const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(sh.getPoints().map((q) => V(q.x, q.y, 0.002))), new THREE.LineBasicMaterial({ color: PAL.ink, transparent: true }));
+  for (const o of [fill, line]) { o.userData.noOutline = true; o.userData.noFit = true; o.castShadow = false; }
+  g.add(fill, line);
+  return g;
 }
 
 // a dust puff (v0.12 DIY time): three or four soft paper-white blobs in ink, scaled and faded
@@ -589,6 +759,81 @@ export function stonePath(left, right) {
   ink.userData.noOutline = true; ink.userData.noFit = true; ink.castShadow = false;
   ink.name = 'D08_Path_Ink';
   g.add(merged, ink, grass);
+  return g;
+}
+
+// ---------------- D08 path (G1), v0.16: solid dirt ----------------
+// The captain: "Make the path solid, not rocks" (the coloured drawing's path is one sandy-ochre
+// band): a flat ribbon between the two drawn edges in a warm dirt wash with the paper grain, its
+// edges in ink with an uneven pressure, a few pencil strokes along it for the trodden earth and a
+// sprinkle of darker grit; short grass tufts at its edges (green with the finale's ground).
+export function dirtPath(left, right) {
+  const g = new THREE.Group(); g.name = 'D08_Path';
+  const n = left.length;
+  const pos = []; const idx = [];
+  for (let i = 0; i < n; i++) pos.push(left[i].x, 0.012, left[i].z, right[i].x, 0.012, right[i].z);
+  for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const DIRT = 0xd9a86c;
+  const ribbon = new THREE.Mesh(geo, toon(DIRT, { grain: 1, flat: 1, side: THREE.DoubleSide, hatch: 1 }));
+  ribbon.receiveShadow = true; ribbon.castShadow = false; ribbon.userData.noOutline = true;
+  ribbon.name = 'D08_Path_Dirt';
+  const r = rng(816);
+  const strokes = []; const grit = []; const tufts = [];
+  for (let i = 2; i < n - 2; i += 2) {
+    for (let k = 0; k < 2; k++) { // trodden-earth strokes along the path
+      const t = 0.2 + r() * 0.6;
+      const a = left[i].clone().lerp(right[i], t); const b = left[i + 2].clone().lerp(right[i + 2], t + (r() - 0.5) * 0.1);
+      const d = b.clone().sub(a); const len = d.length() * (0.35 + r() * 0.4); d.normalize();
+      const pts = [new THREE.Vector2(0, 0), new THREE.Vector2(len * 0.5, (r() - 0.5) * 0.02), new THREE.Vector2(len, 0)];
+      const sg = strokeGeometry(pts, (u) => 0.012 * Math.sin(Math.PI * u) + 0.003);
+      sg.rotateX(-Math.PI / 2); sg.rotateY(-Math.atan2(d.z, d.x)); sg.translate(a.x, 0.016, a.z);
+      strokes.push(sg);
+    }
+    for (let k = 0; k < 3; k++) { // grit
+      const p = left[i].clone().lerp(right[i], 0.1 + r() * 0.8);
+      const c = new THREE.CircleGeometry(0.018 + r() * 0.018, 6);
+      c.rotateX(-Math.PI / 2); c.translate(p.x, 0.017, p.z);
+      grit.push(c);
+    }
+    if (i % 6 === 2) tufts.push((r() < 0.5 ? left : right)[i].clone());
+  }
+  const strokeM = new THREE.Mesh(mergeGeometries(strokes, false), new THREE.MeshBasicMaterial({ color: mix(DIRT, PAL.ink, 0.45), side: THREE.DoubleSide, transparent: true, opacity: 0.55 }));
+  strokeM.userData.noOutline = true; strokeM.userData.noFit = true; strokeM.castShadow = false; strokeM.name = 'D08_Path_Strokes';
+  const gritM = new THREE.Mesh(mergeGeometries(grit, false), toon(mix(DIRT, PAL.ink, 0.35), { flat: 1 }));
+  gritM.userData.noOutline = true; gritM.castShadow = false; gritM.name = 'D08_Path_Grit';
+  g.add(ribbon, strokeM, gritM);
+  // the two edges, in ink with an uneven pressure
+  for (const edge of [left, right]) {
+    const flat = edge.map((q) => new THREE.Vector2(q.x, -q.z));
+    const eg = strokeGeometry(flat, (u) => 0.02 + 0.012 * Math.abs(Math.sin(u * 23)));
+    eg.rotateX(-Math.PI / 2); eg.translate(0, 0.02, 0);
+    const em = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide, transparent: true, opacity: 0.8 }));
+    em.userData.noOutline = true; em.userData.noFit = true; em.castShadow = false; em.name = 'D08_Path_Edge';
+    g.add(em);
+  }
+  const tg = [];
+  tufts.forEach((p, t) => {
+    const n2 = 3;
+    for (let k = 0; k < n2; k++) {
+      const x0 = (k - 1) * 0.03 + (r() - 0.5) * 0.015;
+      const h = 0.08 + r() * 0.06; const lean = (k - 1) * 0.025;
+      const pts = [];
+      for (let q = 0; q <= 4; q++) { const u = q / 4; pts.push(new THREE.Vector2(x0 + lean * u * u, h * u)); }
+      const geo2 = strokeGeometry(pts, (u) => 0.011 * (1 - 0.7 * u));
+      geo2.translate(p.x, 0.008, p.z);
+      tg.push(geo2);
+    }
+  });
+  if (tg.length) {
+    const grass = new THREE.Mesh(mergeGeometries(tg, false), new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide }));
+    grass.userData.noOutline = true; grass.userData.noFit = true; grass.castShadow = false;
+    grass.name = 'D08_Path_Tufts';
+    g.add(grass);
+  }
   return g;
 }
 

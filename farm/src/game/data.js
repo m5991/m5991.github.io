@@ -103,7 +103,9 @@ export const NODE_RENEW_MS = { C: 15000, S: 15000, T: 20000 };
 // time a planted node's crop comes ready its round count goes up (`grown` in the ledger; digging
 // or replanting starts it at 0). A tomato plant is drawn one size step bigger for every round
 // after its first crop, up to `steps` steps: 1x for the first crop, 1.25x for the second, 1.5x
-// from the third on. A wilted plant is a new plant: back to 1x.
+// from the third on. A wilted plant is a new plant: back to 1x. v0.16 (captain: "taller, not
+// bigger, like normal"): a step is drawn as one more tier of stem, leaves and a truss on top of the
+// plant (world.js sizePlant), so it grows taller and keeps its width.
 export const TOMATO_GROWTH = { step: 0.25, steps: 2 };
 export const NODES = {
   c1: { res: 'C', yield: 3, stage: 'C0' },
@@ -127,7 +129,7 @@ export const NODES = {
 // order (spec v0.11 P27-5: corn 8, sunflowers 8, tomatoes 14 when not chosen first). 'first' in
 // a prereq list means her first crop's stage, 'second' any second crop plot. Every build that
 // takes wood or stone is hammered up by Vanessa herself (`workMs`, the hammering); A1 is hired
-// (`hire`): the archer itself is not built yet, so it arrives later. v0.12: nothing is paid in
+// (`hire`; v0.16: the archer stands at his post from then on, world.js, and says ARCHER_LINES[0]). v0.12: nothing is paid in
 // part any more; a stage is built in one go, with its DIY button, once she has all of it (on her
 // head, at the yard pile and in her purse) and stands at it.
 export const STAGES = {
@@ -140,7 +142,7 @@ export const STAGES = {
   H1: { label: 'house foundation', prereq: ['first'], coins: 10, W: 4, R: 4, workMs: 3000 },
   G1: { label: 'path', prereq: ['H1'], coins: 6, W: 0, R: 3, workMs: 2000 },
   H2: { label: 'walls', prereq: ['H1', 'second'], coins: 16, W: 4, R: 2, workMs: 4000 },
-  A1: { label: 'first elf archer', prereq: ['H2'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
+  A1: { label: 'archer', prereq: ['H2'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
   C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   G2: { label: 'bench', prereq: ['H1'], coins: 10, W: 4, R: 0, workMs: 2000 },
@@ -155,6 +157,14 @@ export const STAGES = {
   H4: { label: 'chimney', prereq: ['H3'], coins: 12, W: 0, R: 2, workMs: 2000 },
   H5: { label: 'home', prereq: ['H4', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
 };
+// v0.16 (captain: "it should have a funny line when it is hired to be an archer"): what the archer
+// says as he arrives at his post, in his deadpan, self-important manner (original lines; the first
+// is the one the game says, the others are offered to the captain in the build report)
+export const ARCHER_LINES = [
+  'Hired. Correct decision. I have guarded beet fields since I was six, and no bird has ever taken a single seed. Birds. Seeds. Crossbow.',
+  'Question: what eats sunflower seeds? Birds. Question: what stops birds? Me. Assistant to the farmer, reporting for duty.',
+  'I trained my whole life for this. Mostly on beets, but the principle is identical. Stand back, I am loading the crossbow.',
+];
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
 export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4', 'H5'];
 // the stages the farm needs (all of them)
@@ -184,9 +194,14 @@ export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her 
 // (by the roof, H3); a sale always needs SALE_MIN on the tables and holds up to six per table
 // (v0.14: once all four stand there is no maximum, `tableCap` in ledger.js).
 // Buyers come in a crowd that grows with the tables (BUYERS[tables - 1], [least, most]).
+// v0.16 (captain: "Remove the extra sellers, just produce an extra table every progression of the
+// house"): one table at the start and one more with every house stage, six with the home (H5); the
+// neighbours' stalls and their sellers are gone. As in v0.14 the tables have no maximum from the
+// fourth on (TABLES_UNLIMITED, the roof), so the route's sales are unchanged.
 export const SALE_MIN = 6;
-export const TABLES_MAX = 4;
-export const BUYERS = [[2, 3], [4, 5], [6, 7], [8, 10]];
+export const TABLES_MAX = 6;
+export const TABLES_UNLIMITED = 4;
+export const BUYERS = [[2, 3], [4, 5], [6, 7], [8, 10], [9, 11], [10, 12]];
 
 // v0.12 (captain: "weeds keep appearing even over planted crops, you remove them because if not
 // you can lose the crop"; answer 1 "One plant wilts"): from the house foundation until the home

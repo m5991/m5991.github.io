@@ -303,6 +303,27 @@ dialog#card button[disabled] { opacity: 0.45; cursor: default; }
 #diy-ticks svg { width: 100%; height: 100%; }
 body.whole #diy, body.whole #diy-ticks, body.whole #yard-badge, body.finale #diy, body.finale #yard-badge, body.opening #yard-badge { display: none; }
 
+/* ---------- v0.16: songs (the song card and the songbook) ---------- */
+.song-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.song-actions .button { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px; border-radius: 10px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); text-decoration: none; font-weight: 600; }
+.song-actions button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--ink); }
+.song-actions .ic { display: inline-block; width: 1.2em; text-align: center; }
+.song-time { min-height: 1.4em; margin-top: 4px; font-variant-numeric: tabular-nums; color: rgba(37, 51, 71, 0.8); }
+.song-missing { margin: 6px 0 0; }
+ol.songbook { list-style: none; margin: 8px 0 0; padding: 0; }
+ol.songbook .song-row { padding: 10px 0 8px; border-bottom: 1px solid rgba(37, 51, 71, 0.25); }
+ol.songbook .song-title { font-weight: 600; }
+ol.songbook .song-actions { margin-top: 6px; }
+ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height: 44px; padding: 6px 12px; font-size: 15px; }
+#pause .edition { margin: 0; font-size: 14px; }
+
+/* ---------- v0.16: what the archer says when he is hired ---------- */
+#speech { position: fixed; left: 0; top: 0; max-width: min(300px, calc(100vw - 32px)); padding: 9px 13px 10px; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 16px; font-size: 15px; line-height: 1.3; pointer-events: none; transform: translate(-50%, -100%); box-shadow: 0 3px 0 rgba(37, 51, 71, 0.22); z-index: 3; animation: note-in 0.2s ease-out; }
+#speech[hidden] { display: none; }
+#speech::after { content: ""; pointer-events: none; position: absolute; left: var(--tail, 50%); bottom: -11px; width: 16px; height: 16px; background: var(--paper); border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateX(-50%) rotate(45deg); }
+#speech .who { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.75; }
+@media (prefers-reduced-motion: reduce) { #speech { animation: note-fade 0.15s linear; } }
+
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
    with no attribute nothing below applies. Cards, the pause screen and the save notice get a

@@ -108,7 +108,13 @@ export const steppingOutline = P.steppingOutline;
 export function borderRing(places) { return shadows(addOutline(P.borderRing(places), 0.8 * 0.02)); }
 export function steppingStone(i) { return shadows(addOutline(P.steppingStone(i), 0.015)); }
 export const gravelPath = P.gravelPath;
-// v0.13: the path's stepping stones in ink (their outline), on the grass wash
+// v0.16: the solid dirt path (its own ink edges; no hull, it lies flat on the ground)
+export function dirtPath(left, right) {
+  const g = P.dirtPath(left, right);
+  g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
+  return g;
+}
+// v0.13: the path's stepping stones in ink (their outline), on the grass wash (v0.16: unused)
 export function stonePath(left, right) {
   const g = P.stonePath(left, right);
   addOutline(g.getObjectByName('D08_Path_Stones'), 0.015);
@@ -322,8 +328,11 @@ export function hammer() {
 // that puffs up when she builds (props.js)
 export function yardTable() { return shadows(addOutline(P.yardTable())); }
 export function saleSign() { return shadows(addOutline(P.saleSign(), 0.012)); }
+export function flyingBird() { return shadows(addOutline(P.flyingBird(), 0.012)); }
+export function easterEgg(seed) { return shadows(addOutline(P.easterEgg(seed), 0.01)); }
+export const sparkleStar = P.sparkleStar;
+export function archer() { return shadows(addOutline(P.archer(), 0.014)); }
 export function buyer(look) { return shadows(addOutline(P.buyer(look), 0.014)); }
-export function stallGoods(seed) { return shadows(addOutline(P.stallGoods(seed), 0.01)); }
 export function dustPuff(seed) { const g = addOutline(P.dustPuff(seed), 0.012); g.traverse((m) => { if (m.isMesh) m.castShadow = false; }); return g; }
 // Carried-stack unit meshes (W log, R stone, C cob, S sunflower head, T tomato, coins), the same
 // models as the piles and crops (V1)

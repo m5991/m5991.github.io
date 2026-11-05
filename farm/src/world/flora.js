@@ -243,10 +243,9 @@ export function sunflower(variant = 0) {
 }
 
 // ---------------- weeds: broad removable clumps (distinct from the fine D20 sprouts) ----------------
-// A ragged tuft of blades leaning out, a low jagged rosette and two dandelion clocks, so a
-// clump reads as "weeds" and not as a crop. v0.15 (captain: "Weed should be bigger and more
-// noticeable"): taller, darker blades, a wider rosette and two open dandelion flowers in the
-// flower yellow beside the two clocks, so a clump stands out against the paper and the crops.
+// A ragged tuft of blades leaning out and a low jagged rosette, so a clump reads as "weeds" and
+// not as a crop. v0.15 (captain: "Weed should be bigger and more noticeable"): taller, darker
+// blades and a wider rosette. v0.16: plain weeds, no dandelion clocks or flowers (see below).
 let weedGeo = null;
 export function weedGeometry() {
   if (weedGeo) return weedGeo;
@@ -264,18 +263,14 @@ export function weedGeometry() {
     const pts = [d.clone().multiplyScalar(0.02).setY(0.02), d.clone().multiplyScalar(0.15).setY(0.05), d.clone().multiplyScalar(0.29).setY(0.02)];
     parts.push(paint(blade(pts, { width: (s) => 0.045 * Math.sin(Math.PI * s) ** 0.7 * (0.75 + 0.25 * Math.abs(Math.sin(s * 14))), across: acrossAz(az), thick: 0.15, cup: 0.1, segs: 7, radial: 4 }), FLORA.weed));
   }
-  for (const [x, z, h] of [[0.06, -0.03, 0.5], [-0.08, 0.05, 0.38]]) { // dandelion clocks
-    parts.push(paint(taperTube(new THREE.CatmullRomCurve3([V(x * 0.3, 0, z * 0.3), V(x * 0.8, h * 0.5, z), V(x, h, z)]), 0.007, 0.006, 6, 5), FLORA.weed));
-    const puff = lumpy(new THREE.SphereGeometry(0.04, 8, 5), 0.005, 80, x * 10);
-    puff.translate(x, h + 0.03, z);
-    parts.push(paint(puff, FLORA.puff));
-  }
-  for (const [x, z, h] of [[-0.02, -0.1, 0.33], [0.12, 0.07, 0.27]]) { // open dandelions
-    parts.push(paint(taperTube(new THREE.CatmullRomCurve3([V(x * 0.3, 0, z * 0.3), V(x * 0.8, h * 0.5, z), V(x, h, z)]), 0.007, 0.006, 4, 4), FLORA.weed));
-    const head = new THREE.SphereGeometry(0.05, 7, 4);
-    head.scale(1, 0.55, 1);
-    head.translate(x, h + 0.015, z);
-    parts.push(paint(head, PAL.flower));
+  // v0.16 (captain: "Remove the dandelion on the weed, just regular weed"): no clocks or flowers;
+  // a few more, finer blades and a second, smaller tuft of grass leaning the other way instead
+  for (let k = 0; k < 7; k++) {
+    const az = (k / 7) * Math.PI * 2 + 0.35 + (r() - 0.5) * 0.4; const d = dirAz(az);
+    const len = 0.26 + r() * 0.18; const out = 0.35 + r() * 0.3;
+    const b = d.clone().multiplyScalar(0.06).add(V(0.05, 0, -0.04));
+    const pts = [b, b.clone().addScaledVector(d, len * out * 0.4).addScaledVector(UP, len * 0.6), b.clone().addScaledVector(d, len * out).addScaledVector(UP, len * (0.9 - out * 0.4))];
+    parts.push(paint(blade(pts, { width: strap(0.016, 0.8), across: acrossAz(az), thick: 0.3, cup: 0.3, segs: 4, radial: 4 }), k % 2 ? FLORA.weedDark : FLORA.weed));
   }
   weedGeo = bake(parts);
   return weedGeo;
@@ -317,9 +312,10 @@ function beet(x, z) {
   }
   return parts;
 }
-function tomatoPlant(x, z, seed) {
+function tomatoPlant(x, z, seed, out = {}) {
   const r = rng(seed); const parts = [];
   const top = V(x + (r() - 0.5) * 0.06, 1.0 + r() * 0.08, z);
+  out.top = top;
   const stem = new THREE.CatmullRomCurve3([V(x, SOIL_Y - 0.02, z), V(x + 0.02, 0.62, z), top]);
   parts.push(paint(taperTube(stem, 0.017, 0.011, 8, 6), FLORA.leafDark));
   const tips = [top];
@@ -340,6 +336,34 @@ function tomatoPlant(x, z, seed) {
     parts.push(paint(c, FLORA.leafDark));
   });
   return parts;
+}
+// v0.16 (captain: "The tomato plants should grow with progression taller, not bigger, like
+// normal"): a tier of the plant that grows on top of it with a round: the stem goes on up by
+// TOMATO_TIER_M, with two compound leaves, a side shoot and a new dark round top (a truss), so the
+// plant gets taller, its width and leaves staying their size. Built with its foot at the origin
+// (the stem's top before it), in the bed's frame.
+export const TOMATO_TIER_M = 0.34;
+export const TOMATO_TIERS = 2;
+function tomatoTier(seed, k) {
+  const r = rng(seed * 7 + k * 13); const parts = [];
+  const h = TOMATO_TIER_M;
+  const top = V((r() - 0.5) * 0.05, h, (r() - 0.5) * 0.03);
+  const stem = new THREE.CatmullRomCurve3([V(0, -0.06, 0), V(0.012 * (k ? -1 : 1), h * 0.5, 0), top]);
+  parts.push(paint(taperTube(stem, 0.012, 0.009, 5, 5), FLORA.leafDark));
+  for (let j = 0; j < 2; j++) { // compound leaves along the new stem
+    const p = stem.getPointAt(0.25 + j * 0.4); const az = j * 2.4 + k * 1.3 + r(); const d = dirAz(az);
+    const s1 = p.clone().addScaledVector(d, 0.02);
+    parts.push(paint(blade([s1, s1.clone().addScaledVector(d, 0.06).addScaledVector(UP, 0.04), s1.clone().addScaledVector(d, 0.13).addScaledVector(UP, -0.01)], { width: (s) => 0.026 * Math.sin(Math.PI * s) ** 0.7 * (0.8 + 0.2 * Math.abs(Math.sin(s * 11))), across: acrossAz(az), thick: 0.15, cup: 0.3, segs: 5, radial: 3 }), PAL.leaf));
+  }
+  const p = stem.getPointAt(0.55); const d = dirAz(1.1 + k * 2.6 + r()); // a side shoot with its top
+  const tip = p.clone().addScaledVector(d, 0.11).addScaledVector(UP, 0.08);
+  parts.push(paint(taperTube(new THREE.CatmullRomCurve3([p, p.clone().addScaledVector(d, 0.06).addScaledVector(UP, 0.05), tip]), 0.008, 0.006, 3, 4), FLORA.leafDark));
+  for (const [q, rr] of [[tip, 0.058], [top, 0.072]]) {
+    const c = scallopedClump(rr, seed + 40 + k * 3 + (q === top ? 1 : 0), { lobes: 6, detail: 1 });
+    c.translate(q.x, q.y + 0.03, q.z);
+    parts.push(paint(c, FLORA.leafDark));
+  }
+  return { parts, top };
 }
 // The Who-Knows plant (§10.5): one continuous uneven ink stroke rising in loops from a moss
 // mound, with a few bright sprig leaves. Never a resource; it keeps its drawing place.
@@ -373,13 +397,24 @@ export function bedPlants() {
   const tomatoes = new THREE.Group(); tomatoes.name = 'D19_TomatoStems'; // unfruited until T0
   // v0.15: each plant on its own, its origin at its stem's foot on the soil, so it can grow
   // round by round (world.js, ledger plantSize)
+  // v0.16: and its tiers, one more grown on top with each round (`tier0`, `tier1`; world.js)
   for (const [id, x, z, seed] of [['t1', 0.45, 0.08, 21], ['t2', 0.8, -0.16, 25]]) {
-    const geo = bake(tomatoPlant(0, 0, seed));
+    const plant = new THREE.Group(); plant.name = `D19_Tomato_${id}`;
+    const info = {};
+    const geo = bake(tomatoPlant(0, 0, seed, info));
     geo.translate(0, -SOIL_Y, 0);
-    const m = vmesh(geo);
-    m.name = `D19_Tomato_${id}`;
-    m.position.set(x, SOIL_Y, z);
-    tomatoes.add(m);
+    plant.add(vmesh(geo));
+    let foot = info.top.clone().setY(info.top.y - SOIL_Y);
+    for (let k = 0; k < TOMATO_TIERS; k++) {
+      const t = tomatoTier(seed, k);
+      const m = vmesh(bake(t.parts));
+      m.name = `tier${k}`;
+      m.position.copy(foot);
+      plant.add(m);
+      foot = foot.clone().add(t.top);
+    }
+    plant.position.set(x, SOIL_Y, z);
+    tomatoes.add(plant);
   }
   const who = whoKnows(); who.position.set(0.1, 0, -0.02);
   g.add(greens, tomatoes, who);

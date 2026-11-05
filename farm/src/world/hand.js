@@ -118,7 +118,7 @@ function subGeometry(g, gr) {
 // Front gable faces +Z, origin at the footprint centre on the ground. Stage nodes (annex §E.6),
 // each taking its colour as its stage is built (spec v0.9 §10.9, answer 3). v0.15 (captain:
 // "the walls should only be walls, roof only be roof, add an extra step for chimney"): H1 the
-// stone plinth; H2 the plain walls; H3 the roof (D02); H4 the red chimney D03 on the right slope
+// stone plinth; H2 the plain walls (v0.16: four of them, open on top); H3 the roof (D02) with its gables; H4 the red chimney D03 on the right slope
 // toward the front (its smoke rises from `chimneyTop`, world.js); H5 the home: the round gable
 // window D04, square front window D05, side window D06, the door frame, the red door with its
 // handle D07, the door step and the window trim (the dark recesses behind them come with them).
@@ -134,15 +134,29 @@ export function cottage() {
   const opening = (w, h, x, y, z, ry = 0) => at(mesh(new THREE.PlaneGeometry(w, h), recess, { ink: false, shadow: false }), x, y, z, 0, ry, 0);
 
   plinth.add(at(mesh(new THREE.BoxGeometry(W + 0.16, P, D + 0.16), PAL.stone), 0, P / 2, 0));
-  // walls: one gable prism with a little hand-built wonkiness (D25), never enough to read broken
-  const s = new THREE.Shape();
-  s.moveTo(-W / 2, 0); s.lineTo(W / 2, 0); s.lineTo(W / 2, Hw); s.lineTo(0, Hw + R); s.lineTo(-W / 2, Hw); s.closePath();
-  const body = new THREE.ExtrudeGeometry(s, { depth: D, bevelEnabled: false });
-  body.translate(0, P, -D / 2);
-  const bp = body.attributes.position;
-  for (let i = 0; i < bp.count; i++) bp.setX(i, bp.getX(i) + (bp.getY(i) - P) * 0.012 + Math.sin(bp.getZ(i) * 3.1) * 0.01);
-  body.computeVertexNormals();
-  walls.add(mesh(body, PAL.cream, { hatch: 1 }));
+  // walls (v0.16, captain: "it should only build walls, not the triangular shape up there, and
+  // it'll look empty on the inside"): four plain walls with a little hand-built wonkiness (D25),
+  // open on top, so the inside reads as an empty room until the roof. The two gable triangles
+  // belong to the roof (H3).
+  const WT = 0.12; // wall thickness
+  const wonky = (geo) => {
+    const bp = geo.attributes.position;
+    for (let i = 0; i < bp.count; i++) bp.setX(i, bp.getX(i) + (bp.getY(i) - P) * 0.012 + Math.sin(bp.getZ(i) * 3.1) * 0.01);
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const wall = (w, d, x, z) => { const geo = new THREE.BoxGeometry(w, Hw, d); geo.translate(x, P + Hw / 2, z); return wonky(geo); };
+  for (const geo of [wall(W, WT, 0, D / 2 - WT / 2), wall(W, WT, 0, -D / 2 + WT / 2), wall(WT, D - 2 * WT, W / 2 - WT / 2, 0), wall(WT, D - 2 * WT, -W / 2 + WT / 2, 0)]) {
+    walls.add(mesh(geo, PAL.cream, { hatch: 1 }));
+  }
+  // the gables (H3): a triangle over the front and back walls, under the roof slabs
+  const tri = new THREE.Shape();
+  tri.moveTo(-W / 2, 0); tri.lineTo(W / 2, 0); tri.lineTo(0, R); tri.closePath();
+  for (const z of [D / 2 - WT, -D / 2]) {
+    const g = new THREE.ExtrudeGeometry(tri, { depth: WT, bevelEnabled: false });
+    g.translate(0, P + Hw, z);
+    roof.add(mesh(wonky(g), PAL.cream, { hatch: 1 }));
+  }
 
   const front = D / 2;
   details.add(windowFrame(0.72, 0.72, { x: -1.08, y: P + 1.35, z: front }));

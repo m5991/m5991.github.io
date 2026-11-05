@@ -18,12 +18,14 @@
 </head>
 <body class="booting">
   <canvas id="world" aria-label="The farm"></canvas>
-  <img id="overlay" src="" alt="" hidden>
+  <img id="overlay" src="assets/reference/drawing.jpg" alt="" hidden>
   <div id="frame" aria-hidden="true"></div>
   <!-- floating stick: a touch anywhere in the play area that is not a HUD panel, button or card -->
   <div id="stick-zone" aria-hidden="true"><div id="stick-base"><div id="stick-knob"></div></div></div>
 
   <div id="stack-badge" aria-hidden="true" hidden></div>
+  <!-- v0.16: what the archer says when he is hired -->
+  <div id="speech" role="status" hidden><span class="who">Archer</span><span class="text"></span></div>
   <div id="yard-badge" aria-hidden="true" hidden></div>
   <!-- "DIY time!" (spec v0.11 §10.10, src/ui/burst.js): Vanessa builds it herself -->
   <div id="diy" aria-hidden="true"></div>
@@ -84,6 +86,9 @@
     <button id="btn-overlay" type="button">Compare with the drawing</button>
     <button id="btn-blueprint-pause" type="button" aria-pressed="true">Blueprint: <span class="state">on</span></button>
     <button id="btn-replay" type="button" hidden>Replay cinematic</button>
+    <!-- v0.16: the songs found in the egg hunt -->
+    <button id="btn-songs" type="button">Songs</button>
+    <p class="edition small" id="edition-note" hidden></p>
     <button id="btn-watch" type="button">Watch the opening</button>
     <fieldset id="sound-settings">
       <legend>Sound</legend>

@@ -111,7 +111,7 @@ export function walkAt(w, k) {
 }
 
 // v0.14 (captain: "the customers right now can go through the tables"): the buyers' way to and
-// from their place behind a table, around her tables, the neighbours' stalls and their sellers.
+// from their place behind a table, around her tables (v0.16: and the farm's fixed footprints).
 // `boxes` are footprints on the ground, { lo: [x, z], hi: [x, z] }, already grown by the room a
 // buyer needs; boxes that touch (her tables stand almost edge to edge) make one wall. The way is
 // the shortest one through the boxes' corners that never enters a box (a visibility graph);

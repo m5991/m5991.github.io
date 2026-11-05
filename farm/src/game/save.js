@@ -253,7 +253,10 @@ function probeStorage(storage) {
   }
 }
 
-export function createSaveManager(storage = globalThis.localStorage) {
+// v0.16: the kids edition keeps its own farm (`edition` 'kids'), apart from the full one's
+export const keysFor = (edition = 'full') => (edition === 'kids' ? { key: `${KEY}/kids`, backup: `${BACKUP_KEY}/kids` } : { key: KEY, backup: BACKUP_KEY });
+export function createSaveManager(storage = globalThis.localStorage, { edition = 'full' } = {}) {
+  const { key: KEY, backup: BACKUP_KEY } = keysFor(edition);
   let sessionOnly = !storage || !probeStorage(storage);
   let memory = null; // session-only copy
   let lastWriteError = null;

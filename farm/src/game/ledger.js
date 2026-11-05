@@ -17,7 +17,7 @@
 import {
   BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, LAST_STAGE, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
-  STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TOMATO_GROWTH, TOOLS, WEEDS, WEED_PLOT,
+  STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TABLES_UNLIMITED, TOMATO_GROWTH, TOOLS, WEEDS, WEED_PLOT,
   YARD_MATERIALS,
 } from './data.js';
 
@@ -123,12 +123,14 @@ export function houseStage(l) {
 }
 // the yard-sale table appears when her first crop's patch is planted (its stage commits)
 export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id));
-// v0.13: the tables standing now: one, and one more per house stage, TABLES_MAX at most
+// v0.13: the tables standing now: one, and one more per house stage, TABLES_MAX at most (v0.16:
+// six, one per house stage, with the home)
 export const tables = (l) => Math.min(TABLES_MAX, 1 + houseStage(l));
 // what the tables hold at most now (six each). v0.14 (captain: "I would like the last stage to
 // not have maximum on produce being left in the tables"): with all four standing there is no
-// maximum, everything she brings goes out (Infinity); a sale still sells all of it
-export const tablesUnlimited = (l) => tables(l) >= TABLES_MAX;
+// maximum, everything she brings goes out (Infinity); a sale still sells all of it. v0.16: from the
+// fourth table on, as before, though two more come with the chimney and the home
+export const tablesUnlimited = (l) => tables(l) >= TABLES_UNLIMITED;
 export const tableCap = (l) => (tablesUnlimited(l) ? Infinity : TABLE_CAP * tables(l));
 // the goods set out on the tables
 export const tableCount = (l) => sum(l.table);

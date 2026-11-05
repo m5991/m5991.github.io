@@ -58,7 +58,7 @@ export function buyerCount(tables, sale) {
 }
 
 // which neighbours come to sale `sale`: `count` different ones of the pool (a seeded shuffle,
-// kept apart from the neighbours selling at their stalls), never two with the same height band,
+// `skip` kept out), never two with the same height band,
 // hair or hat and top colour, and never the same set as the sale before
 function shuffled(sale, skip) {
   const ids = Array.from({ length: POOL }, (_, i) => i).filter((i) => !skip.includes(i));
@@ -82,5 +82,5 @@ export function crowdFor(sale, count, skip = []) {
   return who;
 }
 
-// the two neighbours who set up their own stalls beside hers with the fourth table (P29-5)
-export const SELLERS = [1, 6];
+// v0.16: no neighbour sells any more (the captain: "Remove the extra sellers"); every neighbour
+// can come to buy
