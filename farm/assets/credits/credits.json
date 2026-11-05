@@ -1,0 +1,287 @@
+{
+  "version": 1,
+  "song": {
+    "eggId": "E12",
+    "audio": "assets/songs/E12.mp3",
+    "lyrics": "assets/credits/the-house.lyrics.json"
+  },
+  "gifts": [
+    {
+      "id": "gift-16",
+      "year": 2024,
+      "title": "The 3D painting",
+      "caption": "By Vanessa",
+      "image": "assets/credits/gifts/gift-16.jpg",
+      "alt": "Two friends laughing beside a big painted canvas of the farm, with glued-on 3D objects, signed \"By Vanessa\".",
+      "placeholder": false,
+      "source": "catalogue item 16"
+    },
+    {
+      "id": "gift-17",
+      "year": 2024,
+      "title": "The 3D painting, close up",
+      "caption": "Beets 4 Sale",
+      "image": "assets/credits/gifts/gift-17.jpg",
+      "alt": "A farmer doll on the canvas beside a \"Beets 4 Sale\" sign and a wooden crate of vegetables, under 3D sunflowers.",
+      "placeholder": false,
+      "source": "catalogue item 17"
+    },
+    {
+      "id": "gift-07",
+      "year": 2024,
+      "title": "The farm Christmas tree",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-07.jpg",
+      "alt": "Green-framed mini prints of the farm drawing hanging as ornaments on a Christmas tree.",
+      "placeholder": false,
+      "source": "catalogue item 07"
+    },
+    {
+      "id": "gift-12",
+      "year": 2024,
+      "title": "The tree topper",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-12.jpg",
+      "alt": "A farmer doll in overalls among sunflowers and corn at the top of a Christmas tree.",
+      "placeholder": false,
+      "source": "catalogue item 12"
+    },
+    {
+      "id": "gift-14",
+      "year": 2024,
+      "title": "The note on the door",
+      "caption": "NESS, Jewlery? You didnt think you were getting off that easy… did you?",
+      "image": "assets/credits/gifts/gift-14.jpg",
+      "alt": "A handwritten note taped to a blue front door.",
+      "placeholder": false,
+      "source": "catalogue item 14"
+    },
+    {
+      "id": "gift-13",
+      "year": null,
+      "title": "The Christmas card",
+      "caption": "Merry Christmas · Illustrated by Vanessa",
+      "image": "assets/credits/gifts/gift-13.jpg",
+      "alt": "A Christmas card with a winter version of the farm drawing, a snowman and pine trees.",
+      "placeholder": false,
+      "source": "catalogue item 13"
+    },
+    {
+      "id": "gift-25",
+      "year": 2025,
+      "title": "The picture book",
+      "caption": "Home is where the heart is. · Illustrated by Vanessa",
+      "image": "assets/credits/gifts/gift-25.jpg",
+      "alt": "The cover of a picture book showing the farm drawing.",
+      "placeholder": false,
+      "source": "catalogue item 25"
+    },
+    {
+      "id": "gift-29",
+      "year": 2025,
+      "title": "The bookmarks",
+      "caption": "← Vanessa drew this.",
+      "image": "assets/credits/gifts/gift-29.jpg",
+      "alt": "A fan of wrapped bookmarks with tassels, each printed with the drawing and an arrow saying \"Vanessa drew this.\"",
+      "placeholder": false,
+      "source": "catalogue item 29"
+    },
+    {
+      "id": "gift-28",
+      "year": 2025,
+      "title": "The earrings",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-28.jpg",
+      "alt": "Two pairs of square resin earrings with the farm drawing, in an open hand.",
+      "placeholder": false,
+      "source": "catalogue item 28"
+    },
+    {
+      "id": "gift-30",
+      "year": 2025,
+      "title": "The ornament",
+      "caption": "Wait… What's that farmer holding?",
+      "image": "assets/credits/gifts/gift-30.jpg",
+      "alt": "A round \"Merry Christmas\" ornament hanging from a car mirror, with a cut-out farmer holding a real baby tooth.",
+      "placeholder": false,
+      "source": "catalogue item 30"
+    },
+    {
+      "id": "gift-31",
+      "year": 2025,
+      "title": "The wrapping paper",
+      "caption": "Framed by Heather",
+      "image": "assets/credits/gifts/gift-31.jpg",
+      "alt": "Vanessa and a friend hugging, holding a gift wrapped in paper printed with the farm drawing and a red bow.",
+      "placeholder": false,
+      "source": "catalogue item 31"
+    },
+    {
+      "id": "gift-32",
+      "year": 2026,
+      "title": "The novel",
+      "caption": "#1 Bestseller Fiction Book of 2025 · Vanessa and the Cornfield Whodunnit · The Tales of Vanessa",
+      "image": "assets/credits/gifts/gift-32.jpg",
+      "alt": "A novel cover with an illustrated Vanessa in a cap and overalls among sunflowers, in front of the farmhouse.",
+      "placeholder": false,
+      "source": "catalogue item 32"
+    },
+    {
+      "id": "gift-34",
+      "year": 2026,
+      "title": "The T-shirt",
+      "caption": "My mom drew this.",
+      "image": "assets/credits/gifts/gift-34.jpg",
+      "alt": "A girl flexing her arms in a T-shirt printed with the farm drawing and \"My mom drew this.\"",
+      "placeholder": false,
+      "source": "catalogue item 34"
+    },
+    {
+      "id": "gift-37",
+      "year": 2026,
+      "title": "The jigsaw puzzle",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-37.jpg",
+      "alt": "The box of a 500-piece jigsaw puzzle: the farm repainted as a sunset scene.",
+      "placeholder": false,
+      "source": "catalogue item 37"
+    },
+    {
+      "id": "gift-38",
+      "year": 2026,
+      "title": "The jigsaw puzzle, nearly done",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-38.jpg",
+      "alt": "Three women around the nearly finished puzzle on a table, laughing.",
+      "placeholder": false,
+      "source": "catalogue item 38"
+    },
+    {
+      "id": "gift-40",
+      "year": 2026,
+      "title": "The diorama",
+      "caption": "What occurred on each day of CREATION?",
+      "image": "assets/credits/gifts/gift-40.jpg",
+      "alt": "A shoebox diorama of the farm, with a marshmallow farmer in overalls on the bench.",
+      "placeholder": false,
+      "source": "catalogue item 40"
+    },
+    {
+      "id": "gift-03",
+      "year": 2026,
+      "title": "The jello",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-03.jpg",
+      "alt": "Vanessa, wide-eyed, holding a bowl of red jello with the farm drawing set inside it.",
+      "placeholder": false,
+      "source": "catalogue item 03"
+    },
+    {
+      "id": "gift-05",
+      "year": 2026,
+      "title": "The jello, close up",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-05.jpg",
+      "alt": "The red jello on its plate, the drawing visible inside it.",
+      "placeholder": false,
+      "source": "catalogue item 05"
+    },
+    {
+      "id": "gift-42",
+      "year": 2026,
+      "title": "The CD",
+      "caption": "Outdrawing All Our Dreams",
+      "image": "assets/credits/gifts/gift-42.jpg",
+      "alt": "A CD case with the farm in colour, a boombox and an \"Explicit\" sticker.",
+      "placeholder": false,
+      "source": "catalogue item 42"
+    },
+    {
+      "id": "gift-43",
+      "year": 2026,
+      "title": "The CD's songs",
+      "caption": "Songs",
+      "image": "assets/credits/gifts/gift-43.jpg",
+      "alt": "The CD open: the song list and the disc printed with the drawing.",
+      "placeholder": false,
+      "source": "catalogue item 43"
+    },
+    {
+      "id": "gift-44",
+      "year": 2026,
+      "title": "The back of the CD",
+      "caption": "Illustrated by Vanessa",
+      "image": "assets/credits/gifts/gift-44.jpg",
+      "alt": "The back of the CD case in bright paint splashes.",
+      "placeholder": false,
+      "source": "catalogue item 44"
+    },
+    {
+      "id": "gift-54",
+      "year": 2026,
+      "title": "The party reminder",
+      "caption": "PS: If Vanessa mentions surprising ME for my birthday, just smile and nod.",
+      "image": "assets/credits/gifts/gift-54.jpg",
+      "alt": "A reminder card for \"Vanessa's Secret 3D Farm Party!\", June 28th.",
+      "placeholder": false,
+      "source": "catalogue item 54"
+    },
+    {
+      "id": "gift-51",
+      "year": 2026,
+      "title": "The 3D Farm Party: the house",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-51.jpg",
+      "alt": "A life-size white house front with a red door and a chimney, built in a hallway, with stepping-stone rugs.",
+      "placeholder": false,
+      "source": "catalogue item 51"
+    },
+    {
+      "id": "gift-50",
+      "year": 2026,
+      "title": "The 3D Farm Party: the drawing on the wall",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-50.jpg",
+      "alt": "Two friends hugging in front of a giant black-and-white mural of the drawing, with a bench and paper sunflowers.",
+      "placeholder": false,
+      "source": "catalogue item 50"
+    },
+    {
+      "id": "gift-56",
+      "year": 2026,
+      "title": "The 3D Farm Party: the birds",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-56.jpg",
+      "alt": "Vanessa with her arms wide before the house front, four children in bird wings copying her.",
+      "placeholder": false,
+      "source": "catalogue item 56"
+    },
+    {
+      "id": "gift-65",
+      "year": 2026,
+      "title": "The 3D Farm Party: the bench",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-65.jpg",
+      "alt": "Vanessa and a friend in overalls on the bench under the tree corner.",
+      "placeholder": false,
+      "source": "catalogue item 65"
+    },
+    {
+      "id": "gift-69",
+      "year": 2026,
+      "title": "The 3D Farm Party",
+      "caption": "",
+      "image": "assets/credits/gifts/gift-69.jpg",
+      "alt": "Vanessa in pure surprise, hands on her chest.",
+      "placeholder": false,
+      "source": "catalogue item 69"
+    }
+  ],
+  "messages": [],
+  "sequence": null,
+  "closing": {
+    "title": "Home is where the heart is.",
+    "text": "Once upon a time there was a farm, with a house, with a chimney, and a path leading to a bench, under a tree, where you could feel the sun, and watch the birds, and smell the flowers. On the farm lived a farmer who had overalls with pockets. And she loved to farm, using her rake and her shovel. She grew tasty cabbages and lettuce and tomatoes, and this. And she lived happily ever after. The end.",
+    "source": "the picture book Home is where the heart is, read aloud (catalogue item 24)"
+  }
+}

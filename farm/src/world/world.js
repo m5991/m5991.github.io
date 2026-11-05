@@ -32,11 +32,12 @@ import * as CANNON from 'cannon-es';
 import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
 import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
-import { ARCHER } from './props.js';
+import { ARCHER, ELF } from './props.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
 import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
+import { KEEPSAKES, KEEPSAKE_GLINT_M } from '../game/keepsakes.js';
 import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
@@ -85,6 +86,8 @@ const SELL_BEHIND_M = 0.95; // her selling spot, this far north of the first tab
 // tables between the first two, `SIGN_AT` metres behind (north of) the first table's centre and
 // along the row
 export const SIGN_SCALE = 3;
+// v0.17c what the buyers say as they pick up their goods, by crop
+export const BUYER_WORDS = { C: ['Corny!', 'Ooh, corn!', 'A-maize-ing!'], S: ['So sunny!', 'Sunflowers!', 'Lovely!'], T: ['Yum!', 'Tomatoes!', 'Mine!'], any: ['Ooh!'] };
 const SIGN_AT = { along: 0.55, behind: 1.75 };
 // v0.16 the egg bird: it crosses `cross` m to each side of the drop point at `high` m, swooping to
 // `dropAt` m over it, in `flyMs`; the egg falls for `fallMs`; the bird and egg sizes
@@ -110,6 +113,11 @@ export const STEPPING = { from: [2.95, -1.9], to: [48.4, 46.2], stones: 5, size:
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
 export const RING = { spacing: 0.34, gap: 1.9, grow: 0.15 };
+// v0.17 the path into the ring: the drawn curve runs on `past` m beyond its drawn end, and the
+// path ends `into` m inside the ring's gap along it, half
+// `door` m wide at the door and `end` m at the gap (the gap is RING.gap wide), rounded over its
+// last `cap` m
+export const PATH_RING = { into: 0.5, door: 0.55, end: 0.68, cap: 0.6, past: 2.5 };
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -423,7 +431,11 @@ export class World {
     const z0 = Math.min(...pts.map((q) => q.z)) - RING.grow; const z1 = Math.max(...pts.map((q) => q.z)) + RING.grow;
     const c = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
     const rx = (x1 - x0) / 2; const rz = (z1 - z0) / 2;
-    const end = this.proj.groundAt(...PATH.at(-1));
+    // v0.17 (captain: "the road next to the tree still looks off"): the gap is where the drawn
+    // path crosses the ring, so the path comes in along its own curve (v0.16 aimed it at the drawn
+    // end, past which the path had to cross the ring's stones)
+    const k = this.pathEntry(c, rx, rz);
+    const end = k.point;
     const gapA = Math.atan2((end.z - c.z) / rz, (end.x - c.x) / rx);
     const on = (a) => new THREE.Vector3(c.x + Math.cos(a) * rx, 0, c.z + Math.sin(a) * rz);
     // even spacing along the ellipse: walk it in small steps
@@ -449,6 +461,26 @@ export class World {
     return [h.localToWorld(step.clone()).setY(0), h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, 1.4))).setY(0)];
   }
 
+  // the drawn path on the ground: out of the door step, then through the drawing's path points to
+  // its drawn end at the bench (centripetal, so it never overshoots a bend)
+  // where the drawn path enters the ring (the ellipse c, rx, rz): its first point inside, or, if it
+  // only brushes past, its nearest point. -> { samples, index, point, crosses }
+  pathEntry(c, rx, rz) {
+    const e = (q) => ((q.x - c.x) / rx) ** 2 + ((q.z - c.z) / rz) ** 2;
+    const samples = this.drawnPath().getSpacedPoints(400);
+    let index = samples.findIndex((q) => e(q) < 1);
+    if (index > 0) return { samples, index, point: samples[index - 1].clone().lerp(samples[index], 0.5), crosses: true };
+    index = samples.reduce((best, q, i) => (e(q) < e(samples[best]) ? i : best), 0);
+    return { samples, index, point: samples[index].clone(), crosses: false };
+  }
+  // and on along its last direction for `PATH_RING.past` m, so it always reaches into the ring
+  drawnPath() {
+    if (this.drawnCurve) return this.drawnCurve;
+    const pts = [...this.doorPoints(), ...PATH.slice(1).map(([u, v]) => this.proj.groundAt(u, v))];
+    const [a, b] = pts.slice(-2);
+    pts.push(b.clone().addScaledVector(b.clone().sub(a).setY(0).normalize(), PATH_RING.past));
+    return (this.drawnCurve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'));
+  }
   // D08: the blueprint's dashed edges before G1, and the path G1 lays between them (v0.13: flat
   // stepping stones with grass between, no longer a grey gravel ribbon). v0.15: its last stretch
   // runs straight out of the door step (PATH's first point, the drawn door end, gives way to it)
@@ -457,10 +489,41 @@ export class World {
   buildPathOutline() {
     const p = this.proj;
     this.ringPlaces();
-    const into = this.ring.gap.clone().lerp(this.ring.centre, 0.2);
-    const pts = [...this.doorPoints(), ...PATH.slice(1, -1).map(([u, v]) => p.groundAt(u, v)), into];
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const samples = curve.getPoints(60);
+    // v0.17 (captain: "the road next to the tree still looks off"): the drawn path's last points
+    // lie inside the ring's outline, so the dirt crossed the ring's stones before it reached the
+    // gap and ended in a wide square cut. Now the points within a metre of the ring are left out,
+    // and the path comes straight in through the gap (along the ring's outward normal there),
+    // narrower than the gap, and ends just inside it with a rounded end.
+    // The path follows the drawn curve from the door step to the ring's gap (where that curve
+    // crosses the ring, ringPlaces) and ends `into` m inside it, with a rounded end; it is
+    // narrower than the gap.
+    const { centre: c, rx, rz, gap } = this.ring;
+    const entry = this.pathEntry(c, rx, rz);
+    const drawn = entry.samples;
+    let kept;
+    if (entry.crosses) {
+      let cut = entry.index;
+      for (let run = 0; cut < drawn.length - 1 && run < PATH_RING.into; cut++) run += drawn[cut].distanceTo(drawn[cut + 1]);
+      kept = drawn.slice(0, cut + 1);
+    } else {
+      // it only brushes past the ring: from its nearest point it turns in through the gap
+      kept = [...drawn.slice(0, entry.index + 1), gap.clone().lerp(c, PATH_RING.into / Math.max(0.5, gap.distanceTo(c)))];
+    }
+    // every sixth point, and the end; a point within 0.3 m of the end gives way to it (two nearly
+    // coincident points would twist the end)
+    const ctrl = kept.filter((_, i) => i % 6 === 0);
+    while (ctrl.length > 1 && ctrl.at(-1).distanceTo(kept.at(-1)) < 0.3) ctrl.pop();
+    ctrl.push(kept.at(-1));
+    const curve = new THREE.CatmullRomCurve3(ctrl, false, 'centripetal');
+    const samples = curve.getSpacedPoints(110); // even by length, so the rounded end has its points
+    // arc length from the far end, for the rounded end
+    const fromEnd = new Array(samples.length).fill(0);
+    for (let i = samples.length - 2; i >= 0; i--) fromEnd[i] = fromEnd[i + 1] + samples[i].distanceTo(samples[i + 1]);
+    this.pathHalfWidth = (i) => {
+      const w = PATH_RING.door + (PATH_RING.end - PATH_RING.door) * (i / (samples.length - 1)); // narrowing at the door
+      const k = Math.min(1, fromEnd[i] / PATH_RING.cap);
+      return w * Math.sqrt(Math.max(0, 1 - (1 - k) ** 2)); // a round end inside the gap
+    };
     const dashes = [];
     const edges = [];
     for (const side of [-1, 1]) {
@@ -469,9 +532,22 @@ export class World {
         const b = samples[Math.min(samples.length - 1, i + 1)];
         const dir = new THREE.Vector3().subVectors(b, a).normalize();
         const n = new THREE.Vector3(-dir.z, 0, dir.x);
-        const width = 0.55 + 0.3 * (i / samples.length); // narrowing at the door (v0.16: as wide as the ring's gap at the bench)
-        return q.clone().addScaledVector(n, side * width).setY(0.02);
+        // on the inside of a bend the edge stays within the bend's radius, so it never folds
+        let w = this.pathHalfWidth(i);
+        if (i > 0 && i < samples.length - 1) {
+          const d1 = new THREE.Vector3().subVectors(q, a); const d2 = new THREE.Vector3().subVectors(b, q);
+          const turn = Math.atan2(d1.x * d2.z - d1.z * d2.x, d1.x * d2.x + d1.z * d2.z); // + turns toward n
+          const r = (d1.length() + d2.length()) / 2 / Math.max(1e-4, Math.abs(turn));
+          if (Math.sign(turn) === side) w = Math.min(w, r * 0.8);
+        }
+        return q.clone().addScaledVector(n, side * w).setY(0.02);
       });
+      // an edge never steps back along the path (that would loop at a tight bend): such a point
+      // stays where the edge last was
+      for (let i = 1; i < edge.length - 1; i++) {
+        const dir = new THREE.Vector3().subVectors(samples[i + 1], samples[i - 1]).setY(0).normalize();
+        if (new THREE.Vector3().subVectors(edge[i], edge[i - 1]).dot(dir) < 0) edge[i].copy(edge[i - 1]);
+      }
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge), new THREE.LineDashedMaterial({ color: G.PALETTE.ink, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.45 }));
       line.computeLineDistances();
       line.name = 'D08_Path_Outline';
@@ -724,6 +800,7 @@ export class World {
     }
     this.syncTool(l.tool, animate);
     this.syncArcher(l, animate);
+    this.syncStain(l);
     this.applyParts(l);
   }
 
@@ -920,8 +997,11 @@ export class World {
       if (k >= 1) s.obj.visible = false;
       s.obj.scale.setScalar(stationScale(s.def) * Math.max(0.01, 1 - k));
     }
-    if (this.archer) this.archer.hidden = k > 0; // not in the drawing: away for the finale, back after
-    if (this.archer && k > 0) this.archer.root.visible = false;
+    for (const a of Object.values(this.archers ?? {})) { // not in the drawing: away for the finale, back after
+      a.hidden = k > 0;
+      if (k > 0) a.root.visible = false;
+    }
+    if (this.stain && k > 0) this.stain.visible = false;
     if (k > 0) {
       this.marker.obj.visible = false; this.sale.sign.visible = false;
       for (const b of this.sale.buyers) b.visible = false;
@@ -1221,55 +1301,218 @@ export class World {
     if (this.eggBird) this.eggBird.visible = false;
   }
 
-  // ---------- v0.16: the hired archer (A1) ----------
-  // He stands at his post once A1 is hired (popping in with a puff of dust), keeps watch on the
-  // sky with his crossbow, turns after the birds and now and then raises it to aim. Away for the
-  // finale's drawing, back after it. Presentation only.
+  // ---------- v0.16: the hired archer (A1); v0.17: and the second (A2) ----------
+  // Each stands at his post once hired (popping in with a puff of dust), keeps watch on the sky,
+  // turns after the birds and now and then raises his bow to aim. v0.17 (spec §7, A09): when a
+  // bird comes into his cover he turns to it and draws (`archerDraw`), then looses a blunt warning
+  // arrow into the empty ground beside it (`archerShoot`). Away for the finale's drawing, back
+  // after it. Presentation only. `this.archer` stays the first archer (A1).
   buildArcher() {
-    const root = G.archer();
-    root.scale.setScalar(ARCHER.height / 1.88);
-    const post = this.stations.A1.pos;
-    root.position.copy(post).add(new THREE.Vector3(0.35, 0, 0.15));
-    root.visible = false;
-    this.root.add(root);
-    this.archer = { root, t: 0, shown: false, hidden: false, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body') };
+    this.archers = {};
+    for (const [id, make, height, model] of [['A1', G.archer, ARCHER.height, 1.88], ['A2', G.elfArcher, ELF.height, 1.82]]) {
+      const post = this.stations[id]?.pos;
+      if (!post) continue;
+      const root = make();
+      root.scale.setScalar(height / model);
+      root.position.copy(post).add(new THREE.Vector3(0.35, 0, 0.15));
+      root.visible = false;
+      this.root.add(root);
+      this.archers[id] = { id, root, height, t: id === 'A2' ? 3100 : 0, shown: false, hidden: false, aim: null, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body') };
+    }
+    this.archer = this.archers.A1;
+    this.arrows = [];
   }
   syncArcher(l, animate) {
-    const a = this.archer;
-    if (!a) return;
-    const want = isCommitted(l, 'A1') && !a.hidden && !this.playHidden;
-    if (want === a.shown && a.root.visible === want) return;
-    a.shown = want;
-    a.root.visible = want;
-    if (want && animate && !this.reducedMotion()) {
-      const p = a.root.position;
-      for (let i = 0; i < 5; i++) { const ang = (i / 5) * Math.PI * 2; this.puff(new THREE.Vector3(p.x + Math.cos(ang) * 0.4, 0.15, p.z + Math.sin(ang) * 0.3), { scale: 0.8, delay: i * 40, seed: i }); }
-      const k = a.root.scale.x;
-      a.root.scale.setScalar(0.01);
-      this.tweens.wait(120).then(() => this.tweens.run(380, (t) => a.root.scale.setScalar(k * Math.max(0.01, ease.outBack(t))))).then(() => a.root.scale.setScalar(k));
+    for (const a of Object.values(this.archers ?? {})) {
+      const want = isCommitted(l, a.id) && !a.hidden && !this.playHidden;
+      if (want === a.shown && a.root.visible === want) continue;
+      a.shown = want;
+      a.root.visible = want;
+      if (want && animate && !this.reducedMotion()) {
+        const p = a.root.position;
+        for (let i = 0; i < 5; i++) { const ang = (i / 5) * Math.PI * 2; this.puff(new THREE.Vector3(p.x + Math.cos(ang) * 0.4, 0.15, p.z + Math.sin(ang) * 0.3), { scale: 0.8, delay: i * 40, seed: i }); }
+        const k = a.root.scale.x;
+        a.root.scale.setScalar(0.01);
+        this.tweens.wait(120).then(() => this.tweens.run(380, (t) => a.root.scale.setScalar(k * Math.max(0.01, ease.outBack(t))))).then(() => a.root.scale.setScalar(k));
+      }
     }
   }
+  // where each hired archer's cover is measured from (his post), for the birds (game/birds.js)
+  archerPosts(l) {
+    return Object.values(this.archers ?? {}).filter((a) => isCommitted(l, a.id)).map((a) => ({ id: a.id, pos: { x: a.root.position.x, z: a.root.position.z } }));
+  }
   // per frame: he watches the sky's birds (yaw toward the flock, the head following a little
-  // more), and every ARCHER_AIM.everyMs raises the crossbow to his shoulder for a moment
+  // more), and every ARCHER_AIM.everyMs raises his bow for a moment; drawing at a bird he turns
+  // to it and holds the bow up
   updateArcher(dtMs) {
-    const a = this.archer;
-    if (!a?.root.visible) return;
-    const still = this.reducedMotion();
-    if (!still) a.t += dtMs;
     const sky = this.objects.D21?.position;
-    const p = a.root.position;
-    const base = sky ? Math.atan2(sky.x - p.x, sky.z - p.z) : Math.PI;
-    // he faces the camera side mostly, turning toward the flock by half
-    const yaw = still ? 0.4 : 0.35 + 0.35 * Math.sin(a.t / 2300) + 0.25 * Math.sin(base);
-    a.root.rotation.y = yaw;
-    if (a.head) a.head.rotation.y = still ? 0 : 0.25 * Math.sin(a.t / 1700 + 1);
-    const cyc = a.t % ARCHER_AIM.everyMs;
-    const up = still ? 0 : cyc < ARCHER_AIM.holdMs ? Math.sin((cyc / ARCHER_AIM.holdMs) * Math.PI) : 0;
-    if (a.arms) { a.arms.rotation.x = -0.9 * Math.min(1, up * 1.6); a.arms.position.y = 1.45 + 0.1 * Math.min(1, up * 1.6); }
-    if (a.head) a.head.rotation.x = -0.25 * Math.min(1, up * 1.6);
+    const still = this.reducedMotion();
+    for (const a of Object.values(this.archers ?? {})) {
+      if (!a.root.visible) continue;
+      if (!still) a.t += dtMs;
+      const p = a.root.position;
+      let yaw; let up;
+      if (a.aim) {
+        a.aim.t += dtMs;
+        const want = Math.atan2(a.aim.x - p.x, a.aim.z - p.z);
+        const d = Math.atan2(Math.sin(want - a.root.rotation.y), Math.cos(want - a.root.rotation.y));
+        yaw = still ? want : a.root.rotation.y + d * Math.min(1, dtMs / 120);
+        up = 1;
+        if (a.aim.t > a.aim.ms) a.aim = null;
+      } else {
+        const base = sky ? Math.atan2(sky.x - p.x, sky.z - p.z) : Math.PI;
+        // he faces the camera side mostly, turning toward the flock by half
+        yaw = still ? 0.4 : 0.35 + 0.35 * Math.sin(a.t / 2300) + 0.25 * Math.sin(base);
+        const cyc = a.t % ARCHER_AIM.everyMs;
+        up = still ? 0 : cyc < ARCHER_AIM.holdMs ? Math.min(1, 1.6 * Math.sin((cyc / ARCHER_AIM.holdMs) * Math.PI)) : 0;
+      }
+      a.root.rotation.y = yaw;
+      if (a.head) a.head.rotation.y = still || a.aim ? 0 : 0.25 * Math.sin(a.t / 1700 + 1);
+      const armY = a.id === 'A2' ? 1.4 : 1.45;
+      if (a.arms) { a.arms.rotation.x = -0.9 * up; a.arms.position.y = armY + 0.1 * up; }
+      if (a.head) a.head.rotation.x = -0.25 * up;
+    }
+    this.updateArrows(dtMs);
   }
   // where his speech bubble goes (above his head)
-  archerHead(out = new THREE.Vector3()) { return out.copy(this.archer.root.position).setY(ARCHER.height + 0.35); }
+  archerHead(out = new THREE.Vector3(), id = 'A1') {
+    const a = this.archers?.[id] ?? this.archer;
+    return out.copy(a.root.position).setY(a.height + 0.35);
+  }
+  // v0.17: he turns to the bird and draws for `ms`
+  archerDraw(id, at, ms) {
+    const a = this.archers?.[id];
+    if (a?.root.visible) a.aim = { x: at.x, z: at.z, t: 0, ms: ms + 500 };
+  }
+  // v0.17: the blunt warning arrow, from his bow into the empty ground at `at` (a short arc, then
+  // it stands in the ground a moment and fades). -> Promise, resolved when it lands
+  archerShoot(id, at) {
+    const a = this.archers?.[id];
+    if (!a?.root.visible) return Promise.resolve();
+    const from = a.root.position.clone().setY(a.height * 0.82);
+    const to = new THREE.Vector3(at.x, 0.12, at.z);
+    const arrow = G.warningArrow();
+    this.root.add(arrow);
+    const rec = { arrow, t: 0, life: 1800 };
+    this.arrows.push(rec);
+    if (this.reducedMotion()) { arrow.position.copy(to); arrow.rotation.set(-0.9, Math.atan2(to.x - from.x, to.z - from.z), 0); return Promise.resolve(); }
+    rec.life = Infinity;
+    const lift = 0.6 + from.distanceTo(to) * 0.12;
+    const prev = new THREE.Vector3();
+    return this.tweens.run(420, (t) => {
+      prev.copy(arrow.position);
+      arrow.position.lerpVectors(from, to, t);
+      arrow.position.y += Math.sin(Math.PI * t) * lift;
+      if (t > 0) arrow.lookAt(arrow.position.clone().add(arrow.position.clone().sub(prev)));
+    }).then(() => { arrow.position.copy(to); this.puff(to.clone().setY(0.05), { scale: 0.35 }); rec.life = 1500; rec.t = 0; });
+  }
+  updateArrows(dtMs) {
+    for (const rec of [...(this.arrows ?? [])]) {
+      if (!Number.isFinite(rec.life)) continue;
+      rec.t += dtMs;
+      if (rec.t > rec.life) { this.root.remove(rec.arrow); this.arrows.splice(this.arrows.indexOf(rec), 1); }
+    }
+  }
+
+  // ---------- v0.17: the birds that come for the crops (spec §7; game/birds.js decides) ----------
+  // One nuisance bird, the egg bird's kind drawn smaller. Per frame `updateBird` places it from the
+  // director's state: in from the sky, circling its target while the warning shows, down onto the
+  // plant or the bench (or after her), sitting, then off and away, with the crop it took in its
+  // beak. Presentation only.
+  nodeTop(id, out = new THREE.Vector3()) {
+    const st = this.stations[id];
+    if (!st) return null;
+    const box = new THREE.Box3().setFromObject(st.obj);
+    const top = Number.isFinite(box.max.y) ? box.max.y : 1;
+    return out.copy(st.pos).setY(Math.min(2.6, top) + 0.05);
+  }
+  benchSeat(out = new THREE.Vector3()) {
+    const b = this.objects.D10;
+    b.updateMatrixWorld(true);
+    return out.copy(b.localToWorld(new THREE.Vector3(0, 0.46, 0)));
+  }
+  buildBird() {
+    const bird = G.flyingBird();
+    bird.scale.setScalar(1.5);
+    bird.visible = false;
+    bird.name = 'NuisanceBird';
+    this.root.add(bird);
+    this.nuisance = { bird, wl: bird.getObjectByName('wingL'), wr: bird.getObjectByName('wingR'), t: 0, from: new THREE.Vector3(), leaveFrom: null, carry: null, phase: 'idle' };
+  }
+  // s: the director's state; at: the target point (top of the plant, the bench seat, over her head)
+  updateBird(dtMs, s, at) {
+    if (!this.nuisance) this.buildBird();
+    const n = this.nuisance;
+    const { bird } = n;
+    const still = this.reducedMotion();
+    n.t += dtMs;
+    if (!s || s.phase === 'idle' || this.playHidden || this.finaleActive) {
+      bird.visible = false; n.phase = 'idle';
+      if (n.carry) { bird.remove(n.carry); n.carry = null; }
+      return;
+    }
+    if (s.phase !== n.phase) {
+      if (s.phase === 'warn') n.from.copy(at).add(new THREE.Vector3(-6, 7, -4)); // in from the sky
+      if (s.phase === 'leave') n.leaveFrom = bird.position.clone();
+      n.phase = s.phase;
+    }
+    bird.visible = true;
+    const flap = still ? 0 : Math.sin(n.t / 70);
+    let pos; let yaw = bird.rotation.y; let wings = 0.6 * flap;
+    if (s.phase === 'warn') {
+      // in, then round and round over the target
+      const k = Math.min(1, s.t / 700);
+      const ang = n.t / 520;
+      const circle = at.clone().add(new THREE.Vector3(Math.cos(ang) * 1.3, 2.4 + 0.2 * Math.sin(n.t / 300), Math.sin(ang) * 1.0));
+      pos = n.from.clone().lerp(circle, still ? 1 : ease.inOut(k));
+      yaw = ang + Math.PI;
+    } else if (s.phase === 'approach') {
+      const ang = n.t / 520;
+      const circle = at.clone().add(new THREE.Vector3(Math.cos(ang) * 1.3, 2.4, Math.sin(ang) * 1.0));
+      const ms = s.target?.kind === 'carried' ? 2000 : 900;
+      const k = Math.min(1, s.t / ms);
+      const over = at.clone().add(new THREE.Vector3(0, s.target?.kind === 'carried' ? 0.35 : 0.05, 0));
+      pos = circle.lerp(over, ease.inOut(k));
+      yaw = Math.atan2(over.x - bird.position.x, over.z - bird.position.z);
+    } else if (s.phase === 'sit') {
+      pos = at.clone().add(new THREE.Vector3(0, 0.05 + (still ? 0 : Math.abs(Math.sin(n.t / 180)) * 0.04), 0));
+      wings = still ? 0 : 0.15 * Math.sin(n.t / 400); // folded, a little ruffle
+      yaw = 0.6 + 0.3 * Math.sin(n.t / 700);
+    } else {
+      // off and away, up and to the far side
+      const k = Math.min(1, s.t / 1200);
+      const away = n.leaveFrom.clone().add(new THREE.Vector3(7, 6.5, -6));
+      pos = n.leaveFrom.clone().lerp(away, ease.inOut(k));
+      yaw = Math.atan2(away.x - n.leaveFrom.x, away.z - n.leaveFrom.z);
+      wings = 0.8 * (still ? 0 : Math.sin(n.t / 55));
+    }
+    bird.position.copy(pos);
+    bird.rotation.set(0, yaw, 0);
+    n.wl.rotation.z = -wings; n.wr.rotation.z = wings;
+  }
+  // the crop a bird took rides off in its beak
+  birdCarry(res) {
+    const n = this.nuisance;
+    if (!n || !res) return;
+    if (n.carry) n.bird.remove(n.carry);
+    n.carry = G.unitMesh(res);
+    n.carry.scale.setScalar(0.55 / n.bird.scale.x);
+    n.carry.position.set(0, -0.08, 0.26);
+    n.bird.add(n.carry);
+  }
+  // a shoo: a little puff where the bird was as it flies off
+  birdShoo() { if (this.nuisance?.bird.visible) this.puff(this.nuisance.bird.position.clone(), { scale: 0.5 }); }
+  birdPos(out = new THREE.Vector3()) { return this.nuisance?.bird.visible ? out.copy(this.nuisance.bird.position) : null; }
+  // v0.17 the bench stain (A22 item 8), shown while the ledger has one
+  syncStain(l) {
+    if (!this.stain) {
+      this.stain = G.benchStain();
+      this.root.add(this.stain);
+    }
+    const on = !!l.theft?.stain && !this.playHidden;
+    if (on && !this.stain.visible) { this.benchSeat(this.stain.position); this.stain.position.y += 0.005; this.stain.rotation.y = 0.65; }
+    this.stain.visible = on;
+  }
 
   // ---------- the falling stick (P25-5; v0.12: onto any of the slots around the tree) ----------
   buildBranch() {
@@ -1472,7 +1715,7 @@ export class World {
     const trunk = this.objects.D09.position; const tr = TREE_TRUNK_R * this.objects.D09.scale.x + room;
     out.push({ lo: [trunk.x - tr, trunk.z - tr], hi: [trunk.x + tr, trunk.z + tr], name: 'D09_Trunk' });
     for (const id of SUNFLOWER_NODES) { const p = this.stations[id]?.pos; if (p) out.push({ lo: [p.x - 0.25, p.z - 0.25], hi: [p.x + 0.25, p.z + 0.25], name: id }); }
-    if (this.archer?.root.visible) { const p = this.archer.root.position; out.push({ lo: [p.x - 0.35, p.z - 0.35], hi: [p.x + 0.35, p.z + 0.35], name: 'Archer' }); }
+    for (const a of Object.values(this.archers ?? {})) if (a.root.visible) { const p = a.root.position; out.push({ lo: [p.x - 0.35, p.z - 0.35], hi: [p.x + 0.35, p.z + 0.35], name: a.id === 'A1' ? 'Archer' : 'Archer2' }); }
     return out;
   }
   // v0.16: a free place on the grass near `p` for the egg to land: the first of a few places
@@ -1542,6 +1785,281 @@ export class World {
     this.smoke = { top, puffs, t: 0, k: house.scale.x };
   }
   // per frame (real time); -> whether the smoke shows
+  // ---------- v0.17c: the hidden keepsakes (game/keepsakes.js) ----------
+  // Made once, lying on the grass where KEEPSAKES puts them; shown in the exploring phase until
+  // found. One glints now and then when she is near. Presentation only: main.js owns finding.
+  buildKeepsakes() {
+    this.keepsakes = {};
+    for (const [id, k] of Object.entries(KEEPSAKES)) {
+      const obj = G.keepsake(id);
+      const p = this.proj.groundAt(k.u, k.v);
+      obj.position.copy(p);
+      obj.scale.setScalar(1.3);
+      obj.visible = false;
+      this.root.add(obj);
+      const glint = G.sparkleStar();
+      glint.scale.setScalar(0.9);
+      glint.visible = false;
+      this.root.add(glint);
+      this.keepsakes[id] = { obj, glint, pos: p.clone(), t: (id.length * 977) % 3000, gone: false };
+    }
+  }
+  keepsakePos(id) { return this.keepsakes?.[id]?.pos ?? null; }
+  // out: the exploring phase; found: { id: true }; hero: her position
+  updateKeepsakes(dtMs, { out = false, found = {}, hero = null } = {}) {
+    if (!this.keepsakes) this.buildKeepsakes();
+    const show = out && !this.playHidden && !this.finaleActive;
+    const still = this.reducedMotion();
+    for (const [id, k] of Object.entries(this.keepsakes)) {
+      if (k.picking) continue;
+      k.obj.visible = show && !found[id];
+      k.glint.visible = false;
+      if (!k.obj.visible || !hero) continue;
+      k.t += dtMs;
+      const near = Math.hypot(hero.x - k.pos.x, hero.z - k.pos.z) < KEEPSAKE_GLINT_M;
+      const cyc = k.t % 2600;
+      if (near && cyc < 600) {
+        const a = Math.sin((cyc / 600) * Math.PI);
+        k.glint.visible = true;
+        k.glint.position.copy(k.pos).setY(0.45);
+        if (this.camera) k.glint.quaternion.copy(this.camera.quaternion);
+        k.glint.scale.setScalar(0.5 + 0.5 * a);
+        k.glint.rotateZ(still ? 0 : cyc / 300);
+        k.glint.children.forEach((c) => { c.material.opacity = a; });
+      }
+    }
+  }
+  // she picks it up: a hop and a puff, and it is gone
+  async pickKeepsake(id) {
+    const k = this.keepsakes?.[id];
+    if (!k) return;
+    k.picking = true;
+    k.glint.visible = false;
+    if (!this.reducedMotion()) {
+      const s0 = k.obj.scale.x;
+      await this.tweens.run(320, (t) => { k.obj.position.y = Math.sin(Math.PI * t) * 0.5; k.obj.scale.setScalar(s0 * (1 + 0.4 * t)); k.obj.rotation.y += 0.25; });
+      k.obj.scale.setScalar(s0);
+    }
+    this.puff(k.pos.clone().setY(0.3), { scale: 0.7 });
+    k.obj.position.y = 0;
+    k.obj.visible = false;
+    k.picking = false;
+  }
+
+  // ---------- v0.17c: "Draw it": the farm as it stands, back in pencil on paper ----------
+  // on: every built part as it is, what is not built yet left out (no blueprint ghosts); main.js
+  // turns the whole frame to ink on paper with the opening's ink front (look.js setInkFront); the ground, the sky and the sun back to paper and ink, the play
+  // elements away; off: everything back as the ledger has it. Presentation only, for one frame.
+  pencilLook(on) {
+    const l = this.lastLedger;
+    if (on) {
+      this.pencil = { colour: { ...(this.finaleColour ?? {}) }, finished: this.finished };
+      this.setPlayHidden(1);
+      this.setFinaleColour({});
+      for (const part of Object.values(this.parts)) {
+        const done = l && this.partDone(part, l);
+        if (part.model) { part.model.root.visible = !!done; part.model.setOpacity(1); }
+        for (const b of part.before) b.root.visible = false;
+      }
+      if (this.benchFootprint) this.benchFootprint.root.visible = false;
+      for (const k of Object.values(this.keepsakes ?? {})) { k.obj.visible = false; k.glint.visible = false; }
+      for (const sp of Object.values(this.eggSparkles ?? {})) sp.visible = false;
+      if (this.nuisance) this.nuisance.bird.visible = false;
+      for (const f of this.fireflies ?? []) f.sp.visible = false;
+      this.marker.obj.visible = false;
+      return;
+    }
+    const p = this.pencil;
+    this.pencil = null;
+    this.setPlayHidden(0);
+    if (p?.finished) this.setFinished(true); else this.setFinaleColour(p?.colour ?? {});
+    if (l) this.applyParts(l);
+  }
+
+  // ---------- v0.17c: fireflies in the finished farm's evening (game/evening.js) ----------
+  // Two dozen soft yellow lights low over the grass by the tree, the bed, the sunflowers and the
+  // corn, drifting and blinking; they show as the evening comes (k 0..1). Still, dimmer lights
+  // with reduced motion.
+  updateFireflies(dtMs, k) {
+    if (!this.fireflies) {
+      const r = (i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); };
+      const homes = [[22, 66], [30, 72], [66, 84], [74, 86], [84, 70], [90, 66], [60, 50], [72, 50], [46, 76], [14, 80]];
+      const tex = (() => {
+        const c = document.createElement('canvas'); c.width = c.height = 64;
+        const g = c.getContext('2d');
+        const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gr.addColorStop(0, 'rgba(255,248,190,1)'); gr.addColorStop(0.35, 'rgba(255,224,110,0.8)'); gr.addColorStop(1, 'rgba(255,200,60,0)');
+        g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(c);
+      })();
+      this.fireflies = Array.from({ length: 24 }, (_, i) => {
+        const [u, v] = homes[i % homes.length];
+        const base = this.proj.groundAt(u + (r(i) - 0.5) * 8, v + (r(i + 50) - 0.5) * 6);
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+        sp.scale.setScalar(0.22);
+        sp.userData.noOutline = true; sp.userData.noFit = true;
+        sp.visible = false;
+        this.root.add(sp);
+        return { sp, base, ph: r(i + 100) * 10, sp2: 0.6 + r(i + 200) * 0.8 };
+      });
+      this.fireT = 0;
+    }
+    const still = this.reducedMotion();
+    this.fireT += still ? 0 : dtMs;
+    const show = k > 0.02 && !this.playHidden && !this.finaleActive;
+    for (const f of this.fireflies) {
+      f.sp.visible = show;
+      if (!show) continue;
+      const t = this.fireT / 1000 * f.sp2 + f.ph;
+      f.sp.position.set(f.base.x + 0.6 * Math.sin(t * 0.7), 0.5 + 0.35 * Math.sin(t * 1.3) + 0.2, f.base.z + 0.5 * Math.cos(t * 0.5));
+      const blink = still ? 0.6 : Math.max(0, Math.sin(t * 2.1)) ** 3;
+      f.sp.material.opacity = k * (0.25 + 0.75 * blink);
+    }
+  }
+
+  // ---------- v0.17c: the farm moves to the song that is playing (audio/beat.js) ----------
+  // level 0..1 sways the sunflowers and the corn (they nod about their feet) and lifts the sky's
+  // birds; on a beat the chimney gives a puff (one every 0.9 s at most) and the birds bob. With no
+  // song (`on` false) everything eases back. Still with reduced motion.
+  dance(dtMs, { on = false, level = 0, beat = false } = {}) {
+    const d = (this.danceState ??= { k: 0, t: 0, lastPuff: -Infinity, bob: 0 });
+    const still = this.reducedMotion();
+    d.k += ((on && !still ? 1 : 0) - d.k) * Math.min(1, dtMs / 300);
+    d.t += dtMs;
+    if (d.k < 0.001 && !on) return;
+    const sway = d.k * (0.05 + 0.12 * level);
+    let i = 0;
+    for (const id of ['s1', 's2', 's3', 's4', 'c1', 'c2', 'c3', 'c4']) {
+      const o = this.stations[id]?.obj;
+      if (o) o.rotation.x = sway * Math.sin(d.t / 260 + i * 0.9);
+      i++;
+    }
+    if (beat && on && !still) {
+      d.bob = 1;
+      if (this.smoke && d.t - d.lastPuff > 900) { d.lastPuff = d.t; this.puff(this.smoke.top.clone(), { scale: 1.2 }); }
+    }
+    d.bob = Math.max(0, d.bob - dtMs / 260);
+    const sky = this.objects.D21;
+    if (sky) { sky.userData.y0 ??= sky.position.y; sky.position.y = sky.userData.y0 + d.k * (0.25 * level + 0.25 * d.bob); }
+  }
+
+  // ---------- v0.17c: ink words, wobbles and the hunt's spot moments ----------
+  // a word in the drawing's pencil hand, outlined in paper, as a camera-facing sprite `h` metres tall
+  inkSprite(text, h = 0.5) {
+    const n = Math.max(1, [...text].length);
+    const w = Math.min(1024, 96 + n * 56);
+    const c = document.createElement('canvas'); c.width = w; c.height = 128;
+    const g = c.getContext('2d');
+    g.font = '700 88px "Pencil Title", "Comic Sans MS", cursive';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 10; g.strokeStyle = '#fff7e5'; g.strokeText(text, w / 2, 68);
+    g.fillStyle = '#253347'; g.fillText(text, w / 2, 68);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+    sp.scale.set(h * (w / 128), h, 1); sp.renderOrder = 10; sp.userData.noOutline = true; sp.userData.noFit = true;
+    this.root.add(sp);
+    return sp;
+  }
+  // a word pops up at `pos`, rises a little and fades (a still word with reduced motion)
+  inkWord(text, pos, { ms = 1400, h = 0.5, rise = 0.6 } = {}) {
+    const sp = this.inkSprite(text, h);
+    sp.position.copy(pos);
+    const still = this.reducedMotion();
+    const y0 = pos.y;
+    return this.tweens.run(ms, (t) => {
+      sp.position.y = y0 + (still ? 0 : rise * ease.out(t));
+      sp.material.opacity = t < 0.15 ? t / 0.15 : t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
+      if (!still) sp.scale.set(sp.scale.x / sp.scale.y * h * (t < 0.15 ? 0.7 + 2 * t : 1), h * (t < 0.15 ? 0.7 + 2 * t : 1), 1);
+    }).then(() => { this.root.remove(sp); sp.material.map.dispose(); sp.material.dispose(); });
+  }
+  // a thing on the farm wobbles (rotation about its foot), and settles back
+  wobble(obj, { amp = 0.08, ms = 700, axis = 'z', delay = 0 } = {}) {
+    if (!obj || this.reducedMotion() || obj.userData.wobbling) return Promise.resolve();
+    obj.userData.wobbling = true;
+    const base = obj.rotation[axis];
+    return this.tweens.wait(delay).then(() => this.tweens.run(ms, (t) => { obj.rotation[axis] = base + amp * Math.sin(t * Math.PI * 5) * (1 - t); }))
+      .then(() => { obj.rotation[axis] = base; obj.userData.wobbling = false; });
+  }
+  // the farm answers a spot moment (songs.js SPOTS act): the word, and the spot's own reaction
+  spotPoke(spot, word, heroPos) {
+    const at = this.eggSpotPos(spot, new THREE.Vector3());
+    const top = (heroPos ?? at).clone().setY(2.3);
+    this.inkWord(word, top, { h: 0.45 });
+    const st = (id) => this.stations[id]?.obj;
+    const wob = (objs, o) => objs.filter(Boolean).forEach((x, i) => this.wobble(x, { ...o, delay: (o?.delay ?? 0) + i * 90 }));
+    switch (spot) {
+      case 'door': this.strikePart('H5', 0); this.tweens.wait(300).then(() => this.strikePart('H5', 1)); break;
+      case 'chimney': {
+        const sm = this.smoke;
+        if (sm) for (let i = 0; i < 3; i++) this.puff(sm.top.clone().add(new THREE.Vector3(0, 0.25 * i, 0)), { scale: 1.6 + 0.4 * i, delay: i * 220, seed: i });
+        break;
+      }
+      case 'bench': wob([this.parts.D10?.model?.root], { amp: 0.05, ms: 600 }); break;
+      case 'tree': wob([this.objects.D09], { amp: 0.035, ms: 900 }); this.wobble(this.objects.D21, { amp: 0.15, axis: 'x', ms: 900 }); break;
+      case 'tools': wob([this.objects.D14, this.objects.D13], { amp: 0.12, ms: 700 }); break;
+      case 'stones': wob([this.parts.D12?.model?.root], { amp: 0.03, ms: 600 }); break;
+      case 'bed': this.whoKnowsHello(heroPos ?? at); break;
+      case 'sunflowers': wob(['s1', 's2', 's3', 's4'].map(st), { amp: 0.14, ms: 1000 }); break;
+      case 'corn': wob(['c1', 'c2', 'c3', 'c4'].map(st), { amp: 0.1, ms: 900 }); break;
+      case 'table': {
+        const t = this.sellSpot(new THREE.Vector3()).setY(1.2);
+        for (let i = 0; i < 4; i++) this.tweens.wait(i * 120).then(() => this.flight('coin', t, t.clone().add(new THREE.Vector3((i - 1.5) * 0.3, 0.3, 0.9)), 420));
+        break;
+      }
+      default:
+    }
+  }
+
+  // ---------- v0.17: the Who-Knows plant says hello (spec §10.5) ----------
+  // It sways gently every 4–6 s (static with reduced motion), happily once its song (E25) is found
+  // and she comes near; once per save, the first time she comes close, it gives a curious wiggle,
+  // its leaves turn toward her and a pencilled "?" rises from its top loop and curls into a little
+  // note, gone within 1.5 s (reduced motion: a still "?♪" badge for 2 s). Presentation only.
+  whoKnowsObj() { return (this.whoKnowsNode ??= this.root.getObjectByName('D19_WhoKnows') ?? null); }
+  whoKnowsPos(out = new THREE.Vector3()) { const o = this.whoKnowsObj(); return o ? o.getWorldPosition(out).setY(0) : null; }
+  updateWhoKnows(dtMs, { near = false, happy = false } = {}) {
+    const o = this.whoKnowsObj();
+    if (!o) return;
+    const w = (this.whoT ??= { t: 0, wiggle: 0, face: 0 });
+    const still = this.reducedMotion();
+    w.t += dtMs;
+    w.wiggle = Math.max(0, w.wiggle - dtMs);
+    if (still) { o.rotation.set(0, 0, 0); o.scale.setScalar(1); return; }
+    // a gentle sway, a breath every 5 s or so
+    const sway = 0.05 * Math.sin((w.t / 5000) * Math.PI * 2) * (0.6 + 0.4 * Math.sin(w.t / 3100));
+    const glad = happy && near ? 0.12 * Math.sin(w.t / 160) : 0;
+    const wig = w.wiggle > 0 ? 0.22 * Math.sin(w.wiggle / 55) * (w.wiggle / 1500) : 0;
+    o.rotation.z = sway + glad + wig;
+    o.rotation.y = w.face * (w.wiggle / 1500); // the leaves turn toward her while it wiggles
+    o.scale.set(1, 1 + 0.06 * Math.abs(wig) / 0.22, 1);
+  }
+  whoKnowsHello(heroPos) {
+    const o = this.whoKnowsObj();
+    if (!o) return Promise.resolve();
+    const top = o.localToWorld(new THREE.Vector3(0.02, 0.62, 0));
+    const reduced = this.reducedMotion();
+    const w = (this.whoT ??= { t: 0, wiggle: 0, face: 0 });
+    const p = o.getWorldPosition(new THREE.Vector3());
+    w.face = Math.atan2(heroPos.x - p.x, heroPos.z - p.z) * 0.15;
+    if (!reduced) w.wiggle = 1500;
+    const make = (text) => this.inkSprite(text, 0.85);
+    if (reduced) {
+      const badge = make('?♪');
+      badge.scale.set(1.0, 1.0, 1);
+      badge.position.copy(top).add(new THREE.Vector3(0, 0.35, 0));
+      return this.tweens.wait(2000).then(() => { this.root.remove(badge); });
+    }
+    const q = make('?'); const n = make('♪');
+    n.material.opacity = 0;
+    return this.tweens.run(1500, (t) => {
+      const rise = top.clone().add(new THREE.Vector3(0.12 * Math.sin(t * Math.PI * 1.5), 0.15 + t * 0.55, 0));
+      q.position.copy(rise); n.position.copy(rise);
+      const curl = Math.min(1, Math.max(0, (t - 0.35) / 0.35)); // the ? curls into the note
+      q.material.opacity = 1 - curl; q.material.rotation = curl * 1.2;
+      n.material.opacity = curl * (t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1);
+      n.material.rotation = (1 - curl) * -0.8;
+    }).then(() => { this.root.remove(q); this.root.remove(n); });
+  }
+
   updateSmoke(dtMs) {
     const sm = this.smoke;
     if (!sm) return false;
@@ -1706,6 +2224,14 @@ export class World {
       // v0.14: a heap on the last tables gives a buyer more than three; they lift them faster,
       // so a big sale takes about as long as a full one did
       const pace = Math.min(1, 3 / p.goods.length);
+      // v0.17c: every other buyer says what they think of their goods, in ink over their head
+      sale.said = (sale.said ?? 0) + 1;
+      if (p.goods.length && sale.said % 2 === 1) {
+        const res = items[p.goods[0]];
+        const words = BUYER_WORDS[res] ?? BUYER_WORDS.any;
+        p.b.updateMatrixWorld(true);
+        this.inkWord(words[(sale.said >> 1) % words.length], p.b.position.clone().setY(2.0), { h: 0.42, ms: 1300, rise: 0.35 });
+      }
       for (const j of p.goods) {
         if (!live()) return;
         const res = items[j];

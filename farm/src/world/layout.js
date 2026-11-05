@@ -7,7 +7,7 @@
 export const FITS = {
   D01: { u: 34.5, vTop: 22, vBottom: 46.5, yaw: -0.42 }, // house incl. roof and chimney, two-wall view
   D09: { u: 10, vTop: 40, vBottom: 77.5, yaw: 0 }, // tree, trunk base (9,77)
-  D10: { u: 16, vTop: 68.5, vBottom: 78.5, yaw: 0.65 }, // bench, diagonal to the viewer
+  D10: { u: 16, vTop: 68.5, vBottom: 78.5, yaw: 0.85 }, // bench, diagonal to the viewer (v0.17: turned 0.2 rad more, to face the path's way into the ring)
   D18: { u: 68.5, vTop: 78, vBottom: 85.5, yaw: 0 }, // raised bed boards
   D15: { u: 66, vTop: 36, vBottom: 48.5, yaw: 0 }, // a front-row corn stalk sets the corn scale
   D16: { u: 86, vTop: 51.5, vBottom: 70, yaw: 0 }, // one sunflower sets the sunflower scale
@@ -108,6 +108,9 @@ export const STATIONS = [
   { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
+  // v0.17 A2 (optional, spec §6.5): the second archer's post, between the raised bed and the
+  // yard-sale tables, covering both and the way between them (§7)
+  { id: 'A2', kind: 'site', u: 50, v: 67, r: 0.6, label: 'second archer post' },
   { id: 'C0', kind: 'site', u: 60.5, v: 54, r: 0.7, label: 'corn patch' },
   { id: 'C1', kind: 'site', u: 80.5, v: 53, r: 0.7, label: 'corn expansion' },
   { id: 'S0', kind: 'site', u: 79, v: 75, r: 0.7, label: 'sunflower patch' },

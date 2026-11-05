@@ -19,6 +19,8 @@
 <body class="booting">
   <canvas id="world" aria-label="The farm"></canvas>
   <img id="overlay" src="assets/reference/drawing.jpg" alt="" hidden>
+  <!-- v0.17c the finished farm's evening (game/evening.js): a warm wash over the world -->
+  <div id="evening" aria-hidden="true"></div>
   <div id="frame" aria-hidden="true"></div>
   <!-- floating stick: a touch anywhere in the play area that is not a HUD panel, button or card -->
   <div id="stick-zone" aria-hidden="true"><div id="stick-base"><div id="stick-knob"></div></div></div>
@@ -46,6 +48,13 @@
   <!-- v0.13 DIY hint: a sparkle over the part, 10 s after she has everything for it -->
   <div id="diy-sparkle" class="coach" aria-hidden="true"><svg viewBox="0 0 60 60"><g class="twinkle" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M30 7c1.2 9 3.4 17.6 4.6 22.4C39.6 30.8 46 31.6 53 30c-7 1.4-13.6 2.6-18.4 3.6C33 39.4 31.4 46 30.2 53c-1.4-7-3-13.6-4.6-19.4C20.4 32.4 14 31.4 7 30.4c7-1.2 13.4-2.2 18.6-3.4C27 21 28.6 14.4 30 7z" fill="#e6b83e" stroke="#253347" stroke-width="1.7"/><path d="M28.6 22.5c.5 2.6 1 5 1.5 7.1" stroke="#c08a2c" stroke-width="1.2"/></g></svg></div>
 
+  <!-- v0.17b: the song playing (from its card or the songbook) in place of the theme: pause,
+       move along, stop; it stays when the card or the menu closes -->
+  <div id="now-playing" role="region" aria-label="Song playing" hidden>
+    <button type="button" data-act="toggle" aria-label="Pause the song"><span aria-hidden="true">❚❚</span></button>
+    <div class="np-main"><span class="np-title"></span><input type="range" min="0" max="1" step="0.5" value="0" aria-label="Where in the song"><span class="np-time small"></span></div>
+    <button type="button" data-act="stop" aria-label="Stop the song and bring back the farm's music"><span aria-hidden="true">✕</span></button>
+  </div>
   <footer id="controls">
     <!-- v0.12: the next build's needs, counting down; with everything in hand it becomes its DIY
          button, which works only at the part (src/ui/hud.js setBuild) -->
@@ -54,6 +63,8 @@
     <!-- v0.12: the yard sale, once the table holds six (tapping the stand works too) -->
     <button id="btn-sale" type="button" hidden>Yard Sale</button>
     <button id="context" type="button" hidden></button>
+    <!-- v0.17: shoo a bird that is after the crops (E / Space, or tap the bird, works too) -->
+    <button id="btn-wave" type="button" hidden>Wave</button>
   </footer>
 
   <!-- first-actions coach (src/ui/coach.js): never interactive -->
@@ -62,6 +73,24 @@
   <div id="coach-hand" class="coach" aria-hidden="true"><div class="hand"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M19 5c2.2 0 4 1.8 4 4v12.6l1-.1V17c0-1.9 1.6-3.5 3.5-3.5S31 15.1 31 17v5l.7-.1c.3-1.6 1.7-2.8 3.3-2.8 1.9 0 3.5 1.6 3.5 3.5v2.9c.6-.6 1.5-1 2.5-1 1.9 0 3.5 1.6 3.5 3.5V35c0 6.6-5.4 11-12 11h-4.6c-3.9 0-7.1-1.6-9.5-4.6l-8.3-10.6c-1.2-1.6-.9-3.9.7-5.1 1.5-1.1 3.6-.9 4.8.5L15 28V9c0-2.2 1.8-4 4-4z" fill="#fff7e5" stroke="#253347" stroke-width="2.2" stroke-linejoin="round"/></svg></div></div>
   <div id="coach-tip" class="coach" role="status"><span class="text"></span></div>
 
+  <!-- v0.17 the end credits (spec §5.1, src/ui/credits.js): paper over the coloured drawing -->
+  <section id="credits" aria-label="End credits" hidden>
+    <div class="credits-card"></div>
+    <div class="credits-lyrics" aria-hidden="true"><p class="now"></p><p class="next"></p></div>
+    <div class="credits-controls"><button type="button" data-act="pause" aria-pressed="false">Pause</button><button type="button" data-act="skip">Skip</button></div>
+    <div class="credits-live sr-only" aria-live="polite"></div>
+  </section>
+  <!-- v0.17 the completed menu (spec §5): after the credits, and when a finished farm loads -->
+  <section id="completed" class="screen" aria-labelledby="completed-h" hidden>
+    <div class="paper-card">
+      <h2 id="completed-h">The farm is finished</h2>
+      <p id="completed-note"></p>
+      <button id="btn-explore" type="button" class="primary">Keep exploring</button>
+      <button id="btn-collection" type="button">Song collection</button>
+      <button id="btn-replay-done" type="button">Replay cinematic</button>
+      <button id="btn-credits-done" type="button">Credits</button>
+    </div>
+  </section>
   <button id="btn-back" type="button">Back to Vanessa</button>
   <button id="btn-skip" type="button" hidden>Skip</button>
   <div id="live" class="sr-only" aria-live="polite"></div>
@@ -86,8 +115,11 @@
     <button id="btn-overlay" type="button">Compare with the drawing</button>
     <button id="btn-blueprint-pause" type="button" aria-pressed="true">Blueprint: <span class="state">on</span></button>
     <button id="btn-replay" type="button" hidden>Replay cinematic</button>
+    <button id="btn-credits" type="button" hidden>Credits</button>
     <!-- v0.16: the songs found in the egg hunt -->
     <button id="btn-songs" type="button">Songs</button>
+    <button id="btn-keepsakes" type="button" hidden>Keepsakes</button>
+    <button id="btn-draw" type="button">Draw it</button>
     <p class="edition small" id="edition-note" hidden></p>
     <button id="btn-watch" type="button">Watch the opening</button>
     <fieldset id="sound-settings">
@@ -100,7 +132,9 @@
     <fieldset id="help-settings">
       <legend>Help</legend>
       <label><input id="set-help" type="checkbox"> Help me finish</label>
-      <p class="small">No weeds creep over the crops, no stick is lost under the tree, and the rake and the shovel come to Vanessa's hand from the start.</p>
+      <p class="small">No weeds creep over the crops, no stick is lost under the tree, no bird takes a crop, and the rake and the shovel come to Vanessa's hand from the start.</p>
+      <label><input id="set-birds" type="checkbox"> Birds never steal</label>
+      <p class="small">Birds still visit and perch, but they never take a crop.</p>
       <p class="small">Move: touch and drag anywhere, or WASD / arrow keys. Stand still beside something to work on it: take the rake or the shovel where they lean by the house to weed or dig; once she has fetched each one, it comes to her hand at the job. Walk past the pile by the house to leave wood and stone there, and past the yard-sale table to set out your crops. Once six are out, tap Yard Sale (or the table); more tables come as the house grows. The bottom line counts what the next build still needs; once you have it all it turns into DIY: go to the part and tap it (or E / Space). Blueprint, or B, shows or hides the outlines of unbuilt things.</p>
       <button id="btn-opening" type="button">Watch the opening</button>
     </fieldset>

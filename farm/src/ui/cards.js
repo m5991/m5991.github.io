@@ -4,9 +4,11 @@
 // "no menu for selling", and builds are one DIY button): the station Build card and the market
 // crate card are gone; what is left is the confirmation card (New farm).
 
+import { fmtTime } from './songplayer.js';
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function createCards(dialog) {
+export function createCards(dialog, { player = null } = {}) {
   let onClose = null;
   dialog.addEventListener('close', () => { const f = onClose; onClose = null; f?.(dialog.returnValue); });
 
@@ -27,52 +29,65 @@ export function createCards(dialog) {
   // v0.16: a song found, or one from the songbook: its title, a line, and Listen (in the game),
   // Download MP3 (both editions) and Open in Suno (the full edition only: `suno` null hides it).
   // `available` false (no song files in this build) disables Listen and Download and says so.
-  let player = null;
+  // v0.17b: Listen plays through the game's one song player (`player`, ui/songplayer.js), so the
+  // song keeps playing when the card closes; the song that is loaded shows a seek bar and its time.
+  let unsubs = [];
   function songActions({ src, download, suno, available }) {
     return `<div class="song-actions">
       <button type="button" class="primary" data-act="listen" ${available ? '' : 'disabled'} aria-pressed="false"><span class="ic" aria-hidden="true">▶</span> <span class="lbl">Listen</span></button>
       ${available ? `<a class="button" data-act="download" href="${esc(src)}" download="${esc(download)}"><span aria-hidden="true">⬇</span> Download MP3</a>` : '<button type="button" disabled>⬇ Download MP3</button>'}
       ${suno ? `<a class="button" data-act="suno" href="${esc(suno)}" target="_blank" rel="noopener noreferrer">Open in Suno ↗</a>` : ''}
     </div>${available ? '' : '<p class="small song-missing">The song files are not in this build.</p>'}
-    <div class="song-time small" aria-live="off"></div>`;
+    <div class="song-seek" hidden><input type="range" min="0" max="1" step="0.5" value="0" aria-label="Where in the song"><span class="song-time small" aria-live="off"></span></div>`;
   }
-  function wireListen(root, { src, onPlay, onStop }) {
+  function wireListen(root, { id, src, title }) {
     const btn = root.querySelector('[data-act="listen"]');
-    const time = root.querySelector('.song-time');
-    if (!btn) return;
-    const fmt = (t) => (Number.isFinite(t) ? `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}` : '–:––');
-    btn.addEventListener('click', () => {
-      if (player && player.src.endsWith(src) && !player.paused) { player.pause(); return; }
-      if (player) player.pause();
-      player = new Audio(src);
-      player.preload = 'auto';
-      const show = (on) => { btn.setAttribute('aria-pressed', String(on)); btn.querySelector('.ic').textContent = on ? '❚❚' : '▶'; btn.querySelector('.lbl').textContent = on ? 'Pause' : 'Listen'; };
-      player.addEventListener('play', () => { show(true); onPlay?.(player); });
-      player.addEventListener('pause', () => { show(false); onStop?.(); });
-      player.addEventListener('ended', () => { show(false); onStop?.(); });
-      player.addEventListener('timeupdate', () => { if (time) time.textContent = `${fmt(player.currentTime)} / ${fmt(player.duration)}`; });
-      player.addEventListener('error', () => { show(false); if (time) time.textContent = 'This song could not be played.'; onStop?.(); });
-      player.play().catch(() => { show(false); onStop?.(); });
-    });
+    const seek = root.querySelector('.song-seek');
+    const range = seek?.querySelector('input');
+    const time = seek?.querySelector('.song-time');
+    if (!btn || !player) return;
+    let dragging = false;
+    btn.addEventListener('click', () => { if (player.state.id === id) player.toggle(); else player.play({ id, src, title }); });
+    range.addEventListener('input', () => { dragging = true; time.textContent = `${fmtTime(Number(range.value))} / ${fmtTime(Number(range.max))}`; });
+    range.addEventListener('change', () => { dragging = false; player.seek(Number(range.value)); });
+    unsubs.push(player.subscribe((st) => {
+      const mine = st.id === id;
+      const on = mine && st.playing;
+      btn.setAttribute('aria-pressed', String(on));
+      btn.querySelector('.ic').textContent = on ? '❚❚' : '▶';
+      btn.querySelector('.lbl').textContent = on ? 'Pause' : mine ? 'Play' : 'Listen';
+      seek.hidden = !mine;
+      if (!mine) return;
+      if (st.error) { time.textContent = 'This song could not be played.'; return; }
+      if (st.duration) range.max = String(st.duration);
+      if (!dragging) range.value = String(st.t);
+      if (!dragging) time.textContent = `${fmtTime(st.t)} / ${fmtTime(st.duration)}`;
+    }));
   }
-  function stopSong() { if (player) { player.pause(); player = null; } }
-  dialog.addEventListener('close', stopSong);
+  dialog.addEventListener('close', () => { for (const u of unsubs) u(); unsubs = []; });
 
   return {
     get isOpen() { return dialog.open; },
-    get playing() { return !!player && !player.paused; },
-    stopSong,
 
-    // v0.16 a song card: { title, text, src, download, suno, available, onPlay, onStop, onClose }
+    // v0.16 a song card: { id, title, songTitle, text, src, download, suno, available, onClose }
     song(o) {
       open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p>${songActions(o)}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
-      wireListen(dialog, o);
+      wireListen(dialog, { id: o.id, src: o.src, title: o.songTitle ?? o.title });
     },
-    // v0.16 the songbook: { title, intro, songs: [{ id, title, src, download, suno }], left, available, onPlay, onStop, onClose }
+    // v0.16 the songbook: { title, intro, songs: [{ id, title, src, download, suno }], left, available, onClose }
     songbook(o) {
       const rows = o.songs.map((x) => `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${songActions({ ...x, available: o.available })}</li>`).join('');
-      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
-      dialog.querySelectorAll('.song-row').forEach((row, i) => wireListen(row, { ...o.songs[i], onPlay: o.onPlay, onStop: o.onStop }));
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
+      dialog.querySelectorAll('.song-row').forEach((row, i) => wireListen(row, o.songs[i]));
+    },
+    // v0.17c a keepsake found, or the list of them: { title, text, prints: [{ image, alt, title, year, caption }], left, onClose }
+    prints(o) {
+      const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy"><figcaption><span class="t">${esc(g.title)}</span>${g.year ? ` <span class="y">${g.year}</span>` : ''}${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption></figure>`).join('');
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
+    },
+    // v0.17c "Draw it": the picture, and a link that saves it ({ title, text, src, download, onClose })
+    picture(o) {
+      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? 'The farm, drawn in pencil')}"></figure><div class="actions"><a class="button primary" href="${esc(o.src)}" download="${esc(o.download)}">⬇ Save the picture</a><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
     },
     close(v = 'close') { if (dialog.open) dialog.close(v); },
 

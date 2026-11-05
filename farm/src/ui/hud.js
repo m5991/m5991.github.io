@@ -81,6 +81,32 @@ export function createHud(root = document) {
     }, (toastQueue.length > 1 ? Math.min(q.ms, 2200) : q.ms) + 1000);
   }
   let onNote = null;
+  // v0.17c: the coin counter counts up to a sale's total over about 0.8 s, with a "+N" that floats
+  // off it; anything else (spending, a load) shows at once. Reduced motion: at once.
+  let coinShown = null;
+  let coinRaf = 0;
+  const still = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  function countCoins(to) {
+    const el = cells.coins.querySelector('.count');
+    const from = coinShown ?? to;
+    if (to - from < 3 || still() || typeof requestAnimationFrame !== 'function') {
+      cancelAnimationFrame?.(coinRaf); coinShown = to; el.textContent = counterText(to); return;
+    }
+    const plus = document.createElement('span');
+    plus.className = 'coin-plus'; plus.textContent = `+${to - from}`; plus.setAttribute('aria-hidden', 'true');
+    cells.coins.appendChild(plus);
+    setTimeout(() => plus.remove(), 1400);
+    const t0 = performance.now();
+    cancelAnimationFrame(coinRaf);
+    const step = (now) => {
+      const k = Math.max(0, Math.min(1, (now - t0) / 800)); // a frame's time can be a little before t0
+      const n = Math.round(from + (to - from) * (1 - (1 - k) ** 2));
+      el.textContent = counterText(n);
+      if (k < 1) coinRaf = requestAnimationFrame(step);
+    };
+    coinShown = to;
+    coinRaf = requestAnimationFrame(step);
+  }
   context.addEventListener('click', () => contextHandler?.());
   diy.addEventListener('click', () => diyHandler?.());
   sale.addEventListener('click', () => saleHandler?.());
@@ -94,7 +120,8 @@ export function createHud(root = document) {
         cells[k].querySelector('.count').textContent = counterText(n);
         cells[k].setAttribute('aria-label', pile ? `${NAMES[k]} ${n}: ${l.carried[k]} carried, ${pile} in the pile` : `${NAMES[k]} ${n}`);
       }
-      cells.coins.querySelector('.count').textContent = counterText(l.purse);
+      // v0.17c: a sale's coins count up with a "+N" beside them; spending shows at once
+      countCoins(l.purse);
       cells.coins.setAttribute('aria-label', `Coins ${l.purse}`);
     },
     setGoal(text) { if (goal.textContent !== text) goal.textContent = text; },
@@ -161,6 +188,16 @@ export function createHud(root = document) {
       if (toastQueue.some((q) => q.text === text)) return;
       toastQueue.push({ text, ms });
       if (toastQueue.length === 1) showNext();
+    },
+    // v0.17: a warning that cannot wait (a bird on its way): shown now, ahead of the queue; the
+    // note it interrupts comes back after it
+    urgent(text, ms = 2600) {
+      if (toastQueue[0]?.text === text) return;
+      const i = toastQueue.findIndex((q) => q.text === text);
+      if (i > 0) toastQueue.splice(i, 1);
+      toastQueue.unshift({ text, ms });
+      clearTimeout(leaving);
+      showNext();
     },
     bump(res) {
       const c = cells[res];

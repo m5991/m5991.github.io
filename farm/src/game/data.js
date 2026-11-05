@@ -156,7 +156,14 @@ export const STAGES = {
   H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 14, W: 2, R: 0, workMs: 2500 },
   H4: { label: 'chimney', prereq: ['H3'], coins: 12, W: 0, R: 2, workMs: 2000 },
   H5: { label: 'home', prereq: ['H4', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
+  // v0.17 (spec §6.5, A2): the second archer, optional and never on the route. Hired like A1 at
+  // his post between the raised bed and the yard-sale table, after A1 and the raised bed (T0);
+  // he guards the bed, the tables and the way between them from the birds (§7, game/birds.js)
+  A2: { label: 'second archer', prereq: ['A1', 'T0'], coins: 20, W: 2, R: 0, workMs: 0, hire: true, optional: true },
 };
+// v0.17: stages outside the route (the second archer): saved in the ledger like the others, never
+// asked for by the goal line or needed for the home
+export const OPTIONAL_STAGES = ['A2'];
 // v0.16 (captain: "it should have a funny line when it is hired to be an archer"): what the archer
 // says as he arrives at his post, in his deadpan, self-important manner (original lines; the first
 // is the one the game says, the others are offered to the captain in the build report)
@@ -165,8 +172,16 @@ export const ARCHER_LINES = [
   'Question: what eats sunflower seeds? Birds. Question: what stops birds? Me. Assistant to the farmer, reporting for duty.',
   'I trained my whole life for this. Mostly on beets, but the principle is identical. Stand back, I am loading the crossbow.',
 ];
+// v0.17: what the second archer (A2, an elf with a longbow) says when he is hired
+export const ARCHER2_LINES = [
+  'The tomatoes are under my watch now. No bird takes a single one. Not on my bow.',
+];
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
 export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4', 'H5'];
+// every stage the ledger keeps: the route, then the optional ones (v0.17)
+export const ALL_STAGES = [...STAGE_ORDER, ...OPTIONAL_STAGES];
+// the archers, in hiring order (A1 is on the route, A2 is optional)
+export const ARCHERS = ['A1', 'A2'];
 // the stages the farm needs (all of them)
 export const ROUTE = STAGE_ORDER;
 // v0.15: foundation, walls, roof, chimney, home; the last one finishes the farm (the finale)
@@ -218,3 +233,25 @@ export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 75000, warnMs: 
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
 export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null;
+
+// v0.17 birds (spec §7, §6.6 point 4; A22: "birds steal crops, archers chase them off, and losses
+// are capped so nobody gets stuck"). One bird event every `everyMs` of active time at most, from
+// the second crop plot on. The kinds rotate in a fixed order, skipping any that cannot happen now:
+// a bird perches on the bench (from the bench's restoration, G2: it may leave a stain to clean),
+// one lands on the ready crop plant farthest from Vanessa, one goes for the crops on her head.
+// Each gives a `warnMs` warning that names its target. A node thief sits `sitMs` before it takes
+// one unit; a head thief chases her for `approachMs`; a free Wave before the take, or a hired
+// archer whose cover the bird enters, sends it off with nothing. An archer covers the crops he
+// guards (ARCHER_GUARDS: A1 the corn and the sunflowers, A2 the raised bed's tomatoes, as §7 and
+// §6.5 assign them) and, for the crops on her head, `coverM` round his post. (The spec's P cover,
+// 12 of her 0.6 m collision diameters, is 7.2 m: on this farm, about 11 m across, that reaches
+// every plant from A1's post and would leave the second archer nothing to guard.) Caps: one unit an event, `windowMax` in any `windowMs`, `totalMax` from the
+// second crop plot to the home; none after the home. Help me finish and Birds never steal turn
+// theft off. Nothing else is ever taken: coins, wood, stone, the tables' goods, built parts.
+export const BIRDS = {
+  everyMs: 30000, firstMs: 20000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3000, leaveMs: 1200,
+  windowMs: 120000, windowMax: 3, totalMax: 8,
+  coverM: 3.5, drawMs: 800, fireMs: 3000, perchMs: 3000, cleanMs: 1000,
+};
+export const BIRD_KINDS = ['perch', 'node', 'carried'];
+export const ARCHER_GUARDS = { A1: ['c1', 'c2', 'c3', 'c4', 's1', 's2', 's3', 's4'], A2: ['t1', 't2'] };

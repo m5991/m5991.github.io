@@ -68,7 +68,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #controls { position: fixed; left: var(--edge); right: var(--edge-r); bottom: var(--edge-b); height: 96px; display: flex; justify-content: flex-end; align-items: flex-end; gap: 8px; pointer-events: none; }
 /* v0.12: the build line (left) and the Yard Sale button (right) */
 #buildbar { pointer-events: none; margin-right: auto; min-width: 0; max-width: min(64vw, 420px); align-self: flex-end; display: flex; }
-#buildbar[hidden], #btn-sale[hidden], #btn-diy[hidden] { display: none; }
+#buildbar[hidden], #btn-sale[hidden], #btn-diy[hidden], #btn-wave[hidden] { display: none; }
 #buildbar .need { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; min-height: 44px; padding: 6px 12px; background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 14px; box-shadow: 0 2px 0 rgba(37, 51, 71, 0.2); font-size: 15px; line-height: 1.2; }
 #buildbar .need[hidden] { display: none; }
 #buildbar .need .label { font-weight: 600; }
@@ -101,6 +101,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 @keyframes twinkle { 0%, 100% { transform: scale(0.6); opacity: 0.55; } 50% { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #diy-sparkle .twinkle { animation: none; } }
 @media (prefers-reduced-motion: reduce) { #btn-diy, #btn-sale, #btn-diy.coach-pulse, #btn-sale:not(.away), #btn-sale.coach-pulse:not(.away) { animation: none; } #btn-diy, #btn-sale:not(.away) { border-width: 4px; } }
+/* v0.17: Wave, while a bird is after the crops */
+#btn-wave { pointer-events: auto; min-height: 56px; padding: 6px 18px; white-space: nowrap; background: var(--paper); color: var(--ink); border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 24px; transform: rotate(-1.5deg); animation: diy-ready 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { #btn-wave { animation: none; border-width: 4px; } }
 #context { pointer-events: auto; max-width: min(60vw, 320px); min-height: 56px; background: var(--navy); color: var(--paper); border-color: var(--navy); font-weight: 600; }
 #context.coach-pulse, dialog#card button.coach-pulse { animation: coach-pulse 1.4s ease-out infinite; }
 @keyframes coach-pulse { 0% { box-shadow: 0 0 0 0 rgba(40, 100, 189, 0.6); } 70%, 100% { box-shadow: 0 0 0 14px rgba(40, 100, 189, 0); } }
@@ -305,6 +308,7 @@ body.whole #diy, body.whole #diy-ticks, body.whole #yard-badge, body.finale #diy
 
 /* ---------- v0.16: songs (the song card and the songbook) ---------- */
 .song-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.actions a.button { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px; border-radius: 10px; border: 2px solid var(--ink); background: var(--navy); color: var(--paper); text-decoration: none; font-weight: 600; }
 .song-actions .button { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px; border-radius: 10px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); text-decoration: none; font-weight: 600; }
 .song-actions button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--ink); }
 .song-actions .ic { display: inline-block; width: 1.2em; text-align: center; }
@@ -323,6 +327,84 @@ ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height
 #speech::after { content: ""; pointer-events: none; position: absolute; left: var(--tail, 50%); bottom: -11px; width: 16px; height: 16px; background: var(--paper); border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateX(-50%) rotate(45deg); }
 #speech .who { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.75; }
 @media (prefers-reduced-motion: reduce) { #speech { animation: note-fade 0.15s linear; } }
+
+/* v0.17c the finished farm's evening: a golden-to-dusk wash over the world (under the HUD) */
+#evening { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(to bottom, rgba(232, 128, 72, 0.55) 0%, rgba(214, 120, 96, 0.4) 40%, rgba(70, 60, 120, 0.42) 100%); mix-blend-mode: multiply; }
+body.credits #evening, body.backdrop #evening, body.finale #evening, body.opening #evening, body.whole #evening { display: none; }
+
+/* v0.17c the coins count up after a sale, a "+N" floating off the counter */
+#counters [data-res="coins"] { position: relative; }
+.coin-plus { position: absolute; right: 8px; top: 2px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 20px; color: #9a6a12; pointer-events: none; animation: coin-plus 1.3s ease-out forwards; }
+@keyframes coin-plus { 0% { opacity: 0; transform: translateY(6px) scale(0.8); } 15% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-22px) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .coin-plus { display: none; } }
+
+/* ---------- v0.17c keepsake cards: the gift's real photo as a taped print ---------- */
+.keepsake-prints { display: flex; flex-direction: column; gap: 14px; margin: 8px 0; }
+.keepsake-print { margin: 0; background: #fffdf7; padding: 8px 8px 6px; border-radius: 2px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.25), 0 10px 22px -12px rgba(37, 51, 71, 0.45); transform: rotate(-1deg); }
+.keepsake-print:nth-child(2) { transform: rotate(1.2deg); }
+.keepsake-print img { display: block; width: 100%; max-height: 46vh; object-fit: contain; }
+.keepsake-print figcaption { padding-top: 6px; text-align: left; }
+.keepsake-print .t { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 19px; font-weight: 700; }
+.keepsake-print .y { font-size: 14px; opacity: 0.7; }
+.keepsake-print q { display: block; font-size: 15px; font-style: italic; }
+#btn-keepsakes[hidden] { display: none; }
+
+/* ---------- v0.17b the song player bar: above the controls, while a found song plays ---------- */
+#now-playing { position: fixed; left: var(--edge); bottom: calc(var(--edge-b) + 104px); z-index: 4; display: flex; align-items: center; gap: 8px; width: min(360px, calc(100vw - var(--edge) - var(--edge-r))); padding: 6px 8px; background: rgba(255, 253, 247, 0.96); color: var(--ink); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
+#now-playing[hidden] { display: none; }
+#now-playing button { min-width: 44px; min-height: 44px; padding: 0; border-radius: 12px; font-size: 18px; }
+#now-playing .np-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
+#now-playing .np-title { grid-column: 1 / -1; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#now-playing input { width: 100%; min-height: 28px; accent-color: var(--navy); }
+#now-playing .np-time { font-variant-numeric: tabular-nums; }
+.song-seek { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 8px; }
+.song-seek[hidden] { display: none; }
+.song-seek input { width: 100%; min-height: 32px; accent-color: var(--navy); }
+body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing, body.opening #now-playing, body.whole #now-playing { display: none; }
+
+/* ---------- v0.17 the end credits (spec §5.1): quiet paper over the coloured drawing ---------- */
+#credits { position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+#credits[hidden] { display: none; }
+#credits .credits-controls { position: absolute; top: var(--edge-t); right: var(--edge-r); display: flex; gap: 8px; pointer-events: auto; }
+#credits .credits-controls button { min-width: 48px; min-height: 48px; background: rgba(255, 247, 229, 0.92); }
+#credits .credits-card { position: absolute; left: var(--edge); right: var(--edge-r); top: calc(var(--edge-t) + 60px); bottom: 30%; display: flex; align-items: center; justify-content: center; }
+#credits .credits-card > * { opacity: 0; }
+#credits .credits-card.in > * { animation: credits-in 0.7s ease-out forwards; }
+#credits .credits-card.in.reduced > * { animation: credits-fade 0.15s linear forwards; }
+@keyframes credits-in { from { opacity: 0; transform: translateY(14px) rotate(var(--tilt, 0deg)); } to { opacity: 1; transform: translateY(0) rotate(var(--tilt, 0deg)); } }
+@keyframes credits-fade { from { opacity: 0; } to { opacity: 1; transform: rotate(var(--tilt, 0deg)); } }
+.credits-print { position: relative; margin: 0; max-width: min(78vw, 440px); max-height: 100%; display: flex; flex-direction: column; background: #fffdf7; padding: 10px 10px 8px; border-radius: 2px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.25), 0 14px 30px -12px rgba(37, 51, 71, 0.45); }
+.credits-print.left { --tilt: -2.2deg; align-self: flex-start; margin-right: auto; }
+.credits-print.right { --tilt: 1.8deg; align-self: flex-start; margin-left: auto; }
+.credits-print img { display: block; max-width: 100%; max-height: calc(70vh - 220px); min-height: 0; object-fit: contain; }
+.credits-print .tape { position: absolute; top: -10px; left: 50%; width: 84px; height: 22px; margin-left: -42px; background: rgba(230, 216, 170, 0.75); transform: rotate(-3deg); }
+.credits-print figcaption { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding-top: 6px; color: var(--ink); text-align: left; }
+.credits-print .t { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 20px; font-weight: 700; }
+.credits-print .y { font-size: 14px; opacity: 0.7; }
+.credits-print q { flex-basis: 100%; font-size: 15px; font-style: italic; }
+.credits-paper { max-width: min(86vw, 460px); max-height: 100%; overflow: auto; background: rgba(255, 253, 247, 0.96); color: var(--ink); padding: 18px 20px; border-radius: 3px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2), 0 12px 30px -10px rgba(37, 51, 71, 0.35); text-align: center; }
+.credits-paper h2 { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 34px; margin: 0 0 6px; }
+.credits-paper.title .song { font-size: 18px; margin: 0; }
+.credits-paper.closing { text-align: left; }
+.credits-paper.closing h2 { font-size: 26px; text-align: center; }
+.credits-paper.closing p { font-size: 16px; line-height: 1.5; margin: 0; }
+.credits-paper.message .from { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 24px; margin: 0 0 6px; }
+.credits-paper.prints { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.credits-paper.prints img { width: 72px; height: 72px; object-fit: cover; }
+#credits .credits-lyrics { position: absolute; left: var(--edge); right: var(--edge-r); bottom: calc(var(--edge-b) + 10px); margin: 0 auto; max-width: 520px; background: rgba(255, 253, 247, 0.94); border-radius: 3px; padding: 10px 14px; text-align: center; color: var(--ink); box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2); }
+#credits .credits-lyrics.empty { opacity: 0; transition: opacity 0.4s; }
+#credits .credits-lyrics p { margin: 0; }
+#credits .credits-lyrics .now { font-size: 19px; font-weight: 600; min-height: 1.3em; }
+#credits .credits-lyrics .next { font-size: 15px; opacity: 0.5; min-height: 1.2em; }
+body.credits #hud, body.credits #controls, body.credits #progress, body.credits #toast, body.credits #stack-badge, body.credits #stick-zone, body.credits .coach, body.credits #speech, body.credits #yard-badge { display: none; }
+body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backdrop #toast, body.backdrop #stack-badge, body.backdrop #stick-zone, body.backdrop .coach, body.backdrop #speech, body.backdrop #yard-badge { display: none; }
+#completed .paper-card { width: min(380px, 100%); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 20px; background: var(--paper); border-radius: 4px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2), 0 12px 30px -10px rgba(37, 51, 71, 0.35); }
+#completed .paper-card p { margin: 0; }
+#completed { background: rgba(255, 247, 229, 0.55); }
+#btn-credits[hidden] { display: none; }
+/* the collection stamp, at every song found (spec §5) */
+.stamp { display: inline-block; margin: 4px 0 8px; padding: 6px 14px; border: 3px double #b53e36; color: #b53e36; border-radius: 8px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 20px; transform: rotate(-4deg); }
+@media (prefers-reduced-motion: reduce) { #credits .credits-card.in > * { animation-duration: 0.15s; } }
 
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
@@ -394,3 +476,4 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #t
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #pause { background-size: 80px 80px, 52px 52px, 30px 60px, auto, auto; }
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card { background-size: 76px 76px, auto, auto; }
 }
+

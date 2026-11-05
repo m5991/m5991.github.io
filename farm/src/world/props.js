@@ -458,6 +458,167 @@ export function archer() {
   return root;
 }
 
+// ---------------- v0.17 the second archer (A2, spec §6.5, §10.5) ----------------
+// An original woodland elf archer in the drawing's hand, distinct from the first archer at a
+// glance: long fair hair tied at the nape, pointed ears, a slim moss-and-cream tunic with a belt,
+// a bark-brown hooded cloak over the shoulders, soft boots, a quiver of blunt arrows on his back
+// and a longbow in his left hand (the `bow` group, held across him when he draws). Groups: `body`,
+// `head` (turns), `arms` (raised to draw), `bow`. Built for a 1.82 m elf, facing +Z. In the game
+// he is named "second archer", never after any film character (§10.5).
+export const ELF = { height: 1.82, tunic: 0x6b8a52, trim: 0xf1deb5, cloak: 0x7a5636, hair: 0xe8cf8e, skin: 0xe9c29e, boots: 0x5a4130, bow: 0x8d603e };
+export function elfArcher() {
+  const E = ELF;
+  const root = new THREE.Group(); root.name = 'ElfArcher';
+  const hipY = 0.95; const shoulderY = 1.45; const headR = 0.112; const headY = shoulderY + 0.1 + headR;
+  const body = new THREE.Group(); body.name = 'body';
+  // the tunic: slim, flaring a little to a hem above the knee, with a cream trim at the hem
+  const tunic = lathe([[0, hipY - 0.32], [0.17, hipY - 0.32], [0.155, hipY - 0.1], [0.13, hipY + 0.08], [0.14, hipY + 0.3], [0.165, shoulderY - 0.1], [0.17, shoulderY - 0.03], [0.1, shoulderY + 0.03], [0.04, shoulderY + 0.06], [0, shoulderY + 0.06]], 20);
+  tunic.scale(1, 1, 0.76);
+  body.add(mesh(tunic, E.tunic, { hatch: 1 }));
+  body.add(at(mesh(new THREE.TorusGeometry(0.165, 0.014, 5, 22).scale(1, 0.76, 1), E.trim, { ink: false }), 0, hipY - 0.31, 0, Math.PI / 2, 0, 0));
+  body.add(at(mesh(new THREE.CylinderGeometry(0.137, 0.137, 0.035, 20).scale(1, 1, 0.76), E.boots), 0, hipY + 0.04, 0)); // belt
+  body.add(at(mesh(new THREE.CylinderGeometry(0.044, 0.05, 0.1, 10), E.skin), 0, shoulderY + 0.07, 0)); // neck
+  // the cloak: a draped half-cone hanging from the shoulders down his back, its hood folded
+  const cloak = new THREE.CylinderGeometry(0.2, 0.3, 1.02, 18, 1, true, Math.PI * 0.5, Math.PI);
+  const cm = mesh(cloak, E.cloak, { hatch: 1 });
+  cm.material = cm.material.clone(); cm.material.side = THREE.DoubleSide;
+  body.add(at(cm, 0, shoulderY - 0.48, -0.035));
+  body.add(at(mesh(new THREE.TorusGeometry(0.11, 0.035, 6, 14, Math.PI), E.cloak), 0, shoulderY + 0.06, -0.06, -0.3, 0, 0)); // the folded hood
+  body.add(at(mesh(new THREE.SphereGeometry(0.022, 8, 6), E.trim, { ink: false }), 0.1, shoulderY + 0.02, 0.1)); // the cloak's clasp
+  // the quiver on his back, a few fletched blunt arrows standing out of it
+  const quiver = new THREE.Group();
+  quiver.add(mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.5, 10), E.boots));
+  for (let k = 0; k < 4; k++) {
+    quiver.add(at(mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.18, 5), 0xd7c7a3), (k - 1.5) * 0.018, 0.32, (k % 2) * 0.015));
+    quiver.add(at(mesh(box(0.004, 0.06, 0.03), k % 2 ? PAL.red : E.trim, { ink: false }), (k - 1.5) * 0.018, 0.4, (k % 2) * 0.015));
+  }
+  quiver.position.set(0.11, shoulderY - 0.18, -0.33); quiver.rotation.set(0.15, 0, -0.35);
+  body.add(quiver);
+  root.add(mergeByMaterial(body, 'body'));
+  // the head: a fine face, almond eyes, a calm small mouth, pointed ears; long fair hair
+  const head = new THREE.Group(); head.name = 'head';
+  head.position.set(0, headY, 0);
+  const skull = new THREE.SphereGeometry(headR, 16, 12); skull.scale(0.88, 1.1, 0.94);
+  head.add(mesh(skull, E.skin));
+  for (const sd of [-1, 1]) {
+    head.add(at(mesh(new THREE.SphereGeometry(headR * 0.08, 6, 5), PAL.ink, { ink: false, shadow: false }), sd * headR * 0.35, headR * 0.1, headR * 0.86));
+    head.add(at(mesh(box(headR * 0.36, headR * 0.05, headR * 0.05), mix(E.hair, PAL.ink, 0.3), { ink: false, shadow: false }), sd * headR * 0.36, headR * 0.3, headR * 0.86, 0, 0, sd * 0.1));
+    const ear = new THREE.ConeGeometry(headR * 0.14, headR * 0.55, 6); // pointed, swept back a little
+    head.add(at(mesh(ear, E.skin), sd * headR * 0.88, headR * 0.12, -headR * 0.05, -0.35, 0, sd * -1.05));
+  }
+  head.add(at(mesh(box(headR * 0.32, headR * 0.04, headR * 0.04), PAL.mouth, { ink: false, shadow: false }), 0, -headR * 0.45, headR * 0.86));
+  const hairCap = new THREE.SphereGeometry(headR * 1.08, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  head.add(at(mesh(hairCap, E.hair), 0, headR * 0.1, -headR * 0.03, -0.15, 0, 0));
+  // the long hair down his back, and two thin braids framing the face
+  const fall = taperTube(new THREE.CatmullRomCurve3([V(0, headR * 0.3, -headR * 0.75), V(0, -headR * 1.3, -headR * 2.3), V(0, -headR * 3.6, -headR * 2.9)]), headR * 0.62, headR * 0.3, 10, 10);
+  head.add(mesh(fall, E.hair));
+  for (const sd of [-1, 1]) head.add(mesh(taperTube(new THREE.CatmullRomCurve3([V(sd * headR * 0.78, headR * 0.15, headR * 0.35), V(sd * headR * 0.85, -headR * 0.8, headR * 0.3), V(sd * headR * 0.78, -headR * 1.7, headR * 0.25)]), headR * 0.12, headR * 0.08, 8, 6), E.hair));
+  root.add(head);
+  // the arms; the longbow in his left hand, upright at his side (raised and drawn to shoot)
+  const arms = new THREE.Group(); arms.name = 'arms';
+  arms.position.set(0, shoulderY - 0.05, 0);
+  for (const sd of [-1, 1]) {
+    const sleeve = taperTube(new THREE.CatmullRomCurve3([V(sd * 0.17, 0, 0), V(sd * 0.2, -0.16, 0.03), V(sd * 0.2, -0.3, 0.07)]), 0.05, 0.042, 6, 9);
+    const fore = taperTube(new THREE.CatmullRomCurve3([V(sd * 0.2, -0.28, 0.06), V(sd * 0.2, -0.4, 0.13), V(sd * 0.2, -0.5, 0.2)]), 0.036, 0.03, 6, 8);
+    arms.add(mesh(sleeve, E.tunic), mesh(fore, E.skin), at(mesh(new THREE.SphereGeometry(0.04, 10, 8), E.skin), sd * 0.2, -0.52, 0.21));
+  }
+  const bow = new THREE.Group(); bow.name = 'bow';
+  const limb = new THREE.CatmullRomCurve3([V(0, 0.78, 0.0), V(0, 0.45, 0.1), V(0, 0, 0.13), V(0, -0.45, 0.1), V(0, -0.78, 0.0)]);
+  bow.add(mesh(taperTube(limb, 0.016, 0.016, 18, 6), E.bow));
+  bow.add(at(mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 8), E.boots), 0, 0, 0.13)); // the grip
+  const string = new THREE.BufferGeometry().setFromPoints([V(0, 0.78, 0), V(0, -0.78, 0)]);
+  const sl = new THREE.Line(string, new THREE.LineBasicMaterial({ color: PAL.ink }));
+  sl.userData.noOutline = true; sl.userData.noFit = true;
+  bow.add(sl);
+  bow.position.set(-0.2, -0.52, 0.08);
+  arms.add(bow);
+  root.add(arms);
+  // legs in soft boots
+  for (const sd of [-1, 1]) {
+    const legG = new THREE.Group(); legG.name = sd < 0 ? 'legL' : 'legR';
+    legG.position.set(sd * 0.08, hipY - 0.06, 0);
+    const legLen = hipY - 0.12;
+    legG.add(mesh(taperTube(new THREE.LineCurve3(V(0, 0, 0), V(0, -legLen * 0.55, 0.004)), 0.06, 0.05, 4, 9), mix(E.tunic, PAL.ink, 0.25)));
+    legG.add(mesh(taperTube(new THREE.LineCurve3(V(0, -legLen * 0.5, 0.004), V(0, -legLen, 0.006)), 0.056, 0.05, 4, 9), E.boots));
+    const boot = new THREE.SphereGeometry(0.06, 12, 8); boot.scale(0.85, 0.5, 1.5);
+    legG.add(at(mesh(boot, E.boots), 0, -legLen - 0.025, 0.04));
+    root.add(mergeByMaterial(legG, legG.name));
+  }
+  return root;
+}
+
+// ---------------- v0.17c the hidden keepsakes (game/keepsakes.js) ----------------
+// Five of the gift jokes, small and readable at play scale (about 0.25–0.4 m), lying on the grass:
+// the red jello on its plate, the round Christmas ornament with its ribbon, the CD in its case,
+// the novel, and the marshmallow Peep farmer in overalls from the Creation diorama.
+export function keepsake(kind) {
+  const g = new THREE.Group(); g.name = `Keepsake_${kind}`;
+  if (kind === 'jello') {
+    g.add(at(mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.025, 24), 0xf6f3ec), 0, 0.012, 0)); // the plate
+    const dome = mesh(new THREE.SphereGeometry(0.14, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), 0xc8332e);
+    dome.material = dome.material.clone(); dome.material.transparent = true; dome.material.opacity = 0.85;
+    dome.scale.set(1, 0.85, 1);
+    g.add(at(dome, 0, 0.025, 0));
+    g.add(at(mesh(box(0.1, 0.004, 0.07), PAL.paper, { ink: false, shadow: false }), 0.01, 0.07, 0.02, -0.4, 0.3, 0)); // the drawing inside
+  } else if (kind === 'ornament') {
+    g.add(at(mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.02, 24), 0xe9e2d0), 0, 0.13, 0, Math.PI / 2, 0, 0));
+    g.add(at(mesh(new THREE.TorusGeometry(0.13, 0.012, 6, 24), PAL.red), 0, 0.13, 0));
+    g.add(at(mesh(new THREE.TorusGeometry(0.04, 0.01, 6, 14), PAL.leaf), 0, 0.28, 0)); // the ribbon loop
+    g.add(at(mesh(box(0.03, 0.06, 0.012), PAL.ink, { ink: false }), -0.03, 0.12, 0.014)); // the cut-out farmer
+    g.add(at(mesh(new THREE.SphereGeometry(0.012, 6, 5), 0xfbf8ef, { ink: false }), 0.0, 0.1, 0.016)); // and what she holds
+    g.rotation.y = 0.3;
+  } else if (kind === 'cd') {
+    g.add(at(mesh(box(0.26, 0.02, 0.24), PAL.charcoal), 0, 0.01, 0, 0, 0.4, 0)); // the case
+    g.add(at(mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.006, 28), 0xd9dde2), 0.03, 0.024, 0.01, 0, 0.4, 0)); // the disc
+    g.add(at(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.008, 12), PAL.charcoal, { ink: false }), 0.03, 0.026, 0.01));
+    g.add(at(mesh(box(0.09, 0.004, 0.04), PAL.red, { ink: false }), -0.07, 0.022, -0.08, 0, 0.4, 0)); // its sticker
+  } else if (kind === 'novel') {
+    g.add(at(mesh(box(0.2, 0.05, 0.28), PAL.leaf), 0, 0.025, 0, 0, -0.3, 0)); // the cover
+    g.add(at(mesh(box(0.19, 0.04, 0.27), 0xf4eddc, { ink: false }), 0.008, 0.025, 0, 0, -0.3, 0)); // the pages
+    g.add(at(mesh(box(0.1, 0.004, 0.1), PAL.flower, { ink: false, shadow: false }), 0, 0.052, 0.02, 0, -0.3, 0)); // sunflowers on it
+  } else if (kind === 'peep') {
+    const body = new THREE.SphereGeometry(0.09, 16, 12); body.scale(1, 1.3, 0.9);
+    g.add(at(mesh(body, 0xf2d64b), 0, 0.12, 0));
+    g.add(at(mesh(new THREE.SphereGeometry(0.06, 14, 10), 0xf2d64b), 0, 0.25, 0.02));
+    for (const sd of [-1, 1]) g.add(at(mesh(new THREE.SphereGeometry(0.009, 6, 5), PAL.ink, { ink: false, shadow: false }), sd * 0.022, 0.265, 0.073));
+    g.add(at(mesh(new THREE.ConeGeometry(0.012, 0.03, 6), 0xe08a2e, { ink: false }), 0, 0.25, 0.085, Math.PI / 2, 0, 0)); // the beak
+    const overalls = new THREE.CylinderGeometry(0.083, 0.09, 0.11, 16, 1, true); overalls.scale(1, 1, 0.9);
+    const o = mesh(overalls, PAL.denim); o.material = o.material.clone(); o.material.side = THREE.DoubleSide;
+    g.add(at(o, 0, 0.08, 0));
+    for (const sd of [-1, 1]) g.add(at(mesh(box(0.012, 0.09, 0.01), PAL.denim, { ink: false }), sd * 0.035, 0.16, 0.075)); // the straps
+  }
+  return g;
+}
+
+// v0.17 the warning arrow (A09): a blunt practice arrow, a wooden shaft with a round felt tip and
+// red-and-cream fletching, 0.62 m, along +Z (the tip at +Z). It never strikes anything: the
+// archer looses it into the empty ground beside the bird.
+export function warningArrow() {
+  const g = new THREE.Group(); g.name = 'WarningArrow';
+  g.add(at(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.6, 6), 0xd7c7a3), 0, 0, 0, Math.PI / 2, 0, 0));
+  g.add(at(mesh(new THREE.SphereGeometry(0.022, 8, 6), PAL.charcoal), 0, 0, 0.3)); // the blunt felt tip
+  for (let k = 0; k < 3; k++) {
+    const f = mesh(box(0.004, 0.035, 0.08), k ? PAL.cream : PAL.red, { ink: false });
+    f.position.set(0, 0, -0.26);
+    f.rotation.z = (k / 3) * Math.PI * 2;
+    f.geometry.translate(0, 0.022, 0);
+    g.add(f);
+  }
+  return g;
+}
+
+// v0.17 the bench stain (A22 item 8): a small white bird dropping with a grey centre, flat on the
+// seat, about 12 cm across
+export function benchStain() {
+  const g = new THREE.Group(); g.name = 'BenchStain';
+  const blob = (r, c, y, x = 0, z = 0) => at(mesh(new THREE.CircleGeometry(r, 12), c, { ink: false, shadow: false }), x, y, z, -Math.PI / 2, 0, 0);
+  g.add(blob(0.06, 0xf4f1ea, 0.002), blob(0.025, 0xf4f1ea, 0.002, 0.06, 0.03), blob(0.018, 0xf4f1ea, 0.002, -0.05, -0.045), blob(0.022, 0x8c8f8a, 0.004, 0.006, -0.004));
+  const edge = at(mesh(new THREE.RingGeometry(0.058, 0.066, 16), PAL.ink, { ink: false, shadow: false }), 0, 0.003, 0, -Math.PI / 2, 0, 0);
+  edge.material = edge.material.clone(); edge.material.transparent = true; edge.material.opacity = 0.5;
+  g.add(edge);
+  return g;
+}
+
 // ---------------- v0.16 the egg hunt: the bird, the egg, the sparkle ----------------
 // The captain: "When you get an easter egg, a bird flies by and drops an egg. That's the
 // animation of how you get it." The bird is the sky's check-mark bird come down: an ink-blue body

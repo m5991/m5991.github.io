@@ -36,18 +36,28 @@
 // sparkles, a bird drops its egg near her, she picks it up and the song is hers to listen to and
 // download (game/songs.js); a kids edition (kids/, or ?edition=kids) has only the kids' songs and
 // no Suno links, and its own save; the hired archer stands at his post and says his line.
+// v0.17 (spec §7, §6.5, §5.1, §10.5): birds come for the crops from the second crop plot on (game/
+// birds.js decides, the ledger takes, capped); Wave, or a hired archer's warning arrow, sends one
+// off; a bird may leave a stain on the restored bench, cleaned in a second; a second archer can be
+// hired; the end credits follow the finale; the Who-Knows plant says hello.
 import * as THREE from 'three';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER_LINES, BASE_STAGE, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER2_LINES, ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
   apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
-  tableCap, tables,
+  missingPrereqs, tableCap, tables,
 } from './game/ledger.js';
+import { createBirds } from './game/birds.js';
+import { createCredits } from './ui/credits.js';
+import { createSongPlayer, fmtTime } from './ui/songplayer.js';
+import { createBeat, lowEnergy } from './audio/beat.js';
+import { eveningAt } from './game/evening.js';
+import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft } from './game/keepsakes.js';
 import { createDiyHint } from './game/hints.js';
 import { buildBar, PATCH_NAME, WOOD_SOURCES } from './game/guide.js';
-import { E21_COINS, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLabel, songsFor, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
+import { E21_COINS, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLabel, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
 import { Hammering } from './world/build.js';
 import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
@@ -68,7 +78,7 @@ import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
 import { CameraRig } from './world/camera.js';
 import { outlines } from './world/greybox.js';
-import { configureShadows, setLookResolution } from './world/look.js';
+import { configureShadows, INK_ALL, INK_OFF, setInkFront, setLookResolution } from './world/look.js';
 import { VANESSA_START } from './world/layout.js';
 import { createHud } from './ui/hud.js';
 import { createCards } from './ui/cards.js';
@@ -139,7 +149,13 @@ async function boot() {
   let data = createSaveData();
   let lastSaveAt = 0;
   const hud = createHud();
-  const cards = createCards($('card'));
+  // v0.17b: one song player for the game: a song keeps playing when its card or the menu closes,
+  // in place of the theme, until it ends or is stopped (ui/songplayer.js)
+  const songs = createSongPlayer({
+    onActive: (on) => (on ? audio.holdMusic('song') : audio.releaseMusic('song')),
+    muted: () => !audio.settings.soundEnabled,
+  });
+  const cards = createCards($('card'), { player: songs });
   const coach = createCoach();
   const prefersReduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   const reducedMotion = () => prefersReduced || data.settings.reducedMotion;
@@ -191,7 +207,7 @@ async function boot() {
   // E21_COINS) a bird flies over and drops the egg near her; walking up to it picks it up, and the
   // song is found (saved at once, in `discoveries`) and its card opens: listen in the game, download
   // the MP3, and in the full edition open it in Suno. Session-only state; nothing in the ledger.
-  const hunt = { busy: false, egg: null, id: null, restMs: 0, eggs: 0, at: new THREE.Vector3() };
+  const hunt = { busy: false, egg: null, id: null, restMs: 0, eggs: 0, at: new THREE.Vector3(), moment: null };
   const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !opening.active && rig.mode !== 'whole';
   function spotHere(heroXZ) {
     for (const id of spotsWithEggs(EDITION, data.discoveries)) {
@@ -211,9 +227,171 @@ async function boot() {
     if (hunt.busy) return;
     hunt.restMs = Math.max(0, hunt.restMs - dt);
     if (hunt.restMs > 0 || cards.isOpen) return;
+    // the money song comes by itself, wherever she is
+    const due = nextEgg(data.ledger, { edition: EDITION, discoveries: data.discoveries, spot: null });
+    if (due) { bringEgg(due); return; }
+    // v0.17c: at a spot, its small moment first (songs.js SPOTS act), then the bird
+    const m = hunt.moment;
+    if (m) {
+      m.ms += dt;
+      if (hero.moving) { hunt.moment = null; return; } // walking off calls it off
+      if (m.ms >= m.act.ms) {
+        hunt.moment = null;
+        const id = nextEgg(data.ledger, { edition: EDITION, discoveries: data.discoveries, spot: m.spot });
+        if (id) bringEgg(id);
+      }
+      return;
+    }
     const spot = spotHere(heroXZ);
-    const id = nextEgg(data.ledger, { edition: EDITION, discoveries: data.discoveries, spot });
-    if (!id) return;
+    const act = spot && spotAct(spot);
+    if (act && $('context').hidden) hud.setContext(act.verb, () => startMoment(spot));
+  }
+  // ---------- v0.17c: the keepsakes hidden on the finished farm (game/keepsakes.js) ----------
+  let creditsContent = null;
+  const loadCreditsContent = () => (creditsContent ??= fetch('assets/credits/credits.json').then((r) => r.json()).catch(() => null));
+  function updateKeepsakes(dt, heroXZ) {
+    const out = inHunt();
+    data.keepsakes ??= {};
+    world.updateKeepsakes(dt, { out, found: data.keepsakes, hero: heroXZ });
+    if (!out || cards.isOpen || hunt.moment) return;
+    for (const id of keepsakesLeft(data.keepsakes)) {
+      const p = world.keepsakePos(id);
+      if (p && Math.hypot(p.x - heroXZ.x, p.z - heroXZ.z) <= KEEPSAKE_REACH_M) { findKeepsake(id); break; }
+    }
+  }
+  function findKeepsake(id) {
+    data.keepsakes = { ...data.keepsakes, [id]: data.ledger.activeMs };
+    persist(); // kept before it is shown
+    world.pickKeepsake(id);
+    sfx.cue('complete');
+    hud.announce(`Found a keepsake: ${KEEPSAKES[id].label}`);
+    setTimeout(() => keepsakeCard(id), reducedMotion() ? 150 : 650);
+  }
+  async function keepsakeCard(id) {
+    if (cards.isOpen || !session.playing) { setTimeout(() => keepsakeCard(id), 800); return; }
+    const c = await loadCreditsContent();
+    input.release(); hero.halt(); loop.pause('card');
+    const n = foundKeepsakes(data.keepsakes).length;
+    cards.prints({
+      title: `Found: ${KEEPSAKES[id].label}`,
+      text: `One of Vanessa's gift jokes, hidden on the farm. ${keepsakeLine(data.keepsakes)}.`,
+      prints: keepsakePrints(id, c),
+      left: n < KEEPSAKE_IDS.length ? 'The others are hidden around the farm: look for a glint.' : 'That was the last one. Pause → Keepsakes shows them all.',
+      onClose: () => loop.resume('card'),
+    });
+  }
+  async function openKeepsakes() {
+    const c = await loadCreditsContent();
+    const found = foundKeepsakes(data.keepsakes);
+    const left = keepsakesLeft(data.keepsakes);
+    cards.prints({
+      title: `Keepsakes · ${found.length} of ${KEEPSAKE_IDS.length}`,
+      text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes are hidden on the finished farm. Look for a glint.',
+      prints: found.flatMap((id) => keepsakePrints(id, c)),
+      left: left.length && foundCount(EDITION, data.discoveries) >= songsFor(EDITION).length ? `Hints: ${left.map((id) => KEEPSAKES[id].hint).join(' ')}` : left.length ? `${left.length} still hidden.` : '',
+      cancel: 'Close',
+    });
+  }
+  $('btn-keepsakes').onclick = () => openKeepsakes();
+
+  // ---------- v0.17c: "Draw it": the farm as it stands, in pencil on paper, to keep ----------
+  // One frame at the drawing's framing (the whole-farm camera), drawn larger than the screen
+  // (1600 px on the long side), with Vanessa at her place in the drawing's pose; then everything
+  // goes back. The picture is a PNG to save.
+  let drawUrl = null;
+  async function drawIt() {
+    closePause();
+    loop.pause('draw');
+    const was = { mode: rig.mode, pos: hero.position.clone(), yaw: hero.yaw, w: view.w, h: view.h, pr: renderer.getPixelRatio() };
+    const p = proj.groundAt(VANESSA_START.u, VANESSA_START.v);
+    hero.place(p.x, p.z);
+    hero.yaw = FINALE_YAW; hero.view.rotation.y = FINALE_YAW;
+    hero.showFinalePose(true);
+    hero.stack.root.scale.setScalar(0.01);
+    world.showHeldTool(false);
+    world.pencilLook(true);
+    setInkFront(INK_ALL); // every surface in its ink outline on paper, as on the opening's page
+    if (opening.heroInk) setInkFront(INK_ALL, opening.heroInk);
+    // landscape 4:3 at 1600 x 1200, like the paper
+    const W = 1600; const H = 1200;
+    renderer.setPixelRatio(1);
+    renderer.setSize(W, H, false);
+    setLookResolution(renderer);
+    rig.mode = 'whole';
+    rig.update(0, hero.position, { w: W, h: H, top: 0, bottom: 0 });
+    rig.camera.updateMatrixWorld();
+    renderer.render(scene, rig.camera);
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+    // everything back
+    setInkFront(INK_OFF);
+    if (opening.heroInk) setInkFront(INK_OFF, opening.heroInk);
+    world.pencilLook(false);
+    hero.showFinalePose(false);
+    hero.stack.root.scale.setScalar(1);
+    world.showHeldTool(true);
+    hero.place(was.pos.x, was.pos.z);
+    hero.yaw = was.yaw; hero.view.rotation.y = was.yaw;
+    rig.mode = was.mode; rig.snap = true;
+    renderer.setPixelRatio(was.pr);
+    layout();
+    loop.resume('draw');
+    if (!blob) { hud.toast('The picture could not be made in this browser.', 3000); return; }
+    if (drawUrl) URL.revokeObjectURL(drawUrl);
+    drawUrl = URL.createObjectURL(blob);
+    input.release(); hero.halt(); loop.pause('card');
+    cards.picture({
+      title: 'Your farm, in pencil',
+      text: mainComplete(data.ledger) ? 'The whole farm, drawn back onto paper.' : 'The farm as it stands now, drawn on paper. Come back when more is built.',
+      src: drawUrl,
+      download: 'The Farm, drawn.png',
+      onClose: () => loop.resume('card'),
+    });
+  }
+  $('btn-draw').onclick = () => drawIt();
+
+  // ---------- v0.17c: the farm moves to the song playing (audio/beat.js, world.dance) ----------
+  // The song's element goes through an analyser once (the audio owner's context); its low end
+  // drives the sway and the beats. Muted, or with no context, a steady pulse stands in.
+  const beat = createBeat();
+  const tap = { el: null, analyser: null, bytes: null };
+  function songEnergy() {
+    const el = songs.element;
+    const ctx = audio.context;
+    if (!el || !ctx || el.muted) return null;
+    if (tap.el !== el) {
+      tap.el = el; tap.analyser = null;
+      try {
+        const src = ctx.createMediaElementSource(el);
+        const an = ctx.createAnalyser();
+        an.fftSize = 1024;
+        src.connect(an); an.connect(ctx.destination);
+        tap.analyser = an; tap.bytes = new Uint8Array(an.frequencyBinCount);
+      } catch { tap.analyser = null; }
+    }
+    if (!tap.analyser) return null;
+    tap.analyser.getByteFrequencyData(tap.bytes);
+    return lowEnergy(tap.bytes);
+  }
+  function updateDance(dt) {
+    const on = songs.state.playing && !finale.active && !credits.active;
+    const b = on ? beat.update(dt, songEnergy()) : { level: 0, beat: false };
+    world.dance(dt, { on, level: b.level, beat: b.beat });
+  }
+
+  function startMoment(spot) {
+    if (hunt.moment || hunt.busy || hunt.egg) return;
+    const act = spotAct(spot);
+    hunt.moment = { spot, act, ms: 0 };
+    hero.halt();
+    world.eggSpotPos(spot, tmpH);
+    hero.yawTarget = Math.atan2(tmpH.x - hero.body.position.x, tmpH.z - hero.body.position.z);
+    hero.celebrate(act.ms);
+    world.spotPoke(spot, act.word, hero.position);
+    sfx.cue(spot === 'door' ? 'tock' : 'cue');
+    hud.setContext(null, null);
+    hud.announce(`${act.verb}: ${act.word}`);
+  }
+  function bringEgg(id) {
     // the egg lands a step from her, on the camera's side, clear of the farm's footprints
     const at = world.freeSpotNear(hero.position);
     hunt.busy = true;
@@ -230,13 +408,13 @@ async function boot() {
     sfx.cue('crack');
     world.popEgg(egg).then(() => sfx.cue('complete'));
     hud.announce(`Song found: ${songLabel(id)}`);
+    // v0.17 (§5): every song found: the collection's paper stamp
+    if (foundCount(EDITION, data.discoveries) === songsFor(EDITION).length) setTimeout(() => hud.toast(`Every song found! All ${songsFor(EDITION).length} are in your song collection, stamped.`, 5200), 1500);
     setTimeout(() => songCard(id), reducedMotion() ? 200 : 700);
   }
   // are this build's song files here (tools/make-songs.mjs); asked once
   let songsHere = null;
   const songFilesHere = () => (songsHere ??= fetch(mp3Path(songsFor(EDITION)[0]), { method: 'HEAD' }).then((r) => r.ok).catch(() => false));
-  const songPlay = () => audio.holdMusic('song'); // the theme rests while a song plays
-  const songStop = () => audio.releaseMusic('song');
   async function songCard(id) {
     if (cards.isOpen || !session.playing) { setTimeout(() => songCard(id), 800); return; }
     const available = await songFilesHere();
@@ -248,10 +426,9 @@ async function boot() {
     cards.song({
       title: `♪ Song found: “${songLabel(id)}”`,
       text: `${id === 'E21' ? `You saved up ${E21_COINS} coins, and a bird brought the money song.` : `A bird brought it from ${SPOTS[SONGS[id].spot].label}.`} ${n} of ${all} songs found.`,
+      id, songTitle: songLabel(id),
       src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id, EDITION), available,
-      onPlay: (el) => { el.muted = !audio.settings.soundEnabled; songPlay(); },
-      onStop: songStop,
-      onClose: () => { songStop(); loop.resume('card'); },
+      onClose: () => { loop.resume('card'); },
     });
   }
   async function openSongbook() {
@@ -263,31 +440,151 @@ async function boot() {
       title: `Songs · ${mine.length} of ${all}`,
       intro: !eggPhase(data.ledger) ? 'The songs are hidden in eggs. Finish the house and colour the farm, and the egg hunt begins.' : mine.length ? 'Every song you have found. Listen here, or download it.' : 'No song yet: walk to a sparkle on the farm and a bird brings an egg.',
       songs: mine.map((id) => ({ id, title: `${String(SONGS[id].n).padStart(2, '0')} · ${songLabel(id)}`, src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id, EDITION) })),
+      stamp: mine.length === all ? `All ${all} songs found` : '',
       left: eggPhase(data.ledger) && left.length ? `Still to find: songs at ${left.join(', ')}${mine.includes('E21') || !songsFor(EDITION).includes('E21') ? '' : ', and one for a big purse'}.` : '',
       available,
-      onPlay: (el) => { el.muted = !audio.settings.soundEnabled; songPlay(); },
-      onStop: songStop,
-      onClose: songStop,
     });
   }
 
   // ---------- v0.16: what the archer says when he is hired ----------
-  const speech = { el: $('speech'), until: 0 };
-  function archerSays(line, ms = 7000) {
+  const speech = { el: $('speech'), until: 0, id: 'A1' };
+  function archerSays(line, ms = 7000, id = 'A1') {
+    speech.id = id;
+    speech.el.querySelector('.who').textContent = id === 'A2' ? 'Second archer' : 'Archer';
     speech.el.querySelector('.text').textContent = `“${line}”`;
     speech.el.hidden = false;
     speech.until = performance.now() + ms;
-    hud.announce(`The archer: ${line}`);
+    hud.announce(`The ${id === 'A2' ? 'second archer' : 'archer'}: ${line}`);
   }
   function placeSpeech() {
     if (speech.el.hidden) return;
-    if (performance.now() > speech.until || !world.archer?.root.visible || rig.mode === 'whole' || finale.active) { speech.el.hidden = true; return; }
-    world.archerHead(tmpP).project(rig.camera);
+    if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active) { speech.el.hidden = true; return; }
+    world.archerHead(tmpP, speech.id).project(rig.camera);
     const x = ((tmpP.x + 1) / 2) * view.w; const y = ((1 - tmpP.y) / 2) * view.h;
     const w = speech.el.offsetWidth || 260;
     const cx = Math.max(16 + w / 2, Math.min(view.w - 16 - w / 2, x));
     speech.el.style.transform = `translate(${(cx - w / 2).toFixed(1)}px, ${(Math.max((live.playTop || live.hudBottom) + speech.el.offsetHeight + 14, y) - speech.el.offsetHeight - 10).toFixed(1)}px)`;
     speech.el.style.setProperty('--tail', `${Math.max(14, Math.min(w - 14, x - (cx - w / 2))).toFixed(0)}px`);
+  }
+
+  // ---------- v0.17: the birds (spec §7; game/birds.js decides, the ledger takes) ----------
+  // Session-only: the visit's clock is not saved (the kinds' rotation and every take are).
+  const birds = createBirds();
+  const birdAt = new THREE.Vector3();
+  let cleaning = null; // { ms } while she cleans the bench (1 s standing still)
+  const benchSpot = () => world.benchSeat(new THREE.Vector3());
+  function birdCtx(heroXZ) {
+    const l = data.ledger;
+    return {
+      l,
+      hero: heroXZ,
+      nodePos: (id) => world.stations[id]?.pos,
+      bench: (() => { const b = benchSpot(); return { x: b.x, z: b.z }; })(),
+      archers: world.archerPosts(l),
+      calm: data.settings.helpMeFinish || data.settings.birdsNeverSteal,
+      heroSafe: hammering.active || ctxTargets.some((x) => x.kind === 'table' && inReach(heroXZ, x, SALE_REACH_M)),
+      blocked: saleShowing || hammering.active || finale.active || opening.active || cards.isOpen || rig.mode === 'whole' || !session.playing || !!hunt.egg || hunt.busy,
+    };
+  }
+  // the point the bird goes for this frame: the top of the plant, the bench seat, over her head
+  function birdTarget(t) {
+    if (!t) return null;
+    if (t.kind === 'node') return world.nodeTop(t.id, birdAt);
+    if (t.kind === 'perch') return world.benchSeat(birdAt);
+    return hero.stack.count ? hero.stack.topWorld(birdAt) : birdAt.copy(hero.position).setY(1.9);
+  }
+  function updateBirds(dt, heroXZ) {
+    const acts = birds.update(dt, birdCtx(heroXZ));
+    for (const act of acts) {
+      switch (act.a) {
+        case 'turn': commit({ t: 'birdTurn' }); break;
+        case 'warn': hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); sfx.cue('chirp'); break;
+        case 'land': sfx.cue('chirp'); break;
+        case 'draw': world.archerDraw(act.archer, act.at, BIRDS.drawMs); break;
+        case 'shoot':
+          world.archerShoot(act.archer, act.at).then(() => sfx.cue('thud'));
+          sfx.cue('squawk');
+          world.birdShoo();
+          hud.announce(`The ${act.archer === 'A2' ? 'second archer' : 'archer'} looses a warning arrow, and the bird flies off with nothing`);
+          break;
+        case 'take': {
+          const r = commit(act.tx);
+          if (r.ok) { const e = r.events.find((x) => x.type === 'stolen'); if (e) world.birdCarry(e.res); }
+          break;
+        }
+        case 'stain': commit({ t: 'stain' }); break;
+        case 'leave': if (act.why === 'wave') world.birdShoo(); break;
+        default:
+      }
+    }
+    const st = birds.state;
+    world.updateBird(dt, st, birdTarget(st.target));
+    $('btn-wave').hidden = !birds.wavable;
+  }
+  // a free Wave (the Wave button, E / Space while a bird threatens, or a tap on the bird)
+  function doWave() {
+    if (!birds.wave()) return;
+    hero.celebrate(900);
+    world.birdShoo();
+    sfx.cue('squawk');
+    hud.announce('Shoo! The bird flies off with nothing');
+    $('btn-wave').hidden = true;
+  }
+  $('btn-wave').onclick = doWave;
+
+  // ---------- v0.17b: the now-playing bar (ui/songplayer.js) ----------
+  {
+    const bar = $('now-playing');
+    const range = bar.querySelector('input');
+    const time = bar.querySelector('.np-time');
+    const toggle = bar.querySelector('[data-act="toggle"]');
+    let dragging = false;
+    toggle.onclick = () => songs.toggle();
+    bar.querySelector('[data-act="stop"]').onclick = () => { songs.stop(); $('btn-pause').focus({ preventScroll: true }); };
+    range.addEventListener('input', () => { dragging = true; time.textContent = `${fmtTime(Number(range.value))} / ${fmtTime(Number(range.max))}`; });
+    range.addEventListener('change', () => { dragging = false; songs.seek(Number(range.value)); });
+    songs.subscribe((st) => {
+      bar.hidden = !st.id;
+      if (!st.id) return;
+      bar.querySelector('.np-title').textContent = `♪ ${st.title}`;
+      toggle.firstElementChild.textContent = st.playing ? '❚❚' : '▶';
+      toggle.setAttribute('aria-label', st.playing ? 'Pause the song' : 'Play the song');
+      if (st.duration) range.max = String(st.duration);
+      if (!dragging) { range.value = String(st.t); time.textContent = st.error ? 'Could not play' : `${fmtTime(st.t)} / ${fmtTime(st.duration)}`; }
+    });
+  }
+  // ---------- v0.17: the Who-Knows plant says hello (spec §10.5) ----------
+  // Once per save, the first time she comes within 3 of her collision diameters (1.8 m) of it,
+  // while no card, bird, build or sale is under way: no input lock, no camera move, no sound of a
+  // song, no discovery. When she idles 4 s beside it she glances at it.
+  const who = { idleMs: 0, glanced: false, far: false };
+  function updateWhoKnows(dt, heroXZ) {
+    const p = world.whoKnowsPos(tmpH);
+    if (!p) return;
+    const d = Math.hypot(p.x - heroXZ.x, p.z - heroXZ.z);
+    world.updateWhoKnows(dt, { near: d < 2.4, happy: !!data.discoveries?.E25 });
+    // she must come up to it: her start spot (D17) is beside the bed, so it waits until she has
+    // walked away once and comes back
+    if (d > 2.6) who.far = true;
+    if (!data.session.whoKnowsHelloSeen && who.far && d < 1.8 && !birds.busy && !hammering.active && !saleShowing && !ix.working) {
+      data.session.whoKnowsHelloSeen = true;
+      persist();
+      world.whoKnowsHello(hero.position);
+      hud.announce('The Who-Knows plant gives a curious wiggle');
+    }
+    // the favourite spot: idling beside it, she glances at it (her soft smile is her idle face)
+    const idle = d < 1.6 && !hero.moving && !ix.working && !hammering.active;
+    who.idleMs = idle ? who.idleMs + dt : 0;
+    if (!idle) who.glanced = false;
+    if (who.idleMs >= 4000 && !who.glanced) { who.glanced = true; hero.yawTarget = Math.atan2(p.x - hero.body.position.x, p.z - hero.body.position.z); }
+  }
+
+  // the bench stain: standing still beside the bench for a second cleans it
+  function updateCleaning(dt) {
+    if (!cleaning) return;
+    if (hero.moving || !data.ledger.theft.stain) { cleaning = null; return; }
+    cleaning.ms += dt;
+    if (cleaning.ms >= BIRDS.cleanMs) { cleaning = null; commit({ t: 'cleanBench' }); }
   }
 
   function settleLedger() {
@@ -411,6 +708,22 @@ async function boot() {
           hud.announce(`A ${what} plant wilted`);
           break;
         }
+        case 'stolen': {
+          // v0.17 (§7): "-1 corn" by the HUD, said politely; the unit is simply gone
+          const unit = RESOURCE_UNIT[e.res];
+          if (e.from === 'carried') hud.bump(e.res);
+          hud.toast(`−1 ${unit}: a bird took ${e.from === 'carried' ? 'it from your head' : `one from the ${PATCH_NAME[e.res]}`}. Wave birds off, or hire an archer to guard the crops.`, 4200);
+          hud.announce(`A bird took one ${unit}`);
+          break;
+        }
+        case 'stained':
+          hud.toast('A bird left a mess on the bench. Stand by the bench and tap Clean the bench.', 4200);
+          hud.announce('A bird left a mess on the bench');
+          break;
+        case 'benchCleaned':
+          hud.announce('The bench is clean again');
+          sfx.cue('weed');
+          break;
         case 'toolTaken':
           hud.announce(`${cap(e.tool)} in hand`);
           break;
@@ -458,7 +771,11 @@ async function boot() {
             sfx.cue('complete');
             if (s.crop && first) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel. The yard-sale table is set up: walk past it with your ${PATCH_NAME[data.ledger.crop]}.`, 4800);
             else if (s.crop) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel.`, 4200);
-            if (s.hire) archerSays(ARCHER_LINES[0]); // v0.16: he arrives at his post and says his line
+            if (s.hire) archerSays(e.stage === 'A2' ? ARCHER2_LINES[0] : ARCHER_LINES[0], 7000, e.stage); // v0.16: he arrives at his post and says his line
+            // v0.17: once the archer and the raised bed stand, the optional second archer can come
+            if ((e.stage === 'A1' || e.stage === 'T0') && !data.ledger.stages.A2.committed && !missingPrereqs(data.ledger, 'A2').length) {
+              world.tweens.wait(7600).then(() => hud.toast(`A second archer can guard the tomatoes and the tables: ${STAGES.A2.coins} coins and ${STAGES.A2.W} wood, at his post between the raised bed and the tables. Optional.`, 5200));
+            }
             if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, another crop plot and the walls.', 5000);
             if (moreTables) {
               world.tableHold = false;
@@ -550,13 +867,14 @@ async function boot() {
     zone: $('stick-zone'), base: $('stick-base'), knob: $('stick-knob'),
     onAction: () => {
       if (cards.isOpen || loop.paused) return;
-      if (hud.diyHere) hud.triggerDiy();
+      if (birds.wavable) doWave(); // v0.17: a bird first
+      else if (hud.diyHere) hud.triggerDiy();
       else if (hud.saleShown) hud.triggerSale();
       else if (!$('context').hidden) hud.triggerContext();
       else if (hud.diyShown) hud.triggerDiy(); // away from the part: show the way
     },
     onTap: (x, y) => tapWorld(x, y),
-    onEscape: () => { if (cards.isOpen) return; if (opening.active) { if (opening.phase === 'running') opening.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) openPause(); },
+    onEscape: () => { if (cards.isOpen) return; if (credits.active) { credits.skip(); return; } if (!completedEl.hidden) { keepExploring(); return; } if (opening.active) { if (opening.phase === 'running') opening.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) openPause(); },
     onBlueprint: () => toggleBlueprint(),
     isBlocked: () => cards.isOpen || loop.paused,
   });
@@ -599,7 +917,14 @@ async function boot() {
     updateContext(heroXZ, dt);
     updateCoachState(dt, heroXZ, working);
     updateHunt(dt, heroXZ);
-    hud.setGoal(eggPhase(data.ledger) ? huntLine(EDITION, data.discoveries) : goal.text);
+    updateKeepsakes(dt, heroXZ);
+    updateBirds(dt, heroXZ);
+    updateCleaning(dt);
+    updateWhoKnows(dt, heroXZ);
+    // v0.17c: with every song found, the goal line counts the keepsakes and gives the next hint
+    const allSongs = foundCount(EDITION, data.discoveries) >= songsFor(EDITION).length;
+    const nextKeep = keepsakesLeft(data.keepsakes ?? {})[0];
+    hud.setGoal(!eggPhase(data.ledger) ? goal.text : allSongs && nextKeep ? `${keepsakeLine(data.keepsakes)} · ${KEEPSAKES[nextKeep].hint}` : huntLine(EDITION, data.discoveries));
   }
 
   // the goal line; when it names stone, the rock nearest Vanessa that still has some (§3 P25-6)
@@ -666,6 +991,8 @@ async function boot() {
     if (tools && toolCtx.want && inReach(heroXZ, tools)) {
       const tool = toolCtx.want;
       hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
+    } else if (data.ledger.theft.stain && !cleaning && Math.hypot(benchSpot().x - heroXZ.x, benchSpot().z - heroXZ.z) < 1.9) {
+      hud.setContext('Clean the bench', () => { hero.halt(); cleaning = { ms: 0 }; }); // v0.17: one second, standing still
     } else hud.setContext(null, null);
     // nonmodal status: what Vanessa is doing or why the nearby source is idle
     let text = '';
@@ -678,6 +1005,8 @@ async function boot() {
       else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}`;
     } else if (hammering.active) {
       text = `DIY time! Building the ${STAGES[hammering.stage].label}…`;
+    } else if (cleaning) {
+      text = 'Cleaning the bench…';
     } else {
       const need = toolBlocked(data.ledger, heroXZ, ctxTargets, toolCtx);
       if (need) text = `You need the ${need}. It leans by the house.`;
@@ -696,6 +1025,9 @@ async function boot() {
         const of = Number.isFinite(capN) ? ` of ${capN}` : ' out';
         text = saleShowing ? 'Yard sale!' : n >= capN ? 'The tables are full: tap Yard Sale' : n >= 6 ? `Yard-sale tables · ${n}${of}. Tap Yard Sale, or bring more.` : `Yard-sale table · ${n} of 6. Walk past with crops to set them out.`;
       }
+      // v0.17: beside the raised bed's scribble, its name (§10.5: never a botanical one)
+      const wk = !text && world.whoKnowsPos(tmpS);
+      if (wk && Math.hypot(wk.x - heroXZ.x, wk.z - heroXZ.z) < 0.9) text = 'Who-Knows plant';
       const near = ctxTargets.filter((x) => ['node', 'stick', 'pile', 'rock'].includes(x.kind) && inReach(heroXZ, x));
       for (const n of near) {
         if (text) break;
@@ -714,7 +1046,14 @@ async function boot() {
   // v0.12: a tap on the world that lands on the yard-sale stand holds the sale (the captain:
   // "you click the stand is more intuitive")
   function tapWorld(x, y) {
-    if (!session.playing || loop.paused || !saleReady(data.ledger)) return;
+    if (!session.playing || loop.paused) return;
+    // v0.17: a tap on (or near) a bird that threatens waves it off
+    const bp = birds.wavable && world.birdPos(tmpP);
+    if (bp) {
+      bp.project(rig.camera);
+      if (Math.hypot(((bp.x + 1) / 2) * view.w - x, ((1 - bp.y) / 2) * view.h - y) < 70) { doWave(); return; }
+    }
+    if (!saleReady(data.ledger)) return;
     const ndc = new THREE.Vector2((x / view.w) * 2 - 1, -(y / view.h) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, rig.camera);
@@ -762,6 +1101,8 @@ async function boot() {
     const go = (d) => {
       start(d);
       if (d === r.data && r.recoveryRock) later(() => hud.toast(recoveryNote(r.recoveryRock), 6000));
+      // v0.17 (§5): a finished farm opens on the completed menu (also after a reload in the credits)
+      if (mainComplete(d.ledger) && !overlay) later(() => showCompleted());
       if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), overlay })) {
         paper.place(view.w, view.h);
         opening.prepare();
@@ -778,6 +1119,7 @@ async function boot() {
     data = structuredClone(d);
     ix.reset();
     Object.assign(tut, { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null, dropNoted: false });
+    Object.assign(who, { idleMs: 0, glanced: false, far: false }); // v0.17: the Who-Knows hello waits for her to come up to it
     coachState = null;
     highlight = null;
     const pos = data.vanessa.x === null ? proj.groundAt(VANESSA_START.u, VANESSA_START.v) : new THREE.Vector3(data.vanessa.x, 0, data.vanessa.z);
@@ -794,14 +1136,20 @@ async function boot() {
     world.endSale();
     saleShowing = false;
     world.clearEggs();
-    Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0 });
+    Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null });
+    birds.reset(data.ledger.activeMs);
+    cleaning = null;
     speech.el.hidden = true;
     $('btn-replay').hidden = !mainComplete(data.ledger);
+    $('btn-credits').hidden = !mainComplete(data.ledger);
+    $('btn-keepsakes').hidden = !mainComplete(data.ledger);
+    if (backdrop) { holdBackdrop(false); completedEl.hidden = true; loop.resume('done'); }
     hud.render(data.ledger);
     hud.setGoal(nextGoal(data.ledger, { toolsCome: data.settings.helpMeFinish }).text);
     persist();
     settleLedger(); // e.g. a test save from before v0.9 whose corn-plot weeds are already cleared
     $('set-help').checked = data.settings.helpMeFinish;
+    $('set-birds').checked = data.settings.birdsNeverSteal;
     titleEl.hidden = true;
     session.playing = true;
     loop.resume('title');
@@ -889,12 +1237,93 @@ async function boot() {
       document.body.classList.remove('finale');
       $('btn-skip').hidden = true;
       $('btn-replay').hidden = !mainComplete(data.ledger);
+      $('btn-credits').hidden = !mainComplete(data.ledger);
+      $('btn-keepsakes').hidden = !mainComplete(data.ledger);
       loop.resume('finale'); // the camera eases back to Vanessa (renderStep)
+      // v0.17 (§5.1): the first time, the end credits follow, then the completed menu
+      if (mainComplete(data.ledger) && !data.session.creditsSeen) { credits.start(); return; }
       hud.toast(foundCount(EDITION, data.discoveries) < songsFor(EDITION).length ? 'The farm is finished, in colour. Now the egg hunt: walk to the sparkles, and the birds bring you the songs.' : 'The farm is finished, in colour. Keep exploring.', 5500);
       $('btn-pause').focus();
     },
   });
   $('btn-skip').onclick = () => finale.skip();
+
+  // ---------- v0.17: the end credits (§5.1) and the completed menu (§5) ----------
+  // Both sit over the coloured drawing at the finale camera: the play elements away, Vanessa at
+  // D17 in the drawing's pose, nothing on her head; the world is paused behind them.
+  const completedEl = $('completed');
+  let backdrop = false;
+  function holdBackdrop(on) {
+    backdrop = on;
+    document.body.classList.toggle('backdrop', on); // no HUD over the drawing
+    if (on) {
+      ix.reset(); input.release(); hero.halt();
+      const p = proj.groundAt(VANESSA_START.u, VANESSA_START.v);
+      hero.place(p.x, p.z);
+      hero.yaw = FINALE_YAW; hero.yawTarget = FINALE_YAW; hero.view.rotation.y = FINALE_YAW;
+      hero.showFinalePose(true);
+      hero.stack.root.scale.setScalar(0.01);
+      world.showHeldTool(false);
+      world.setPlayHidden(1);
+      rig.wholeBlend = 1;
+    } else {
+      hero.showFinalePose(false);
+      hero.stack.root.scale.setScalar(1);
+      world.showHeldTool(true);
+      world.setPlayHidden(0);
+    }
+  }
+  const credits = createCredits({
+    el: $('credits'),
+    fetchJson: (url) => fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.json(); }),
+    soundOn: () => audio.settings.soundEnabled,
+    reducedMotion,
+    holdMusic: () => audio.holdMusic('credits'),
+    releaseMusic: () => audio.releaseMusic('credits'),
+    onStart: () => {
+      songs.stop(); // the credits play their own song
+      completedEl.hidden = true;
+      holdBackdrop(true);
+      loop.pause('credits');
+      document.body.classList.add('credits');
+      hud.announce('The end credits');
+    },
+    onEnd: () => {
+      document.body.classList.remove('credits');
+      loop.resume('credits');
+      if (!data.session.creditsSeen) { data.session.creditsSeen = true; persist(); }
+      showCompleted();
+    },
+  });
+  function showCompleted() {
+    holdBackdrop(true);
+    loop.pause('done');
+    const n = foundCount(EDITION, data.discoveries);
+    const all = songsFor(EDITION).length;
+    $('completed-note').textContent = n < all
+      ? `The house is a home, and the whole drawing is in colour. ${n} of ${all} songs found: keep exploring, and the birds bring you the rest.`
+      : `The house is a home, the whole drawing is in colour, and every song is found (${all} of ${all}).`;
+    $('btn-collection').textContent = `Song collection (${n}/${all})`;
+    completedEl.hidden = false;
+    $('btn-explore').focus({ preventScroll: true });
+  }
+  function keepExploring() {
+    completedEl.hidden = true;
+    holdBackdrop(false);
+    loop.resume('done');
+    rig.snap = true;
+    hud.toast(foundCount(EDITION, data.discoveries) < songsFor(EDITION).length ? 'Keep exploring: walk to the sparkles, and the birds bring you the songs.' : 'Keep exploring.', 4200);
+    $('btn-pause').focus({ preventScroll: true });
+  }
+  $('btn-explore').onclick = keepExploring;
+  $('btn-collection').onclick = () => openSongbook();
+  $('btn-replay-done').onclick = () => { completedEl.hidden = true; holdBackdrop(false); loop.resume('done'); finale.start(); };
+  $('btn-credits-done').onclick = () => credits.start();
+  $('btn-credits').onclick = () => { closePause(); credits.start(); };
+  window.addEventListener('keydown', (e) => {
+    if (!credits.active || cards.isOpen) return;
+    if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); credits.togglePause(); }
+  });
   // v0.16: the songbook, and the edition named in Pause
   $('btn-songs').onclick = () => openSongbook();
   if (EDITION === 'kids') { $('edition-note').hidden = false; $('edition-note').textContent = 'Kids version: the songs for kids, to listen to here.'; }
@@ -949,6 +1378,7 @@ async function boot() {
   // ends on the farm as it is now
   const watchOpening = () => {
     closePause();
+    songs.stop(); // the opening starts the theme from its intro
     audio.restartMusic();
     paper.place(view.w, view.h);
     opening.prepare();
@@ -962,6 +1392,8 @@ async function boot() {
   $('btn-pause').onclick = openPause;
   // v0.12: Help me finish: no weeds creep over the crops and no stick is lost (saved)
   $('set-help').onchange = (ev) => { data.settings.helpMeFinish = ev.target.checked; persist(); };
+  // v0.17 (§7): an accessibility setting of its own: birds still come, but never take anything
+  $('set-birds').onchange = (ev) => { data.settings.birdsNeverSteal = ev.target.checked; persist(); };
   $('btn-resume').onclick = closePause;
   $('btn-whole').onclick = () => enterWhole(false);
   $('btn-overlay').onclick = () => enterWhole(true);
@@ -977,6 +1409,8 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { ix.reset(); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
     audio.setHidden(document.hidden);
+    credits.setHidden(document.hidden);
+    if (document.hidden) songs.pause(); // like the theme; Play on the bar picks it up again
   });
 
   // ---------- audio (audio/audio.js): the single owner; starts on an explicit gesture ----------
@@ -1003,7 +1437,7 @@ async function boot() {
     promptBtn.hidden = !p;
     if (p) promptBtn.textContent = PROMPTS[p];
   }
-  soundBtn.onclick = () => audio.toggleSound();
+  soundBtn.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); };
   $('opening-sound').onclick = () => audio.toggleSound(); // the page's corner toggle (P26-1)
   $('vol-music').oninput = (e) => audio.setMusicVolume(Number(e.target.value) / 100);
   $('vol-effects').oninput = (e) => audio.setEffectsVolume(Number(e.target.value) / 100);
@@ -1175,7 +1609,9 @@ async function boot() {
   function renderStep(dt) {
     opening.update(dt);
     finale.update(dt);
-    if (!finale.active && !opening.active && rig.wholeBlend > 0) rig.wholeBlend = Math.max(0, rig.wholeBlend - dt / 900); // back to Vanessa
+    credits.update(dt);
+    if (backdrop) rig.wholeBlend = 1; // the credits and the completed menu: the drawing's frame
+    else if (!finale.active && !opening.active && rig.wholeBlend > 0) rig.wholeBlend = Math.max(0, rig.wholeBlend - dt / 900); // back to Vanessa
     rig.update(dt, hero.position, view);
     const f = rig.focus;
     // the sun light follows what the camera frames, so shadows stay sharp in the drawing frame
@@ -1187,6 +1623,11 @@ async function boot() {
     world.updateLooks(dt);
     world.updateSmoke(dt);
     world.updateArcher(dt);
+    updateDance(dt);
+    // v0.17c: the finished farm's evening and its fireflies
+    const ev = session.playing && !finale.active && !credits.active && !backdrop ? eveningAt(data.ledger.activeMs, mainComplete(data.ledger)) : 0;
+    world.updateFireflies(dt, ev);
+    $('evening').style.opacity = String(ev.toFixed(3));
     world.updateSky(rig.camera);
     if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints()); updateStackCap(performance.now()); }
     updateCoach();
@@ -1320,7 +1761,7 @@ async function boot() {
         return done;
       },
       finale, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
-      hunt, EDITION, openSongbook, songCard, archerSays, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0 }); },
+      hunt, EDITION, openSongbook, songCard, archerSays, birds, doWave, credits, showCompleted, keepExploring, songs, startMoment, findKeepsake, openKeepsakes, drawIt, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
       holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),
     };

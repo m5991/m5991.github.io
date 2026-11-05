@@ -2,7 +2,7 @@
 // localStorage, written synchronously after every accepted ledger transaction. Storage that is
 // denied or full degrades to disclosed session-only play; a corrupt payload offers the last
 // good copy or a new game, never a silent reset.
-import { CAPACITY, CROP_STAGES, NODES, PILES, ROCKS, STAGE_ORDER, STICK_SLOTS, WEEDS } from './data.js';
+import { ALL_STAGES, CAPACITY, CROP_STAGES, NODES, OPTIONAL_STAGES, PILES, ROCKS, STICK_SLOTS, WEEDS } from './data.js';
 import { createLedger, mainComplete, stoneShortfall, validateLedger } from './ledger.js';
 
 export const SCHEMA = 5;
@@ -15,13 +15,15 @@ export function createSaveData() {
   return {
     schema: SCHEMA,
     ledger: createLedger(),
-    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false },
+    // v0.17: creditsSeen (spec §5.1), set when the end credits have played once
+    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false },
     vanessa: { x: null, z: null }, // validated position; null = start position
     // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
     // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)
     settings: { reducedMotion: false, birdsNeverSteal: false, helpMeFinish: false },
     discoveries: {},
     archers: {},
+    keepsakes: {}, // v0.17c: the gift jokes found on the farm, { id: active ms when found }
   };
 }
 
@@ -138,7 +140,7 @@ export function migratePreV012(d0) {
   const l = d.ledger;
   l.yard ??= { W: 0, R: 0 };
   const stages = l.stages ?? {};
-  for (const id of STAGE_ORDER) {
+  for (const id of ALL_STAGES) {
     const st = stages[id];
     if (!st) { stages[id] = { committed: false }; continue; }
     const dep = st.deposited ?? {};
@@ -225,10 +227,38 @@ export function repairStone(d0) {
   return { data: d, added: missing };
 }
 
+// ---------- saves from v0.16 (no birds, no second archer) ----------
+// Still schema v5. v0.17 adds the optional second archer (A2) to the ledger's stages, not hired,
+// and a bench stain flag (none); the birds' rotation, log and count were already saved (empty).
+// The session gains `creditsSeen` and `whoKnowsHelloSeen` where missing, both false (a farm that
+// was finished before v0.17 has not seen the credits). Returns a new payload; one that already
+// has the v0.17 shape is returned as is.
+export function isPreV017(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && (!OPTIONAL_STAGES.every((id) => l.stages && id in l.stages) || !l.theft || typeof l.theft.stain !== 'boolean');
+}
+export function migratePreV017(d0) {
+  if (!isPreV017(d0)) return d0;
+  const d = structuredClone(d0);
+  const l = d.ledger;
+  l.stages ??= {};
+  for (const id of OPTIONAL_STAGES) l.stages[id] ??= { committed: false };
+  const th = l.theft && typeof l.theft === 'object' ? l.theft : {};
+  l.theft = { rotation: Number.isInteger(th.rotation) ? th.rotation : 0, log: Array.isArray(th.log) ? th.log : [], totalBeforeH4: Number.isInteger(th.totalBeforeH4) ? th.totalBeforeH4 : 0, stain: false };
+  return d;
+}
+function withSessionDefaults(d) {
+  if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
+  if (!d?.session || typeof d.session !== 'object') return d;
+  const missing = ['whoKnowsHelloSeen', 'creditsSeen'].filter((k) => typeof d.session[k] !== 'boolean');
+  if (!missing.length) return d;
+  return { ...d, session: { ...d.session, ...Object.fromEntries(missing.map((k) => [k, false])) } };
+}
+
 // settings added since the first v5 test saves get their defaults
 function withSettingDefaults(d) {
   if (!d?.settings || typeof d.settings !== 'object') return d;
-  const missing = ['helpMeFinish'].filter((k) => typeof d.settings[k] !== 'boolean');
+  const missing = ['helpMeFinish', 'birdsNeverSteal'].filter((k) => typeof d.settings[k] !== 'boolean');
   if (!missing.length) return d;
   return { ...d, settings: { ...d.settings, ...Object.fromEntries(missing.map((k) => [k, false])) } };
 }
@@ -236,7 +266,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))));
+  return withSessionDefaults(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))));
 }
 
 // `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).
@@ -269,7 +299,7 @@ export function createSaveManager(storage = globalThis.localStorage, { edition =
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

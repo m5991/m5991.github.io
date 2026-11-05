@@ -18,8 +18,8 @@
 // - "Two versions at the end of the game ... one for kids with only a selection of the songs ...
 //   the kids are not going to have the Suno link, only listening inside the game. In both versions
 //   you can download the mp3": the edition is 'full' or 'kids' (`EDITIONS`); `songsFor` lists the
-//   songs each one has (the kids list is a proposal for the captain to confirm, `kids` and `why`
-//   below), `sunoLink` gives no link in the kids edition, and every found song can be heard in
+//   songs each one has (the kids list, `kids` and `why` below, confirmed by the captain on
+//   2026-11-05), `sunoLink` gives no link in the kids edition, and every found song can be heard in
 //   the game and downloaded as an MP3 (`mp3Path`, made locally by tools/make-songs.mjs).
 //
 // E## is the playlist's track ##, identified by its recording id (the Suno song id). Titles are the
@@ -30,19 +30,26 @@ export const E21_COINS = 80;
 export const EDITIONS = ['full', 'kids'];
 
 // the spots where the songs wait, each with its first hint (spec §8's tier one, about the place)
+// v0.17c (captain: "let's do all this", after the suggestion to give each song spot its own small
+// moment): at a spot with a song left, the egg no longer comes by itself. A button names a small
+// thing to do there, tied to the spot's songs (`act.verb`); Vanessa does it (`act.ms`), an ink word
+// pops up (`act.word`), the farm answers (world.js spotPoke), and then the bird brings the egg.
+// The purse (E21) still comes by itself once she has the coins.
 export const SPOTS = {
-  door: { label: 'the front door', hint: 'A finished house still has songs behind its door.' },
-  chimney: { label: 'the chimney', hint: 'Stand by the house and watch the smoke.' },
-  bench: { label: 'the bench', hint: 'Sit a while on the bench under the tree.' },
-  tree: { label: 'the tree', hint: 'The birds argue in the old tree.' },
-  tools: { label: 'the shovel and rake', hint: 'The tools by the house have something to say.' },
-  stones: { label: 'the stepping stones', hint: 'Small stones dream big behind the house.' },
-  bed: { label: 'the raised bed', hint: 'Something in the raised bed wants to be picked.' },
-  sunflowers: { label: 'the sunflowers', hint: 'The sunflowers do everything together.' },
-  corn: { label: 'the corn', hint: 'One stalk is outstanding in its field.' },
-  table: { label: 'the yard-sale table', hint: 'Overall pockets and yard-sale tables hold surprises.' },
+  door: { label: 'the front door', hint: 'A finished house still has songs behind its door.', act: { verb: 'Knock on the door', word: 'Knock knock!', ms: 1200 } },
+  chimney: { label: 'the chimney', hint: 'Stand by the house and watch the smoke.', act: { verb: 'Watch the smoke', word: 'Puff!', ms: 1400 } },
+  bench: { label: 'the bench', hint: 'Sit a while on the bench under the tree.', act: { verb: 'Rest on the bench', word: 'Aah…', ms: 1600 } },
+  tree: { label: 'the tree', hint: 'The birds argue in the old tree.', act: { verb: 'Listen to the birds', word: 'Tweet? Tweet!', ms: 1400 } },
+  tools: { label: 'the shovel and rake', hint: 'The tools by the house have something to say.', act: { verb: 'Lean the rake on the shovel', word: 'Clink!', ms: 1200 } },
+  stones: { label: 'the stepping stones', hint: 'Small stones dream big behind the house.', act: { verb: 'Hop the stepping stones', word: 'Hop! Hop!', ms: 1300 } },
+  bed: { label: 'the raised bed', hint: 'Something in the raised bed wants to be picked.', act: { verb: 'Say hello to the Who-Knows plant', word: '?♪', ms: 1500 } },
+  sunflowers: { label: 'the sunflowers', hint: 'The sunflowers do everything together.', act: { verb: 'Dance with the sunflowers', word: 'Ta-da!', ms: 1500 } },
+  corn: { label: 'the corn', hint: 'One stalk is outstanding in its field.', act: { verb: 'Tell the corn a joke', word: 'Corny!', ms: 1300 } },
+  table: { label: 'the yard-sale table', hint: 'Overall pockets and yard-sale tables hold surprises.', act: { verb: 'Empty your pockets', word: 'Treasures!', ms: 1300 } },
   purse: { label: 'a full purse', hint: 'Spare coins add up: save a big purse and someone will sing about it.' },
 };
+// what to do at a spot before its egg comes (null for the purse)
+export const spotAct = (spot) => SPOTS[spot]?.act ?? null;
 
 const S = (n, title, uuid, spot, kids, why) => ({ n, title, suno: `https://suno.com/song/${uuid}`, spot, kids, why });
 export const SONGS = {
@@ -84,7 +91,7 @@ export const SONGS = {
 SONGS.E21.hint = SPOTS.purse.hint;
 SONGS.E21.coins = E21_COINS;
 export const SONG_IDS = Object.keys(SONGS);
-// the kids edition's songs (a proposal: the captain confirms the list on the spec)
+// the kids edition's songs (26; confirmed by the captain on 2026-11-05: "everything confirmed")
 export const KIDS_SONGS = SONG_IDS.filter((id) => SONGS[id].kids);
 
 export const isEdition = (e) => EDITIONS.includes(e);
@@ -133,5 +140,5 @@ export function huntLine(edition = 'full', discoveries = {}) {
   const all = songsFor(edition).length;
   const n = foundCount(edition, discoveries);
   if (n >= all) return `Every song found: ${n} of ${all}. Listen to them any time in Pause → Songs.`;
-  return `Egg hunt · ${n} of ${all} songs · walk to a sparkle and a bird brings an egg`;
+  return `Egg hunt · ${n} of ${all} songs · walk to a sparkle and do what it asks: a bird brings an egg`;
 }

@@ -14,8 +14,11 @@
 // four at most (`tables`), each holding six, and a sale needs six at least (`saleReady`); a tool she
 // has once taken comes to her hand at the job from then on (`toolComes`, read from the farm:
 // spec v0.13 P29-7, no save field).
+// v0.17 (spec §7, §6.6 point 4, §6.5): birds steal crops, capped (`theft`, `steal`), a bird on the
+// restored bench may leave a stain she cleans (`stain`, `cleanBench`), and a second archer (A2)
+// can be hired, optional and outside the route (`ALL_STAGES`).
 import {
-  BASE_STAGE, BASE_STAGES, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, LAST_STAGE, MATERIALS, NODE_FIRST_READY_MS,
+  ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, LAST_STAGE, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
   STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TABLES_UNLIMITED, TOMATO_GROWTH, TOOLS, WEEDS, WEED_PLOT,
   YARD_MATERIALS,
@@ -35,7 +38,7 @@ export function createLedger() {
     purse: 0,
     lifetimeCoins: 0,
     sold: zeroCrops(),
-    stages: Object.fromEntries(STAGE_ORDER.map((id) => [id, { committed: false }])),
+    stages: Object.fromEntries(ALL_STAGES.map((id) => [id, { committed: false }])),
     paymentEvents: [], // committed stage IDs in commit order (each at most once)
     weeds: Object.fromEntries(WEEDS.map((id) => [id, false])), // true = cleared
     piles: Object.fromEntries(Object.entries(PILES).map(([id, p]) => [id, p.units])),
@@ -56,8 +59,11 @@ export function createLedger() {
     rocks: Object.fromEntries(ROCK_IDS.map((id) => [id, ROCKS[id].units])), // finite stone (P25-6)
     tool: null, // the tool in Vanessa's hand: null, 'rake' or 'shovel' (P25-4)
     activeMs: 0,
-    // Reserved for later steps (birds, spec §6.6/§12); always zero in this slice.
-    theft: { rotation: 0, log: [], totalBeforeH4: 0 },
+    // v0.17 birds (spec §7, §6.6 point 4): `rotation` counts the bird events so far (their kinds
+    // take turns), `log` holds the active time of each crop taken (the rolling window's count),
+    // `totalBeforeH4` the crops taken before the home (8 at most; the name keeps the v5 field's),
+    // `stain` a bird's mark on the restored bench, waiting to be cleaned
+    theft: { rotation: 0, log: [], totalBeforeH4: 0, stain: false },
   };
 }
 
@@ -140,6 +146,26 @@ export const tableFull = (l) => tableCount(l) >= tableCap(l);
 export const saleReady = (l) => tableAvailable(l) && tableCount(l) >= SALE_MIN;
 export const tableValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 export const mainComplete = (l) => isCommitted(l, LAST_STAGE);
+// ---------- v0.17 birds: what can be taken now (spec §7 caps, §6.6 point 4) ----------
+// theft is possible from the second crop plot until the home, while the caps allow it
+export const birdsActive = (l) => plotsPlanted(l) >= 2;
+export const takenRecently = (l, now = l.activeMs) => (l.theft?.log ?? []).filter((t) => now - t < BIRDS.windowMs).length;
+export function theftAllowed(l) {
+  if (!birdsActive(l) || mainComplete(l)) return false;
+  return (l.theft?.totalBeforeH4 ?? 0) < BIRDS.totalMax && takenRecently(l) < BIRDS.windowMax;
+}
+// the ready crop plants a bird could land on (one unit at least, planted)
+export const readyNodes = (l) => Object.keys(NODES).filter((id) => nodeEstablished(l, id) && l.nodes[id].remaining > 0);
+// the crop a head thief goes for: her largest carried crop stack, ties to the cheapest crop
+export function carriedTarget(l) {
+  let best = null;
+  for (const c of CROPS) {
+    const n = l.carried[c];
+    if (n <= 0) continue;
+    if (!best || n > l.carried[best] || (n === l.carried[best] && PRICES[c] < PRICES[best])) best = c;
+  }
+  return best;
+}
 // v0.15: how big a crop plant is drawn (1 = as planted). A tomato plant grows one TOMATO_GROWTH
 // step for every round after its first crop, `steps` at most; other crops keep their size.
 export function plantSize(l, id) {
@@ -273,6 +299,8 @@ export function settle(l0) {
 // tx: { t: 'tick', ms, calm? } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'drop', r? }
 //   | { t: 'stock' } | { t: 'yardSale' } | { t: 'build', stage } | { t: 'commitFree', stage }
 //   | { t: 'takeTool', tool, come? } | { t: 'returnTool' } | { t: 'dig', id }
+//   | { t: 'birdTurn' } | { t: 'steal', from: 'node', src } | { t: 'steal', from: 'carried' }
+//   | { t: 'stain' } | { t: 'cleanBench' }
 export function apply(l0, tx) {
   switch (tx?.t) {
     case 'tick': return tick(l0, tx.ms, !!tx.calm);
@@ -286,6 +314,10 @@ export function apply(l0, tx) {
     case 'drop': return drop(l0, tx.r ?? null);
     case 'stock': return stock(l0);
     case 'yardSale': return yardSale(l0);
+    case 'birdTurn': return birdTurn(l0);
+    case 'steal': return steal(l0, tx.from, tx.src ?? null);
+    case 'stain': return stain(l0);
+    case 'cleanBench': return cleanBench(l0);
     default: return fail('unknownTx');
   }
 }
@@ -525,6 +557,50 @@ function yardSale(l0) {
   return { ok: true, l, events: [{ type: 'yardSale', items, coins, sale: l.sales, tables: tables(l) }] };
 }
 
+// ---------- v0.17 birds (spec §7) ----------
+// a bird event starts: the kinds take turns (the caller skips a kind that cannot happen now)
+function birdTurn(l0) {
+  if (!birdsActive(l0)) return fail('tooEarly');
+  const l = clone(l0);
+  l.theft.rotation += 1;
+  return { ok: true, l, events: [{ type: 'birdTurn', rotation: l.theft.rotation }] };
+}
+// a bird takes one crop unit, from a ready plant (`src`) or from the crops on her head (her
+// largest stack, ties to the cheapest crop), within the caps; never anything else
+function steal(l0, from, src) {
+  if (!theftAllowed(l0)) return fail('capped');
+  const l = clone(l0);
+  let res;
+  if (from === 'node') {
+    if (!readyNodes(l0).includes(src)) return fail('notReady');
+    const n = l.nodes[src];
+    res = NODES[src].res;
+    n.remaining -= 1;
+    if (n.remaining === 0) n.readyAt = l.activeMs + NODE_RENEW_MS[res];
+  } else if (from === 'carried') {
+    res = carriedTarget(l0);
+    if (!res) return fail('noCrops');
+    l.carried[res] -= 1;
+  } else return fail('unknownTarget');
+  l.theft.log = [...l.theft.log.filter((t) => l.activeMs - t < BIRDS.windowMs), l.activeMs].slice(-BIRDS.totalMax);
+  l.theft.totalBeforeH4 += 1;
+  return { ok: true, l, events: [{ type: 'stolen', res, from, ...(src ? { src } : {}), total: l.theft.totalBeforeH4 }] };
+}
+// a bird on the restored bench leaves a stain (A22 item 8: from G2 on, Q25-1); cleaned in 1 s
+function stain(l0) {
+  if (!isCommitted(l0, 'G2')) return fail('noBench');
+  if (l0.theft.stain) return fail('stained');
+  const l = clone(l0);
+  l.theft.stain = true;
+  return { ok: true, l, events: [{ type: 'stained' }] };
+}
+function cleanBench(l0) {
+  if (!l0.theft.stain) return fail('clean');
+  const l = clone(l0);
+  l.theft.stain = false;
+  return { ok: true, l, events: [{ type: 'benchCleaned' }] };
+}
+
 function pick(l0, src) {
   const res = sourceResource(src);
   if (!res) return fail('unknownSource');
@@ -575,9 +651,9 @@ export function validateLedger(l) {
   if (!isInt(l.lifetimeCoins)) e('lifetimeCoins');
   if (!sameKeys(l.sold, CROPS) || !CROPS.every((c) => isInt(l.sold[c]))) e('sold');
   if (!isInt(l.activeMs)) e('activeMs');
-  if (!sameKeys(l.stages, STAGE_ORDER)) e('stage keys');
+  if (!sameKeys(l.stages, ALL_STAGES)) e('stage keys');
   else {
-    for (const id of STAGE_ORDER) {
+    for (const id of ALL_STAGES) {
       const st = l.stages[id];
       if (!sameKeys(st, ['committed']) || typeof st.committed !== 'boolean') { e(`${id} stage shape`); continue; }
       if (st.committed && (l.crop === null || CROPS.includes(l.crop))) {
@@ -587,7 +663,7 @@ export function validateLedger(l) {
       }
     }
     if (l.crop === null && BASE_STAGES.some((id) => l.stages[id].committed)) e('a crop patch is planted but no first crop is chosen');
-    const committed = STAGE_ORDER.filter((id) => l.stages[id].committed);
+    const committed = ALL_STAGES.filter((id) => l.stages[id].committed);
     if (!Array.isArray(l.paymentEvents) || l.paymentEvents.length !== committed.length
       || new Set(l.paymentEvents).size !== l.paymentEvents.length
       || !l.paymentEvents.every((id) => committed.includes(id))) e('paymentEvents must list each committed stage once');
@@ -632,6 +708,8 @@ export function validateLedger(l) {
   }
   if (!(l.tool === null || TOOLS.includes(l.tool))) e('tool');
   const th = l.theft;
-  if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || !isInt(th.totalBeforeH4, 0, 8)) e('theft');
+  if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || th.log.length > BIRDS.totalMax || !th.log.every((t) => isInt(t))
+    || !isInt(th.totalBeforeH4, 0, BIRDS.totalMax) || typeof th.stain !== 'boolean') e('theft');
+  else if (th.stain && !l.stages?.G2?.committed) e('a stain on a bench that is not restored');
   return errors;
 }

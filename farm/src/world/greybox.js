@@ -332,6 +332,10 @@ export function flyingBird() { return shadows(addOutline(P.flyingBird(), 0.012))
 export function easterEgg(seed) { return shadows(addOutline(P.easterEgg(seed), 0.01)); }
 export const sparkleStar = P.sparkleStar;
 export function archer() { return shadows(addOutline(P.archer(), 0.014)); }
+export function elfArcher() { return shadows(addOutline(P.elfArcher(), 0.014)); }
+export function warningArrow() { return shadows(addOutline(P.warningArrow(), 0.008)); }
+export function benchStain() { return P.benchStain(); }
+export function keepsake(kind) { return shadows(addOutline(P.keepsake(kind), 0.008)); }
 export function buyer(look) { return shadows(addOutline(P.buyer(look), 0.014)); }
 export function dustPuff(seed) { const g = addOutline(P.dustPuff(seed), 0.012); g.traverse((m) => { if (m.isMesh) m.castShadow = false; }); return g; }
 // Carried-stack unit meshes (W log, R stone, C cob, S sunflower head, T tomato, coins), the same
