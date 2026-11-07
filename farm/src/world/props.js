@@ -984,12 +984,13 @@ export function stonePath(left, right) {
   return g;
 }
 
-// ---------------- D08 path (G1), v0.16: solid dirt ----------------
-// The captain: "Make the path solid, not rocks" (the coloured drawing's path is one sandy-ochre
-// band): a flat ribbon between the two drawn edges in a warm dirt wash with the paper grain, its
-// edges in ink with an uneven pressure, a few pencil strokes along it for the trodden earth and a
-// sprinkle of darker grit; short grass tufts at its edges (green with the finale's ground).
-export function dirtPath(left, right, edgeStones = []) {
+// ---------------- D08 path (G1), v0.16 solid dirt, v0.19 borderless ----------------
+// The captain: "remove the rocks on both sides ofthe path, only the path, no outline" (v0.18
+// note; v0.16 "Make the path solid, not rocks"): a flat ribbon between the two drawn edges in a
+// warm dirt wash with the paper grain, no ink outline or edge stones, a few pencil strokes along
+// it for the trodden earth and a sprinkle of darker grit; short grass tufts at its edges (green
+// with the finale's ground).
+export function dirtPath(left, right) {
   const g = new THREE.Group(); g.name = 'D08_Path';
   const n = left.length;
   const pos = []; const idx = [];
@@ -1028,18 +1029,6 @@ export function dirtPath(left, right, edgeStones = []) {
   const gritM = new THREE.Mesh(mergeGeometries(grit, false), toon(mix(DIRT, PAL.ink, 0.35), { flat: 1 }));
   gritM.userData.noOutline = true; gritM.castShadow = false; gritM.name = 'D08_Path_Grit';
   g.add(ribbon, strokeM, gritM);
-  // the two edges, in ink with an uneven pressure
-  for (const edge of [left, right]) {
-    const flat = edge.map((q) => new THREE.Vector2(q.x, -q.z));
-    const eg = strokeGeometry(flat, (u) => 0.02 + 0.012 * Math.abs(Math.sin(u * 23)));
-    eg.rotateX(-Math.PI / 2); eg.translate(0, 0.02, 0);
-    const em = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide, transparent: true, opacity: 0.8 }));
-    em.userData.noOutline = true; em.userData.noFit = true; em.castShadow = false; em.name = 'D08_Path_Edge';
-    g.add(em);
-  }
-  // v0.18: the stones along its edges are placed by the world beside the dirt, never on it
-  // (world.js pathEdgeStones)
-  const rocks = borderRing(edgeStones); rocks.name = 'D08_Path_EdgeRocks'; g.add(rocks);
   const tg = [];
   tufts.forEach((p, t) => {
     const n2 = 3;

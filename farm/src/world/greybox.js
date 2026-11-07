@@ -108,9 +108,9 @@ export const steppingOutline = P.steppingOutline;
 export function borderRing(places) { return shadows(addOutline(P.borderRing(places), 0.8 * 0.02)); }
 export function steppingStone(i) { return shadows(addOutline(P.steppingStone(i), 0.015)); }
 export const gravelPath = P.gravelPath;
-// v0.16: the solid dirt path (its own ink edges; no hull, it lies flat on the ground)
-export function dirtPath(left, right, edgeStones = []) {
-  const g = P.dirtPath(left, right, edgeStones);
+// v0.16 solid dirt, v0.19 borderless: no edge rocks, no outline
+export function dirtPath(left, right) {
+  const g = P.dirtPath(left, right);
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
   return g;
 }

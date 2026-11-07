@@ -123,9 +123,8 @@ export const PATH_RING = { into: 0.5, door: 0.55, end: 0.68, cap: 0.6, past: 2.5
 // v0.18 (captain: "No rocks on the path, the rocks from the circle shouldn't be on top of the
 // path"): every stone keeps `clear` m between its farthest point and the path's dirt. The ring
 // leaves out the stones that would touch the path, so the path comes in through an open entrance.
-// The stones along the path's edges sit `spacing` m apart just outside the dirt (`gap` m off it),
-// stop where the ring begins and never crowd the ring's own stones (`ringGap` m between them).
-export const PATH_STONES = { clear: 0.04, spacing: 0.34, gap: 0.06, ringGap: 0.06 };
+// (v0.19: no stones along the path's edges.)
+export const PATH_STONES = { clear: 0.04 };
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -518,24 +517,12 @@ export class World {
     pts.push(b.clone().addScaledVector(b.clone().sub(a).setY(0).normalize(), PATH_RING.past));
     return (this.drawnCurve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'));
   }
-  // D08: the blueprint's dashed edges before G1, and the path G1 lays between them (v0.13: flat
-  // stepping stones with grass between, no longer a grey gravel ribbon). v0.15: its last stretch
-  // runs straight out of the door step (PATH's first point, the drawn door end, gives way to it)
-  // v0.16 (captain: "Make the path solid, not rocks"): a solid dirt path, as in the coloured
-  // drawing, and it comes into the stone ring through its gap in front of the bench
+  // D08: the path G1 lays (v0.19: pale dirt surface with no border; no edge rocks, no outline)
   buildPathOutline() {
     this.ringPlaces();
     const { left, right } = this.pathShape();
     const dashes = [];
-    for (const edge of [left, right]) {
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge), new THREE.LineDashedMaterial({ color: G.PALETTE.ink, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.45 }));
-      line.computeLineDistances();
-      line.name = 'D08_Path_Outline';
-      this.root.add(line);
-      dashes.push(line);
-    }
-    // v0.18: the edge stones beside the dirt, never on it (pathEdgeStones)
-    const gravel = G.dirtPath(left, right, this.pathEdgeStones()); // v0.16: solid dirt (v0.13-v0.15: stepping stones)
+    const gravel = G.dirtPath(left, right);
     this.root.add(gravel);
     return { dashes, gravel };
   }
@@ -606,35 +593,6 @@ export class World {
     }
     this.pathCurve = curve;
     return (this.pathShapeCache = { curve, samples, left: edges[0], right: edges[1] });
-  }
-  // v0.18: the stones along the path's edges, just outside the dirt: one every `spacing` m along
-  // each edge, set out from it by its own reach and `gap`; none that would still touch the dirt (on
-  // the inside of a bend), none inside the ring round the tree (the path's end there is open
-  // ground) and none crowding a ring stone. -> [{ pos, seed }]
-  pathEdgeStones() {
-    const { left, right } = this.pathShape();
-    const { centre: c, rx, rz } = this.ring;
-    const ring = this.ringPlaces();
-    const out = [];
-    for (const [edge, other] of [[left, right], [right, left]]) {
-      let run = 0;
-      for (let i = 1; i < edge.length - 2; i++) {
-        run += edge[i].distanceTo(edge[i - 1]);
-        if (run < PATH_STONES.spacing) continue;
-        run = 0;
-        const seed = i;
-        const reach = ringStoneReach(seed);
-        const outward = edge[i].clone().sub(other[i]).setY(0);
-        if (outward.lengthSq() < 1e-8) continue; // the rounded end: nothing beside it
-        outward.normalize();
-        const pos = edge[i].clone().addScaledVector(outward, reach + PATH_STONES.gap).setY(0);
-        if (!this.offPath(pos, reach)) continue;
-        if (((pos.x - c.x) / (rx + reach)) ** 2 + ((pos.z - c.z) / (rz + reach)) ** 2 < 1) continue;
-        if (ring.some((q) => q.distanceTo(pos) < reach + ringStoneReach(q.userData.seed) + PATH_STONES.ringGap)) continue;
-        out.push({ pos, seed });
-      }
-    }
-    return out;
   }
 
   // D20: fine permanent pen marks at the stones, bench, crops and bed (green in the finale)
