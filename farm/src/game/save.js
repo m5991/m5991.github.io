@@ -228,23 +228,26 @@ export function repairStone(d0) {
 }
 
 // ---------- saves from v0.16 (no birds, no second archer) ----------
-// Still schema v5. v0.17 adds the optional second archer (A2) to the ledger's stages, not hired,
-// and a bench stain flag (none); the birds' rotation, log and count were already saved (empty).
+// Still schema v5. Add a bench stain flag where missing; remove a legacy A2 and refund its hire; the birds' rotation, log and count were already saved (empty).
 // The session gains `creditsSeen` and `whoKnowsHelloSeen` where missing, both false (a farm that
 // was finished before v0.17 has not seen the credits). Returns a new payload; one that already
 // has the v0.17 shape is returned as is.
 export function isPreV017(d) {
   const l = d?.ledger;
-  return !!l && typeof l === 'object' && (!OPTIONAL_STAGES.every((id) => l.stages && id in l.stages) || !l.theft || typeof l.theft.stain !== 'boolean');
+  return !!l && typeof l === 'object' && (!!l.stages?.A2 || !OPTIONAL_STAGES.every((id) => l.stages && id in l.stages) || !l.theft || typeof l.theft.stain !== 'boolean');
 }
 export function migratePreV017(d0) {
   if (!isPreV017(d0)) return d0;
   const d = structuredClone(d0);
   const l = d.ledger;
   l.stages ??= {};
+  // v0.17 phone notes remove the second archer. Preserve a former hire's value.
+  if (l.stages.A2?.committed && Number.isFinite(l.purse) && Number.isFinite(l.yard?.W)) { l.purse += 20; l.yard.W += 2; }
+  delete l.stages.A2;
+  if (Array.isArray(l.paymentEvents)) l.paymentEvents = l.paymentEvents.filter((id) => id !== 'A2');
   for (const id of OPTIONAL_STAGES) l.stages[id] ??= { committed: false };
   const th = l.theft && typeof l.theft === 'object' ? l.theft : {};
-  l.theft = { rotation: Number.isInteger(th.rotation) ? th.rotation : 0, log: Array.isArray(th.log) ? th.log : [], totalBeforeH4: Number.isInteger(th.totalBeforeH4) ? th.totalBeforeH4 : 0, stain: false };
+  l.theft = { rotation: Number.isInteger(th.rotation) ? th.rotation : 0, log: Array.isArray(th.log) ? th.log : [], totalBeforeH4: Number.isInteger(th.totalBeforeH4) ? th.totalBeforeH4 : 0, stain: typeof th.stain === 'boolean' ? th.stain : false };
   return d;
 }
 function withSessionDefaults(d) {

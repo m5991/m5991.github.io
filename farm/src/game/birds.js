@@ -174,7 +174,8 @@ export function createBirds() {
       }
       if (ctx.blocked && s.phase !== 'sit') { leave(out, 'gone'); return out; }
       if (!still(ctx)) { leave(out, 'gone'); return out; }
-      if (guard(out, ctx, dt)) return out;
+      // Let plant birds land and visibly perch before Dwight draws his bow.
+      if ((s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
       if (s.phase === 'warn' && s.t >= BIRDS.warnMs) {
         s.phase = 'approach'; s.t = 0;
       } else if (s.phase === 'approach') {

@@ -108,9 +108,6 @@ export const STATIONS = [
   { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
-  // v0.17 A2 (optional, spec §6.5): the second archer's post, between the raised bed and the
-  // yard-sale tables, covering both and the way between them (§7)
-  { id: 'A2', kind: 'site', u: 50, v: 67, r: 0.6, label: 'second archer post' },
   { id: 'C0', kind: 'site', u: 60.5, v: 54, r: 0.7, label: 'corn patch' },
   { id: 'C1', kind: 'site', u: 80.5, v: 53, r: 0.7, label: 'corn expansion' },
   { id: 'S0', kind: 'site', u: 79, v: 75, r: 0.7, label: 'sunflower patch' },
@@ -133,4 +130,4 @@ export const STATIONS = [
 ];
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
-export const BOUNDS = { uMin: 1, uMax: 99, vMin: 40, vMax: 99 };
+export const BOUNDS = { uMin: 1, uMax: 99, vMin: 30, vMax: 99 };

@@ -19,6 +19,7 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
+import { actionPose, stepUpHeight } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
@@ -83,6 +84,7 @@ export class Hero {
   get position() { return this.view.position; }
 
   place(x, z) {
+    this.cancelMoment(); this.groundY = 0; this.stepTarget = 0; this.stepMs = 500;
     this.body.position.set(x, HERO_RADIUS, z);
     this.view.position.set(x, 0, z);
     this.halt();
@@ -116,12 +118,17 @@ export class Hero {
 
   // after the physics step: view follows body, bounds recovery, facing, animation and face
   update(dtMs, { working, faceTo }) {
+    this.restorePose();
     const p = this.body.position;
     const recovered = this.world.clampToBounds(p);
     if (recovered) { this.mover.speed = 0; this.body.velocity.set(0, 0, 0); }
     this.view.position.x += (p.x - this.view.position.x) * 0.5;
     this.view.position.z += (p.z - this.view.position.z) * 0.5;
-    this.view.position.y = 0;
+    const height = this.world.bedHeight?.(new THREE.Vector3(p.x, 0, p.z)) ?? 0;
+    if (height !== this.stepTarget) { this.stepFrom = this.groundY ?? 0; this.stepTarget = height; this.stepMs = 0; }
+    this.stepMs = Math.min(500, (this.stepMs ?? 0) + dtMs);
+    this.groundY = stepUpHeight(this.stepFrom ?? 0, height, this.reducedMotion() ? 1 : this.stepMs / 500);
+    this.view.position.y = this.groundY;
     if (faceTo && !this.moving) this.yawTarget = Math.atan2(faceTo.x - p.x, faceTo.z - p.z);
     if (this.yawTarget !== undefined) {
       this.yaw = turnToward(this.yaw, this.yawTarget, dtMs / 1000);
@@ -143,6 +150,58 @@ export class Hero {
     this.stepPhase = ph;
     this.stack.update(dtMs, { vx: this.body.velocity.x, vz: this.body.velocity.z, yaw: this.yaw, reducedMotion: this.reducedMotion() });
     this.updateFace(dtMs, working);
+    this.updateMoment(dtMs);
+    if (!this.moment && this.stepMs < 500 && !this.reducedMotion()) {
+      const k = Math.sin(this.stepMs / 500 * Math.PI);
+      this.poseBone('Hip_L', -0.65 * k); this.poseBone('Knee_L', 0.9 * k);
+    }
+  }
+
+  restorePose() {
+    for (const [bone, q] of this.poseSaved ?? []) bone.quaternion.copy(q);
+    this.poseSaved = [];
+  }
+  poseBone(name, x, y = 0, z = 0) {
+    const bone = this.view.getObjectByName(name);
+    if (!bone) return;
+    this.poseSaved.push([bone, bone.quaternion.clone()]);
+    bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+  }
+  startMoment(kind, { ms, seat, route, yaw } = {}) {
+    this.restorePose();
+    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw };
+    this.celebrateMs = 0;
+    if (kind === 'clean' && !this.cloth) {
+      this.cloth = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.16), new THREE.MeshLambertMaterial({ color: 0xfff4d6 }));
+      this.cloth.name = 'BenchCleaningCloth';
+      this.view.getObjectByName('Hand_R_Tool')?.add(this.cloth);
+    }
+  }
+  cancelMoment() { this.moment = null; if (this.cloth) this.cloth.visible = false; this.restorePose(); }
+  updateMoment(dtMs) {
+    const m = this.moment;
+    if (this.cloth) this.cloth.visible = m?.kind === 'clean';
+    if (!m) return;
+    if (this.moving) { this.cancelMoment(); return; }
+    m.t = Math.min(m.ms, m.t + dtMs);
+    const q = actionPose(m.kind, m.t / m.ms, this.reducedMotion());
+    for (const [name, angles] of Object.entries(q.bones)) this.poseBone(name, ...angles);
+    if (m.kind === 'bench' && m.seat) {
+      const at = m.seat.clone(); at.y -= 0.86;
+      this.position.copy(m.from).lerp(at, q.blend);
+      this.view.rotation.y = m.yaw ?? this.yaw;
+    } else if (m.kind === 'chimney' && m.route) {
+      const points = [m.from, ...m.route.slice(1)];
+      const at = q.travel * (points.length - 1);
+      const i = Math.min(points.length - 2, Math.floor(at));
+      this.position.copy(points[i]).lerp(points[i + 1], at - i);
+      const d = points[i + 1].clone().sub(points[i]);
+      this.view.rotation.y = Math.atan2(d.x, d.z);
+    } else if (m.kind === 'clean' && m.seat) {
+      this.view.rotation.y = Math.atan2(m.seat.x - this.body.position.x, m.seat.z - this.body.position.z);
+      this.position.y -= 0.1 * q.blend;
+    }
+    if (m.t >= m.ms) this.cancelMoment();
   }
 
   // blink overlay every 3-6 s for ~150 ms; brief smile on celebrations (spec §10.2)

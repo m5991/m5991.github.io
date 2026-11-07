@@ -477,3 +477,14 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #p
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card { background-size: 76px 76px, auto, auto; }
 }
 
+
+/* v0.17 phone playtest: closing text stays within its paper and scrolls by touch. */
+#credits .credits-paper { box-sizing: border-box; min-height: 0; pointer-events: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+#credits .credits-card:has(.closing) { bottom: calc(var(--edge-b) + 14px); }
+#credits .credits-card:has(.closing) ~ .credits-lyrics { display: none; }
+#credits .credits-paper.closing { max-height: 100%; scrollbar-gutter: stable; }
+@media (max-height: 480px) {
+  #credits .credits-card { top: calc(var(--edge-t) + 50px); }
+  #credits .credits-paper.closing { max-width: min(88vw, 640px); padding: 14px 20px; }
+  #credits .credits-paper.closing p { font-size: 15px; line-height: 1.45; }
+}

@@ -32,14 +32,15 @@ import * as CANNON from 'cannon-es';
 import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
 import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
-import { ARCHER, ELF } from './props.js';
+import { ARCHER } from './props.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
 import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
 import { ease } from '../core/tween.js';
+import { SPOTS } from '../game/songs.js';
 import { KEEPSAKES, KEEPSAKE_GLINT_M } from '../game/keepsakes.js';
 import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
-import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
+import { fader, toon, groundMaterial, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { routeAround, routeAt, routeLength } from './walk.js';
 import { BLUEPRINT_FADE_MS, FINALE_COLOURS, PARTS, partLook, partsColouredBy, REDUCED_FADE_MS, WASH_MS } from '../game/reveal.js';
@@ -108,7 +109,7 @@ export const SMOKE = { puffs: 4, ms: 3200, rise: 2.0, drift: 0.6, size: [2.4, 5.
 // other. Each stone is drawn `size` times the v0.14 ones. (v0.15's half circle round the house
 // is gone.)
 export const SKY_BIRDS = 1.9; // v0.16 (captain: "Make birds on the sky bigger"): this many times their v0.15 size
-export const STEPPING = { from: [2.95, -1.9], to: [48.4, 46.2], stones: 5, size: 1.5 };
+export const STEPPING = { from: [2.95, -1.9], to: [48.4, 46.2], stones: 4, size: 1.25 };
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
@@ -207,6 +208,14 @@ export class World {
     const tree = fitted('D09', G.tree());
     this.addCylinder(tree.position, TREE_TRUNK_R * tree.scale.x);
     this.faders = [G.fadeable(tree)];
+    // House parts already own paintable materials; fade those uniforms rather than clone
+    // them away from their build/wash owners. Only committed walls occlude during play.
+    const houseFade = { opacity: 1, meshes: [], set: (o) => {
+      houseFade.opacity = o;
+      for (const id of HOUSE_STAGES) if (this.lastLedger && isCommitted(this.lastLedger, id)) this.parts[id].model.setOpacity(o);
+    } };
+    this.houseFade = houseFade;
+    this.faders.push(houseFade);
     // D10: the broken bench is an ink outline until G2 restores it in the approved brown; with
     // the blueprint off it leaves a faint ink footprint (it still blocks her)
     const bench = fitted('D10', G.benchBroken());
@@ -221,7 +230,7 @@ export class World {
     const bedPlants = G.bedPlants();
     bedPlants.position.copy(bed.position); bedPlants.rotation.copy(bed.rotation); bedPlants.scale.copy(bed.scale);
     this.root.add(bedPlants);
-    this.addBox(bed, 2.4, 1.1, 1);
+    // Vanessa can step onto the low bed; buyers still route around its bounds.
     this.addPart('D18', { model: bed, outlineBefore: true });
     this.addPart('tomatoes', { model: bedPlants.getObjectByName('D19_TomatoStems'), outlineBefore: true });
     this.bed = bed;
@@ -250,7 +259,7 @@ export class World {
       // v0.15: the plant itself, which grows a size step with each round (plantSize)
       const plant = bedPlants.getObjectByName(`D19_Tomato_${id}`);
       this.nodeViews[id] = { dig, units, plant, size: 1, want: 1 };
-      this.stations[id] = { def: { id, kind: 'node', r: 0.3, label: 'tomatoes' }, obj: units, pos: ground };
+      this.stations[id] = { def: { id, kind: 'node', r: 0.85, label: 'tomatoes' }, obj: units, pos: ground };
     }
     // the tools at their drawn lean; `home` is where each returns (P25-4)
     this.tools = {};
@@ -347,6 +356,10 @@ export class World {
     this.root.add(ovals, setStones);
     this.addPart('D12', { model: setStones, radial: true, before: [ovals] });
     const path = this.buildPathOutline();
+    const clearing = new THREE.Mesh(new THREE.CircleGeometry(1, 80), toon(0xe5d9ba, { flat: 1, grain: 1 }));
+    clearing.name = 'TreeBenchClearing'; clearing.rotation.x = -Math.PI / 2;
+    clearing.position.copy(this.ring.centre).setY(0.009); clearing.scale.set(this.ring.rx, this.ring.rz, 1);
+    clearing.receiveShadow = true; path.gravel.add(clearing);
     this.addPart('D08', { model: path.gravel, radial: true, before: path.dashes });
     this.buildSprouts();
     this.buildSky();
@@ -363,6 +376,11 @@ export class World {
     this.root.add(this.marker.obj);
     this.buildBranch();
     this.buildArcher();
+    this.goalMarkers = {};
+    // A build takes place beside its object, on ground Vanessa can reach.
+    for (const id of HOUSE_STAGES) this.stations[id].pos.copy(this.eggSpotPos('door'));
+    const benchSite = this.objects.D10;
+    this.stations.G2.pos.copy(benchSite.localToWorld(new THREE.Vector3(0, 0, 0.85))).setY(0);
     this.boundsQuad = [[BOUNDS.uMin, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMax], [BOUNDS.uMin, BOUNDS.vMax]]
       .map(([u, v]) => p.groundAt(u, v));
   }
@@ -458,7 +476,7 @@ export class World {
   doorPoints() {
     const h = this.objects.D01;
     const step = h.userData.doorStep;
-    return [h.localToWorld(step.clone()).setY(0), h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, 1.4))).setY(0)];
+    return [h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, -0.24))).setY(0), h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, 1.4))).setY(0)];
   }
 
   // the drawn path on the ground: out of the door step, then through the drawing's path points to
@@ -651,7 +669,7 @@ export class World {
       default: throw new Error(def.kind);
     }
     obj.position.copy(pos);
-    if (def.bed) { obj.position.copy(this.bedAt(def.bed)).add(new THREE.Vector3(0, 0, 0.06)); pos.copy(obj.position).setY(0); }
+    if (def.bed) { def = { ...def, r: 0.85 }; obj.position.copy(this.bedAt(def.bed)).add(new THREE.Vector3(0, 0, 0.06)); pos.copy(obj.position).setY(0); }
     obj.name = `${def.kind}:${def.id}`;
     this.root.add(obj);
     this.stations[def.id] = { def, obj, pos };
@@ -1002,8 +1020,8 @@ export class World {
       if (k > 0) a.root.visible = false;
     }
     if (this.stain && k > 0) this.stain.visible = false;
-    if (k > 0) {
-      this.marker.obj.visible = false; this.sale.sign.visible = false;
+    if (k > 0 || this.finaleActive) {
+      this.hideMarkers(); this.sale.sign.visible = false;
       for (const b of this.sale.buyers) b.visible = false;
     }
     if (k === 0) {
@@ -1127,11 +1145,23 @@ export class World {
   // 0.4 s when its job is done or she swaps. Reduced motion: a 150 ms fade instead of the arcs.
   setHand(hand, body) { this.hand = hand; this.heroView = body; }
   syncTool(tool, animate) {
-    if (!this.hand || tool === this.heldTool) return;
+    if (!this.hand) return;
+    if (!animate) { this.resetTools(tool); return; }
+    if (tool === this.heldTool) return;
     const prev = this.heldTool;
     this.heldTool = tool;
     if (prev) this.moveTool(prev, false, animate);
     if (tool) this.moveTool(tool, true, animate);
+  }
+  // Every launch path (fresh, Continue, recovery, New farm) cancels old flights and restores
+  // both visibility and transforms. A hidden held tool must not stay hidden at its lean.
+  resetTools(tool = null) {
+    this.heldTool = tool;
+    for (const [kind, t] of Object.entries(this.tools)) {
+      ++t.tween; t.flying = false; t.obj.visible = true; setOpacity(t.obj, 1);
+      t.obj.position.copy(t.home.pos); t.obj.quaternion.copy(t.home.quat); t.obj.scale.copy(t.home.scale);
+      if (kind === tool && this.hand) this.gripWorld(kind, t.obj.position, t.obj.quaternion);
+    }
   }
   // where the held tool goes now (root space = world space here)
   gripWorld(kind, pos, quat) {
@@ -1159,6 +1189,7 @@ export class World {
   moveTool(kind, toHand, animate) {
     const t = this.tools[kind];
     const o = t.obj;
+    o.visible = true;
     const token = ++t.tween;
     t.flying = false;
     const placeHome = () => { o.position.copy(t.home.pos); o.quaternion.copy(t.home.quat); o.scale.copy(t.home.scale); };
@@ -1199,40 +1230,98 @@ export class World {
   // shows a sparkle over it. When she reaches one, a bird flies across and drops that spot's egg
   // near her (`eggDrop`); she picks it up (`popEgg`). Presentation only: main.js owns the hunt.
   eggSpotPos(id, out = new THREE.Vector3()) {
+    const spec = SPOTS[id];
+    const anchor = spec?.anchor ?? id;
+    const offset = spec?.offset ?? [0, 0];
     const h = this.objects.D01;
     h.updateMatrixWorld(true);
-    switch (id) {
-      case 'door': { const [a, b] = this.doorPoints(); return out.copy(a).lerp(b, 0.55).setY(0); }
-      case 'chimney': return out.copy(h.localToWorld(new THREE.Vector3(-1.3, 0, 2.9))).setY(0);
-      case 'bench': this.ringPlaces(); return out.copy(this.ring.gap).lerp(this.ring.centre, 0.3).setY(0);
-      case 'tree': return out.copy(this.ground(27.5, 63.5)).setY(0);
-      case 'tools': return out.copy(this.stations.tools.pos).add(new THREE.Vector3(0.35, 0, 0.45)).setY(0);
-      case 'stones': return out.copy(this.stations.G3.pos).setY(0);
-      case 'bed': return out.copy(this.stations.T0.pos).setY(0);
-      case 'sunflowers': return out.copy(this.stations.S0.pos).setY(0);
-      case 'corn': return out.copy(this.stations.C0.pos).setY(0);
-      case 'table': return this.sellSpot(out).setY(0);
-      default: return out.copy(this.heroPos() ?? new THREE.Vector3());
+    switch (anchor) {
+      case 'door': { const [a, b] = this.doorPoints(); out.copy(a).lerp(b, 0.55).setY(0); break; }
+      case 'chimney': out.copy(h.localToWorld(new THREE.Vector3(-2.9, 0, 0.9))).setY(0); break;
+      case 'bench': out.copy(this.stations.G2?.pos ?? this.ground(23, 72)).setY(0); break;
+      case 'tree': out.copy(this.ground(27.5, 63.5)).setY(0); break;
+      case 'tools': out.copy(this.stations.tools.pos).add(new THREE.Vector3(0.35, 0, 0.45)).setY(0); break;
+      case 'stones': out.copy(this.stations.G3.pos).setY(0); break;
+      case 'bed': out.copy(this.stations.T0.pos).setY(0); break;
+      case 'sunflowers': out.copy(this.stations.S0.pos).setY(0); break;
+      case 'corn': out.copy(this.stations.C0.pos).setY(0); break;
+      case 'table': this.sellSpot(out).setY(0); break;
+      case 'sun': out.copy(this.ground(SKY.D22.u, 33)).setY(0); break;
+      case 'birds': out.copy(this.ground(SKY.D21.u + 3, 34)).setY(0); break;
+      default: out.copy(this.heroPos() ?? new THREE.Vector3());
+    }
+    return out.add(new THREE.Vector3(offset[0], 0, offset[1]));
+  }
+  chimneyRoute() {
+    const h = this.objects.D01;
+    const at = (x, y, z) => h.localToWorld(new THREE.Vector3(x, y, z));
+    // Hands and feet work up the outside wall, then along the roof to the chimney.
+    return [this.eggSpotPos('chimney'), at(-2.18, 1.2, 0.9), at(-2.18, 2.8, 0.9), at(-0.9, 3.8, 0.75), this.smoke.top.clone().add(new THREE.Vector3(-0.35, -0.25, 0.1))];
+  }
+  bedHeight(at) {
+    this.bed.updateMatrixWorld(true);
+    const p = this.bed.worldToLocal(at.clone());
+    return Math.abs(p.x) < 1.13 && Math.abs(p.z) < 0.49 ? this.bed.scale.y * 0.37 : 0;
+  }
+  standPoint(id, out = new THREE.Vector3()) {
+    if (id === 'table') return this.sellSpot(out).setY(0);
+    const st = this.stations[id];
+    if (!st) return null;
+    out.copy(st.pos).setY(0);
+    if (st.def.bed || ['t1', 't2'].includes(id)) out.y = this.bed.scale.y * 0.37;
+    return out;
+  }
+  updateStandMarker(mark, at, dtMs, ready = false, { chimney = false } = {}) {
+    mark.position.copy(at);
+    mark.userData.correct = ready;
+    mark.userData.t = (mark.userData.t ?? 0) + (this.reducedMotion() ? 0 : dtMs);
+    const t = mark.userData.t;
+    mark.getObjectByName('standCircle').scale.setScalar(ready ? 1.18 : 1);
+    const star = mark.getObjectByName('standStar');
+    star.position.set(0, 0.8, 0);
+    if (chimney) star.position.copy(this.smoke.top).sub(at).add(new THREE.Vector3(0, 0.35, 0));
+    if (this.camera) star.quaternion.copy(this.camera.quaternion);
+    star.scale.setScalar(ready ? 1.95 : 1.5);
+    const sparks = mark.getObjectByName('standSparks');
+    sparks.visible = ready;
+    sparks.rotation.y = t / 1100;
+    for (const [i, sp] of sparks.children.entries()) {
+      if (this.camera) sp.quaternion.copy(this.camera.quaternion);
+      sp.scale.setScalar(0.35 + 0.16 * Math.sin(t / 150 + i));
+    }
+    mark.getObjectByName('standDisc').material.opacity = ready ? 0.3 : 0.12;
+  }
+  updateGoalMarkers(ids, dtMs) {
+    this.goalMarkers ??= {};
+    const hero = this.heroPos();
+    for (const id of new Set([...Object.keys(this.goalMarkers), ...ids])) {
+      let mark = this.goalMarkers[id];
+      if (!mark) { mark = this.goalMarkers[id] = G.standMarker(); this.root.add(mark); }
+      mark.visible = ids.includes(id) && !this.finaleActive && !this.playHidden;
+      if (!mark.visible) continue;
+      const at = this.standPoint(id);
+      if (!at) { mark.visible = false; continue; }
+      this.updateStandMarker(mark, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= 0.65);
     }
   }
-  // the sparkles: `spots` the ids that hold a song now (none: all away)
   updateEggSpots(spots, dtMs) {
     this.eggSparkles ??= {};
-    const show = !this.finaleActive && !this.playHidden;
-    const still = this.reducedMotion();
-    this.eggT = (this.eggT ?? 0) + (still ? 0 : dtMs);
+    const hero = this.heroPos();
     for (const id of new Set([...Object.keys(this.eggSparkles), ...spots])) {
       let sp = this.eggSparkles[id];
-      if (!sp) { sp = this.eggSparkles[id] = G.sparkleStar(); sp.scale.setScalar(1.6); this.root.add(sp); this.eggSpotPos(id, sp.position); sp.userData.base = sp.position.clone(); }
-      sp.visible = show && spots.includes(id);
+      if (!sp) { sp = this.eggSparkles[id] = G.standMarker(); this.root.add(sp); }
+      sp.visible = !this.finaleActive && !this.playHidden && spots.includes(id);
       if (!sp.visible) continue;
-      const k = id.length * 0.7; // each its own phase
-      sp.position.copy(sp.userData.base).setY(1.25 + (still ? 0 : 0.12 * Math.sin(this.eggT / 420 + k)));
-      if (this.camera) sp.quaternion.copy(this.camera.quaternion);
-      sp.rotateZ(still ? 0 : this.eggT / 900 + k);
-      const tw = still ? 1 : 0.75 + 0.25 * Math.sin(this.eggT / 260 + k);
-      sp.children.forEach((c) => { c.material.opacity = tw; });
+      const at = this.eggSpotPos(id);
+      this.updateStandMarker(sp, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= (id === 'bed' ? 1.1 : 0.65), { chimney: id === 'chimney' });
     }
+  }
+  hideMarkers() {
+    this.marker.obj.visible = false;
+    for (const m of [...Object.values(this.eggSparkles ?? {}), ...Object.values(this.goalMarkers ?? {})]) m.visible = false;
+    if (this.nuisance) this.nuisance.bird.visible = false;
+    for (const k of Object.values(this.keepsakes ?? {})) { k.obj.visible = false; k.glint.visible = false; }
+    for (const sp of this.inkWords ?? []) sp.visible = false;
   }
   // a bird flies across the screen over `at` and drops an egg there. -> Promise of the egg (a
   // world object at `at`), resolved when it has landed. Reduced motion: no flight, the egg fades
@@ -1301,15 +1390,16 @@ export class World {
     if (this.eggBird) this.eggBird.visible = false;
   }
 
-  // ---------- v0.16: the hired archer (A1); v0.17: and the second (A2) ----------
+  // ---------- the one hired archer (A1) ----------
   // Each stands at his post once hired (popping in with a puff of dust), keeps watch on the sky,
   // turns after the birds and now and then raises his bow to aim. v0.17 (spec §7, A09): when a
   // bird comes into his cover he turns to it and draws (`archerDraw`), then looses a blunt warning
   // arrow into the empty ground beside it (`archerShoot`). Away for the finale's drawing, back
   // after it. Presentation only. `this.archer` stays the first archer (A1).
   buildArcher() {
+    for (const a of Object.values(this.archers ?? {})) this.root.remove(a.root);
     this.archers = {};
-    for (const [id, make, height, model] of [['A1', G.archer, ARCHER.height, 1.88], ['A2', G.elfArcher, ELF.height, 1.82]]) {
+    for (const [id, make, height, model] of [['A1', G.archer, ARCHER.height, 1.88]]) {
       const post = this.stations[id]?.pos;
       if (!post) continue;
       const root = make();
@@ -1317,7 +1407,7 @@ export class World {
       root.position.copy(post).add(new THREE.Vector3(0.35, 0, 0.15));
       root.visible = false;
       this.root.add(root);
-      this.archers[id] = { id, root, height, t: id === 'A2' ? 3100 : 0, shown: false, hidden: false, aim: null, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body') };
+      this.archers[id] = { id, root, height, t: 0, shown: false, hidden: false, aim: null, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body') };
     }
     this.archer = this.archers.A1;
     this.arrows = [];
@@ -1368,7 +1458,7 @@ export class World {
       }
       a.root.rotation.y = yaw;
       if (a.head) a.head.rotation.y = still || a.aim ? 0 : 0.25 * Math.sin(a.t / 1700 + 1);
-      const armY = a.id === 'A2' ? 1.4 : 1.45;
+      const armY = 1.45;
       if (a.arms) { a.arms.rotation.x = -0.9 * up; a.arms.position.y = armY + 0.1 * up; }
       if (a.head) a.head.rotation.x = -0.25 * up;
     }
@@ -1503,6 +1593,10 @@ export class World {
   // a shoo: a little puff where the bird was as it flies off
   birdShoo() { if (this.nuisance?.bird.visible) this.puff(this.nuisance.bird.position.clone(), { scale: 0.5 }); }
   birdPos(out = new THREE.Vector3()) { return this.nuisance?.bird.visible ? out.copy(this.nuisance.bird.position) : null; }
+  cleanBenchVisual(u) {
+    if (!this.stain) return;
+    this.stain.scale.set(1 - Math.min(1, u) * 0.9, 1, 1 - Math.min(1, u) * 0.4);
+  }
   // v0.17 the bench stain (A22 item 8), shown while the ledger has one
   syncStain(l) {
     if (!this.stain) {
@@ -1510,7 +1604,7 @@ export class World {
       this.root.add(this.stain);
     }
     const on = !!l.theft?.stain && !this.playHidden;
-    if (on && !this.stain.visible) { this.benchSeat(this.stain.position); this.stain.position.y += 0.005; this.stain.rotation.y = 0.65; }
+    if (on && !this.stain.visible) { this.cleanBenchVisual(0); this.benchSeat(this.stain.position); this.stain.position.y += 0.005; this.stain.rotation.y = 0.65; }
     this.stain.visible = on;
   }
 
@@ -1715,7 +1809,7 @@ export class World {
     const trunk = this.objects.D09.position; const tr = TREE_TRUNK_R * this.objects.D09.scale.x + room;
     out.push({ lo: [trunk.x - tr, trunk.z - tr], hi: [trunk.x + tr, trunk.z + tr], name: 'D09_Trunk' });
     for (const id of SUNFLOWER_NODES) { const p = this.stations[id]?.pos; if (p) out.push({ lo: [p.x - 0.25, p.z - 0.25], hi: [p.x + 0.25, p.z + 0.25], name: id }); }
-    for (const a of Object.values(this.archers ?? {})) if (a.root.visible) { const p = a.root.position; out.push({ lo: [p.x - 0.35, p.z - 0.35], hi: [p.x + 0.35, p.z + 0.35], name: a.id === 'A1' ? 'Archer' : 'Archer2' }); }
+    for (const a of Object.values(this.archers ?? {})) if (a.root.visible) { const p = a.root.position; out.push({ lo: [p.x - 0.35, p.z - 0.35], hi: [p.x + 0.35, p.z + 0.35], name: 'Archer' }); }
     return out;
   }
   // v0.16: a free place on the grass near `p` for the egg to land: the first of a few places
@@ -1732,7 +1826,14 @@ export class World {
       if (this.clampToBounds(q)) continue;
       if (free(out)) return out;
     }
-    return out.set(p.x, 0, p.z + 0.9);
+    // A star can lie inside the tree clearing. Search outwards until the egg is actually
+    // on free ground rather than falling back inside a footprint.
+    for (let radius = 2.2; radius < 14; radius += 0.4) for (let k = 0; k < 24; k++) {
+      const a = k * Math.PI / 12;
+      out.set(p.x + Math.sin(a) * radius, 0, p.z + Math.cos(a) * radius);
+      if (!this.clampToBounds(out.clone()) && free(out)) return out;
+    }
+    return out.copy(p).setY(0);
   }
   // a buyer's place or start that lies in a footprint moves out of it, sideways, to the near edge
   clearOf(p, boxes) {
@@ -1917,6 +2018,18 @@ export class World {
     }
   }
 
+  updateSkyBirds(dtMs) {
+    if (this.reducedMotion()) return;
+    this.skyBirdT = (this.skyBirdT ?? 0) + dtMs;
+    const t = this.skyBirdT;
+    for (const [i, b] of this.objects.D21.children.entries()) {
+      b.userData.home ??= b.position.clone();
+      b.position.copy(b.userData.home).add(new THREE.Vector3(0.12 * Math.sin(t / 1700 + i * 2.4), 0.08 * Math.sin(t / 600 + i), 0));
+      b.rotation.z = 0.1 * Math.sin(t / 1100 + i);
+      for (const wing of b.children) wing.rotation.z = wing.userData.side * 0.22 * Math.sin(t / (190 + i * 23) + i * 1.7);
+    }
+  }
+
   // ---------- v0.17c: the farm moves to the song that is playing (audio/beat.js) ----------
   // level 0..1 sways the sunflowers and the corn (they nod about their feet) and lifts the sky's
   // birds; on a beat the chimney gives a puff (one every 0.9 s at most) and the birds bob. With no
@@ -1962,6 +2075,7 @@ export class World {
   // a word pops up at `pos`, rises a little and fades (a still word with reduced motion)
   inkWord(text, pos, { ms = 1400, h = 0.5, rise = 0.6 } = {}) {
     const sp = this.inkSprite(text, h);
+    this.inkWords ??= new Set(); this.inkWords.add(sp);
     sp.position.copy(pos);
     const still = this.reducedMotion();
     const y0 = pos.y;
@@ -1969,7 +2083,7 @@ export class World {
       sp.position.y = y0 + (still ? 0 : rise * ease.out(t));
       sp.material.opacity = t < 0.15 ? t / 0.15 : t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
       if (!still) sp.scale.set(sp.scale.x / sp.scale.y * h * (t < 0.15 ? 0.7 + 2 * t : 1), h * (t < 0.15 ? 0.7 + 2 * t : 1), 1);
-    }).then(() => { this.root.remove(sp); sp.material.map.dispose(); sp.material.dispose(); });
+    }).then(() => { this.inkWords.delete(sp); this.root.remove(sp); sp.material.map.dispose(); sp.material.dispose(); });
   }
   // a thing on the farm wobbles (rotation about its foot), and settles back
   wobble(obj, { amp = 0.08, ms = 700, axis = 'z', delay = 0 } = {}) {
@@ -2396,6 +2510,7 @@ export class World {
   //   settle: in reach and standing still (the 0.25 s before work): the ring draws in a little;
   //   work: working: the arc fills over each unit, and `markerPop` bumps it as the unit lands.
   updateMarker(dtMs, m, reducedMotion = false) {
+    if (this.finaleActive || this.playHidden) { this.marker.obj.visible = false; return; }
     const k = this.marker;
     const o = k.obj;
     k.t += dtMs;
@@ -2409,7 +2524,7 @@ export class World {
     const r = (m?.target.r ?? 0.35) + 0.24;
     let s = 1;
     if (mode === 'near' && !reducedMotion) s = 1 + 0.05 * Math.sin((k.t / 1400) * Math.PI * 2);
-    else if (mode === 'settle') s = 0.93;
+    else if (mode === 'settle') s = 1.1;
     k.scale += (s - k.scale) * (1 - Math.exp(-dtMs / 60));
     if (k.pop > 0) k.pop = Math.max(0, k.pop - dtMs);
     const bump = reducedMotion ? 0 : k.popAmp * Math.sin(Math.PI * (k.pop / 180));
@@ -2434,6 +2549,10 @@ export class World {
   // points: world positions that must stay visible (Vanessa's body, the marked target). A ray
   // from the camera to each point that meets the tree's meshes first fades the tree.
   updateFade(dtMs, camera, points) {
+    if (this.houseFade) {
+      this.houseFade.meshes = [];
+      for (const id of HOUSE_STAGES) if (this.lastLedger && isCommitted(this.lastLedger, id)) this.parts[id].model.root.traverse((m) => { if (m.isMesh && !m.userData.outline) this.houseFade.meshes.push(m); });
+    }
     for (const f of this.faders) {
       let hidden = false;
       for (const p of points) {

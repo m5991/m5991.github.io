@@ -118,7 +118,7 @@ function subGeometry(g, gr) {
 // Front gable faces +Z, origin at the footprint centre on the ground. Stage nodes (annex §E.6),
 // each taking its colour as its stage is built (spec v0.9 §10.9, answer 3). v0.15 (captain:
 // "the walls should only be walls, roof only be roof, add an extra step for chimney"): H1 the
-// stone plinth; H2 the plain walls (v0.16: four of them, open on top); H3 the roof (D02) with its gables; H4 the red chimney D03 on the right slope
+// stone plinth; H2 the walls with triangular gables (open inside); H3 the roof (D02); H4 the red chimney D03 on the right slope
 // toward the front (its smoke rises from `chimneyTop`, world.js); H5 the home: the round gable
 // window D04, square front window D05, side window D06, the door frame, the red door with its
 // handle D07, the door step and the window trim (the dark recesses behind them come with them).
@@ -136,8 +136,8 @@ export function cottage() {
   plinth.add(at(mesh(new THREE.BoxGeometry(W + 0.16, P, D + 0.16), PAL.stone), 0, P / 2, 0));
   // walls (v0.16, captain: "it should only build walls, not the triangular shape up there, and
   // it'll look empty on the inside"): four plain walls with a little hand-built wonkiness (D25),
-  // open on top, so the inside reads as an empty room until the roof. The two gable triangles
-  // belong to the roof (H3).
+  // open inside, so the inside reads as an empty room until the roof. The two gable triangles
+  // now belong to the walls (H2), per the v0.17 phone clarification.
   const WT = 0.12; // wall thickness
   const wonky = (geo) => {
     const bp = geo.attributes.position;
@@ -149,13 +149,13 @@ export function cottage() {
   for (const geo of [wall(W, WT, 0, D / 2 - WT / 2), wall(W, WT, 0, -D / 2 + WT / 2), wall(WT, D - 2 * WT, W / 2 - WT / 2, 0), wall(WT, D - 2 * WT, -W / 2 + WT / 2, 0)]) {
     walls.add(mesh(geo, PAL.cream, { hatch: 1 }));
   }
-  // the gables (H3): a triangle over the front and back walls, under the roof slabs
+  // The walls stage includes both triangular gables; the roof stage adds only its slabs.
   const tri = new THREE.Shape();
   tri.moveTo(-W / 2, 0); tri.lineTo(W / 2, 0); tri.lineTo(0, R); tri.closePath();
   for (const z of [D / 2 - WT, -D / 2]) {
     const g = new THREE.ExtrudeGeometry(tri, { depth: WT, bevelEnabled: false });
     g.translate(0, P + Hw, z);
-    roof.add(mesh(wonky(g), PAL.cream, { hatch: 1 }));
+    walls.add(mesh(wonky(g), PAL.cream, { hatch: 1 }));
   }
 
   const front = D / 2;

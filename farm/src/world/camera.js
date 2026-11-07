@@ -27,7 +27,7 @@ export class CameraRig {
       p.frameViewport(this.camera, w, h, fitRect(w, h));
       return;
     }
-    const target = new THREE.Vector3(heroPos.x, 0.8, heroPos.z);
+    const target = new THREE.Vector3(heroPos.x, 0.8 + (heroPos.y ?? 0), heroPos.z);
     const snapped = this.snap;
     if (this.snap) { this.focus.copy(target); this.snap = false; }
     this.focus.lerp(target, 1 - Math.exp(-dtMs / 140));

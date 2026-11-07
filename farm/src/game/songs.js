@@ -90,29 +90,94 @@ export const SONGS = {
 // E21's first hint stays the coin hint (v0.12)
 SONGS.E21.hint = SPOTS.purse.hint;
 SONGS.E21.coins = E21_COINS;
+// Keep the archive intact; Tiffany can change edition membership and placement here.
 export const SONG_IDS = Object.keys(SONGS);
-// the kids edition's songs (26; confirmed by the captain on 2026-11-05: "everything confirmed")
-export const KIDS_SONGS = SONG_IDS.filter((id) => SONGS[id].kids);
+export const REMOVED_SONGS = ['E14', 'E18', 'E26', 'E31', 'E32', 'E33'];
+export const EDITION_SONGS = {
+  full: SONG_IDS.filter((id) => !REMOVED_SONGS.includes(id)),
+  kids: SONG_IDS.filter((id) => SONGS[id].kids && !REMOVED_SONGS.includes(id)),
+};
+export const KIDS_SONGS = EDITION_SONGS.kids;
+
+// A distinct ground circle and star for every recording. `at` is a base anchor; offsets
+// are metres on the ground. No other star queues a second song when the first is found.
+const PLACES = {
+  E01: ['drawing', 'the drawing clearing', 'tree', [1.5, 1.3]],
+  E02: ['chimney', 'the chimney', 'chimney', [0, 0]],
+  E03: ['weedPatch', 'the weeds beside the bed', 'bed', [-1.4, 0.4]],
+  E04: ['smoke', 'the smoke beside the house', 'chimney', [0, 1.8]],
+  E05: ['tree', 'the old tree', 'tree', [0, 0]],
+  E06: ['weeds', 'the garden weeds', 'bed', [1.8, 0.4]],
+  E07: ['sunflowers', 'the sunflowers', 'sunflowers', [0, 0]],
+  E08: ['stones', 'the stepping stones', 'stones', [0, 0]],
+  E09: ['rake', 'the rake beside the wall', 'tools', [1.6, 0.8]],
+  E10: ['beet', 'the beet side of the bed', 'bed', [-1.8, -1.3]],
+  E11: ['sun', 'directly below the sun', 'sun', [0, 0]],
+  E12: ['door', 'the front door', 'door', [0, 0]],
+  E13: ['tools', 'the shovel and rake', 'tools', [0, 0]],
+  E15: ['birds', 'under the birds in the map corner', 'birds', [0, 0]],
+  E16: ['table', 'the yard-sale table', 'table', [0, 0]],
+  E17: ['bench', 'the bench', 'bench', [0, 0]],
+  E19: ['paper', 'the paper clearing by the tree', 'tree', [2.6, -0.5]],
+  E20: ['home', 'the home approach', 'door', [1.8, 1.1]],
+  E21: ['purse', 'a full purse', 'purse', [0, 0]],
+  E22: ['heart', 'the quiet clearing by the tree', 'tree', [-1.5, 1.2]],
+  E23: ['encouragement', 'the path beside the tree', 'tree', [1.2, 3.0]],
+  E24: ['vanessa', 'Vanessa’s house-side clearing', 'door', [-1.6, 1.0]],
+  E25: ['bed', 'the Who-Knows plant in the raised bed', 'bed', [0, 0]],
+  E27: ['shade', 'the shade clearing', 'tree', [-1.7, 3.0]],
+  E28: ['corn', 'the corn', 'corn', [0, 0]],
+  E29: ['tour', 'the start of the farm tour', 'door', [-1.6, 2.7]],
+  E30: ['dance', 'the dancing clearing', 'door', [1.8, 2.9]],
+};
+const BASE_SPOTS = { ...SPOTS };
+for (const [id, [spot, label, anchor, offset]] of Object.entries(PLACES)) {
+  SONGS[id].spot = spot;
+  const base = BASE_SPOTS[anchor] ?? BASE_SPOTS.tree;
+  SPOTS[spot] = { ...base, label, anchor, offset, hint: `A song waits at ${label}.` };
+}
+const MOMENTS = {
+  drawing: ['Picture the farm', 'A picture!'], weedPatch: ['Inspect the mystery weed', 'Hmm…'],
+  smoke: ['Watch the smoke curl', 'Puff puff!'], tree: ['Thank the old tree', 'Good team!'],
+  weeds: ['Challenge the garden weeds', 'Not today!'], sunflowers: ['Dance with the sunflowers', 'Ta-da!'],
+  stones: ['Hop the stepping stones', 'Hop! Hop!'], rake: ['Salute the garden rake', 'At ease!'],
+  beet: ['Inspect the beet patch', 'Beet it!'], door: ['Knock on the door', 'Knock knock!'],
+  tools: ['Lean the rake on the shovel', 'Clink!'], table: ['Empty your pockets', 'Treasures!'],
+  bench: ['Rest on the bench', 'Aah…'], paper: ['Imagine it on paper', 'Draw it!'],
+  home: ['Welcome everyone home', 'Welcome!'], heart: ['Think of someone you love', 'Lucky!'],
+  encouragement: ['Take a hopeful breath', 'You can!'], vanessa: ['Look around your farm', 'Vanessa!'],
+  bed: ['Say hello to the Who-Knows plant', '?♪'], shade: ['Stand in the cool shade', 'So cool!'],
+  corn: ['Tell the corn a joke', 'Corny!'], tour: ['Begin the farm tour', 'This way!'],
+  dance: ['Dance by the house', 'Dance break!'],
+};
+for (const [id, [verb, word]] of Object.entries(MOMENTS)) SPOTS[id].act = { verb, word, ms: id === 'bench' ? 2600 : 1500 };
+SPOTS.sun = { ...SPOTS.sun, act: { verb: 'Greet the sun', word: 'Hello, sunshine!', ms: 1500 } };
+SPOTS.birds = { ...SPOTS.birds, act: { verb: 'Let the birds debate', word: 'Tweet? Tweet!', ms: 1600 } };
+SPOTS.chimney.act = { verb: 'Climb to the chimney', word: 'Up we go!', ms: 7200 };
+// E17 is the adult bench recording, E27 its clean equivalent. Keep E27 available in full
+// at its own shade star, and use the bench for it in kids without adding/removing recordings.
+export const songSpot = (id, edition = 'full') => edition === 'kids' && id === 'E27' ? 'bench' : SONGS[id].spot;
+export const songTitle = (id, edition = 'full') => edition === 'kids' && id === 'E27' ? 'Stay in the shade' : SONGS[id].title;
 
 export const isEdition = (e) => EDITIONS.includes(e);
 // the songs an edition has, in playlist order
-export const songsFor = (edition = 'full') => (edition === 'kids' ? KIDS_SONGS : SONG_IDS);
+export const songsFor = (edition = 'full') => EDITION_SONGS[edition === 'kids' ? 'kids' : 'full'];
 export const hasSong = (id, edition = 'full') => songsFor(edition).includes(id);
 // the song's Suno page: only in the full edition (the kids listen only inside the game)
 export const sunoLink = (id, edition = 'full') => (edition === 'kids' || !SONGS[id] ? null : SONGS[id].suno);
 // the MP3 of a song, made locally from the playlist archive (tools/make-songs.mjs), and the name
 // it downloads as
 export const mp3Path = (id) => `assets/songs/${id}.mp3`;
-export const mp3Name = (id) => `${String(SONGS[id].n).padStart(2, '0')} ${SONGS[id].title.replace(/[\\/:*?"<>|]/g, '')}.mp3`;
+export const mp3Name = (id, edition = 'full') => `${String(SONGS[id].n).padStart(2, '0')} ${songTitle(id, edition).replace(/[\\/:*?"<>|]/g, '')}.mp3`;
 // a card title that tells the three "Pockets Full of Treasures" recordings apart
-export const songLabel = (id) => (SONG_IDS.filter((k) => SONGS[k].title === SONGS[id].title).length > 1 ? `${SONGS[id].title} (recording ${SONGS[id].n})` : SONGS[id].title);
+export const songLabel = (id, edition = 'full') => (SONG_IDS.filter((k) => SONGS[k].title === SONGS[id].title).length > 1 ? `${SONGS[id].title} (recording ${SONGS[id].n})` : songTitle(id, edition));
 
 // the hunt is phase two: open once the home is built and the drawing has its colour
 export const eggPhase = (l) => mainComplete(l);
 // how many of the edition's songs are found
 export const foundCount = (edition = 'full', discoveries = {}) => songsFor(edition).filter((id) => discoveries?.[id]).length;
 // the songs still waiting at a spot, in playlist order
-export const eggsAt = (spot, edition = 'full', discoveries = {}) => songsFor(edition).filter((id) => SONGS[id].spot === spot && !discoveries?.[id]);
+export const eggsAt = (spot, edition = 'full', discoveries = {}) => songsFor(edition).filter((id) => songSpot(id, edition) === spot && !discoveries?.[id]);
 // the spots that still hold a song (E21's purse is not a place)
 export const spotsWithEggs = (edition = 'full', discoveries = {}) => Object.keys(SPOTS).filter((s) => s !== 'purse' && eggsAt(s, edition, discoveries).length > 0);
 

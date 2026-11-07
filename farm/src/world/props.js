@@ -411,15 +411,17 @@ export function archer() {
     head.add(at(mesh(box(headR * 0.03, headR * 0.03, headR * 1.0), A.frame, { ink: false, shadow: false }), sd * headR * 0.7, headR * 0.16, headR * 0.45));
   }
   head.add(at(mesh(box(headR * 0.16, headR * 0.035, headR * 0.03), A.frame, { ink: false, shadow: false }), 0, headR * 0.17, headR * 1.0));
-  // the hair: a close cap, parted in the middle, the stiff fringe falling to each side
-  const cap = new THREE.SphereGeometry(headR * 1.07, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
-  head.add(at(mesh(cap, A.hair), 0, headR * 0.12, -headR * 0.04, -0.12, 0, 0));
+  const cap = new THREE.SphereGeometry(headR * 1.04, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.53);
+  cap.scale(1, 0.68, 0.96);
+  head.add(at(mesh(cap, A.hair), 0, headR * 0.33, -headR * 0.06));
   for (const sd of [-1, 1]) {
-    const fringe = new THREE.SphereGeometry(headR * 0.62, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
-    fringe.scale(1.05, 0.55, 0.7);
-    head.add(at(mesh(fringe, A.hair), sd * headR * 0.42, headR * 0.6, headR * 0.5, 0.55, 0, sd * -0.5));
+    const fringe = new THREE.SphereGeometry(headR * 0.57, 16, 10);
+    fringe.scale(0.94, 0.24, 0.72);
+    head.add(at(mesh(fringe, A.hair), sd * headR * 0.48, headR * 0.82, headR * 0.4, 0.12, 0, sd * -0.08));
+    head.add(at(mesh(box(headR * 0.12, headR * 0.46, headR * 0.52), A.hair), sd * headR * 0.96, headR * 0.26, -headR * 0.04));
   }
-  head.add(at(stroke(headR * 0.03, headR * 0.03, headR * 0.6), 0, headR * 1.12, headR * 0.35, 0.5, 0, 0)); // the part
+  const part = at(mesh(box(headR * 0.055, headR * 0.018, headR * 1.1), mix(A.skin, A.hair, 0.35), { ink: false }), 0, headR * 1.02, headR * 0.1);
+  part.name = 'Dwight_CentrePart'; head.add(part);
   root.add(head);
   // arms forward, holding the crossbow level at the chest (the `arms` group is raised to aim)
   const arms = new THREE.Group(); arms.name = 'arms';
@@ -938,7 +940,7 @@ export function dirtPath(left, right) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const DIRT = 0xd9a86c;
+  const DIRT = 0xe5d9ba;
   const ribbon = new THREE.Mesh(geo, toon(DIRT, { grain: 1, flat: 1, side: THREE.DoubleSide, hatch: 1 }));
   ribbon.receiveShadow = true; ribbon.castShadow = false; ribbon.userData.noOutline = true;
   ribbon.name = 'D08_Path_Dirt';
@@ -976,6 +978,20 @@ export function dirtPath(left, right) {
     em.userData.noOutline = true; em.userData.noFit = true; em.castShadow = false; em.name = 'D08_Path_Edge';
     g.add(em);
   }
+  // Stones touch the dirt edge, with enough irregularity to read as hand laid.
+  const edgeStones = [];
+  for (const edge of [left, right]) {
+    let run = 0;
+    for (let i = 1; i < edge.length - 2; i++) {
+      run += edge[i].distanceTo(edge[i - 1]);
+      if (run < 0.32) continue;
+      run = 0;
+      const c = edge[i].clone().lerp((edge === left ? right : left)[i], 0.5);
+      const outward = edge[i].clone().sub(c).normalize();
+      edgeStones.push({ pos: edge[i].clone().addScaledVector(outward, 0.06), seed: i });
+    }
+  }
+  const rocks = borderRing(edgeStones); rocks.name = 'D08_Path_EdgeRocks'; g.add(rocks);
   const tg = [];
   tufts.forEach((p, t) => {
     const n2 = 3;
@@ -1120,20 +1136,20 @@ export function sun(radius, maxLen = () => Infinity) {
 }
 // D21: four check-mark birds, each two curved wing strokes
 export function birds(size) {
-  const geos = [];
+  const g = new THREE.Group(); g.name = 'D21_Birds';
   for (const [x, y, s, tilt] of [[0, 0, 1, 0.05], [0.9, 0.35, 0.8, -0.1], [1.7, -0.1, 0.9, 0.12], [0.6, -0.6, 0.75, -0.05]]) {
+    const b = new THREE.Group(); b.position.set(x * size, y * size, 0); b.rotation.z = tilt;
     for (const side of [-1, 1]) {
       const pts = [];
       for (let k = 0; k <= 8; k++) {
         const t = k / 8; const L = (side < 0 ? 0.24 : 0.3) * s;
-        const px = side * t * L; const py = t * L * 0.55 + Math.sin(t * Math.PI) * L * 0.18 - t * t * L * 0.15;
-        pts.push(new THREE.Vector2((x + px * Math.cos(tilt) - py * Math.sin(tilt)) * size, (y + px * Math.sin(tilt) + py * Math.cos(tilt)) * size));
+        pts.push(new THREE.Vector2(side * t * L * size, (t * L * 0.55 + Math.sin(t * Math.PI) * L * 0.18 - t * t * L * 0.15) * size));
       }
-      geos.push(strokeGeometry(pts, (t) => size * 0.05 * (1 - 0.5 * t)));
+      const wing = strokeMesh([strokeGeometry(pts, (t) => size * 0.05 * (1 - 0.5 * t))]);
+      wing.userData.side = side; b.add(wing);
     }
+    g.add(b);
   }
-  const g = new THREE.Group(); g.name = 'D21_Birds';
-  g.add(strokeMesh(geos));
   return g;
 }
 // D23: one irregular pen line along the ground's far edge, with the drawing's gentle swell

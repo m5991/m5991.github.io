@@ -38,16 +38,17 @@
 // no Suno links, and its own save; the hired archer stands at his post and says his line.
 // v0.17 (spec §7, §6.5, §5.1, §10.5): birds come for the crops from the second crop plot on (game/
 // birds.js decides, the ledger takes, capped); Wave, or a hired archer's warning arrow, sends one
-// off; a bird may leave a stain on the restored bench, cleaned in a second; a second archer can be
-// hired; the end credits follow the finale; the Who-Knows plant says hello.
+// off; a bird may leave a stain on the restored bench, cleaned with a cloth; Dwight is the sole
+// archer; the end credits follow the finale; the Who-Knows plant says hello.
 import * as THREE from 'three';
+import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER2_LINES, ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
   apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
-  missingPrereqs, tableCap, tables,
+  tableCap, tables,
 } from './game/ledger.js';
 import { createBirds } from './game/birds.js';
 import { createCredits } from './ui/credits.js';
@@ -57,7 +58,7 @@ import { eveningAt } from './game/evening.js';
 import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft } from './game/keepsakes.js';
 import { createDiyHint } from './game/hints.js';
 import { buildBar, PATCH_NAME, WOOD_SOURCES } from './game/guide.js';
-import { E21_COINS, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLabel, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
+import { E21_COINS, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLabel, songSpot, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
 import { Hammering } from './world/build.js';
 import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
@@ -98,10 +99,8 @@ const DEBUG = params.has('debug');
 const EDITION = document.documentElement.dataset.edition === 'kids' || params.get('edition') === 'kids' ? 'kids' : 'full';
 // v0.16 the hunt: how near a spot (m) calls the bird, how near the landed egg picks it up, where
 // the rest between two eggs (ms); the egg lands a step from her (world.freeSpotNear)
-const HUNT = { spotM: 1.5, pickM: 0.75, restMs: 2500 };
+const HUNT = { spotM: 0.65, pickM: 0.75, restMs: 2500 };
 const SPEED = params.has('speed') ? Number(params.get('speed')) : RUN_SPEED;
-// arrow tip height above each kind of target, metres
-const ARROW_H = { weed: 0.75, pile: 0.8, stick: 0.6, rock: 0.75, node: 2.1, site: 0.5, table: 1.05, tools: 1.9, yard: 0.7 };
 const $ = (id) => document.getElementById(id);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
@@ -212,7 +211,7 @@ async function boot() {
   function spotHere(heroXZ) {
     for (const id of spotsWithEggs(EDITION, data.discoveries)) {
       world.eggSpotPos(id, tmpH);
-      if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= HUNT.spotM) return id;
+      if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= (id === 'bed' ? 1.1 : HUNT.spotM)) return id;
     }
     return null;
   }
@@ -233,8 +232,10 @@ async function boot() {
     // v0.17c: at a spot, its small moment first (songs.js SPOTS act), then the bird
     const m = hunt.moment;
     if (m) {
+      const before = m.ms;
       m.ms += dt;
-      if (hero.moving) { hunt.moment = null; return; } // walking off calls it off
+      if (m.spot === 'door') for (const time of [430, 860]) if (before < time && m.ms >= time) sfx.cue('knock');
+      if (hero.moving) { hunt.moment = null; hero.cancelMoment(); return; } // walking off calls it off
       if (m.ms >= m.act.ms) {
         hunt.moment = null;
         const id = nextEgg(data.ledger, { edition: EDITION, discoveries: data.discoveries, spot: m.spot });
@@ -385,9 +386,10 @@ async function boot() {
     hero.halt();
     world.eggSpotPos(spot, tmpH);
     hero.yawTarget = Math.atan2(tmpH.x - hero.body.position.x, tmpH.z - hero.body.position.z);
-    hero.celebrate(act.ms);
+    const kind = spot === 'bench' ? 'bench' : spot;
+    hero.startMoment(kind, { ms: act.ms, seat: world.benchSeat(), yaw: world.objects.D10.rotation.y, route: spot === 'chimney' ? world.chimneyRoute() : null });
     world.spotPoke(spot, act.word, hero.position);
-    sfx.cue(spot === 'door' ? 'tock' : 'cue');
+    sfx.cue(spot === 'door' ? 'knock' : 'cue');
     hud.setContext(null, null);
     hud.announce(`${act.verb}: ${act.word}`);
   }
@@ -396,8 +398,8 @@ async function boot() {
     const at = world.freeSpotNear(hero.position);
     hunt.busy = true;
     hunt.id = id;
-    hud.announce(id === 'E21' ? 'A bird is coming: your big purse earned a song' : `A bird is coming from ${SPOTS[SONGS[id].spot].label}`);
-    world.eggDrop(at, hunt.eggs++).then((egg) => { hunt.egg = egg; hunt.busy = false; });
+    hud.announce(id === 'E21' ? 'A bird is coming: your big purse earned a song' : `A bird is coming from ${SPOTS[songSpot(id, EDITION)].label}`);
+    world.eggDrop(at, hunt.eggs++).then((egg) => { sfx.cue('eggDrop'); hunt.egg = egg; hunt.busy = false; });
   }
   function pickEgg() {
     const id = hunt.id;
@@ -407,7 +409,7 @@ async function boot() {
     persist(); // found for good before it is shown (spec §8: discovery state first)
     sfx.cue('crack');
     world.popEgg(egg).then(() => sfx.cue('complete'));
-    hud.announce(`Song found: ${songLabel(id)}`);
+    hud.announce(`Song found: ${songLabel(id, EDITION)}`);
     // v0.17 (§5): every song found: the collection's paper stamp
     if (foundCount(EDITION, data.discoveries) === songsFor(EDITION).length) setTimeout(() => hud.toast(`Every song found! All ${songsFor(EDITION).length} are in your song collection, stamped.`, 5200), 1500);
     setTimeout(() => songCard(id), reducedMotion() ? 200 : 700);
@@ -424,10 +426,10 @@ async function boot() {
     const n = foundCount(EDITION, data.discoveries);
     const all = songsFor(EDITION).length;
     cards.song({
-      title: `♪ Song found: “${songLabel(id)}”`,
-      text: `${id === 'E21' ? `You saved up ${E21_COINS} coins, and a bird brought the money song.` : `A bird brought it from ${SPOTS[SONGS[id].spot].label}.`} ${n} of ${all} songs found.`,
-      id, songTitle: songLabel(id),
-      src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id, EDITION), available,
+      title: `♪ Song found: “${songLabel(id, EDITION)}”`,
+      text: `${id === 'E21' ? `You saved up ${E21_COINS} coins, and a bird brought the money song.` : `A bird brought it from ${SPOTS[songSpot(id, EDITION)].label}.`} ${n} of ${all} songs found.`,
+      id, songTitle: songLabel(id, EDITION),
+      src: mp3Path(id), download: mp3Name(id, EDITION), suno: sunoLink(id, EDITION), available,
       onClose: () => { loop.resume('card'); },
     });
   }
@@ -439,7 +441,7 @@ async function boot() {
     cards.songbook({
       title: `Songs · ${mine.length} of ${all}`,
       intro: !eggPhase(data.ledger) ? 'The songs are hidden in eggs. Finish the house and colour the farm, and the egg hunt begins.' : mine.length ? 'Every song you have found. Listen here, or download it.' : 'No song yet: walk to a sparkle on the farm and a bird brings an egg.',
-      songs: mine.map((id) => ({ id, title: `${String(SONGS[id].n).padStart(2, '0')} · ${songLabel(id)}`, src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id, EDITION) })),
+      songs: mine.map((id) => ({ id, title: `${String(SONGS[id].n).padStart(2, '0')} · ${songLabel(id, EDITION)}`, src: mp3Path(id), download: mp3Name(id, EDITION), suno: sunoLink(id, EDITION) })),
       stamp: mine.length === all ? `All ${all} songs found` : '',
       left: eggPhase(data.ledger) && left.length ? `Still to find: songs at ${left.join(', ')}${mine.includes('E21') || !songsFor(EDITION).includes('E21') ? '' : ', and one for a big purse'}.` : '',
       available,
@@ -450,11 +452,11 @@ async function boot() {
   const speech = { el: $('speech'), until: 0, id: 'A1' };
   function archerSays(line, ms = 7000, id = 'A1') {
     speech.id = id;
-    speech.el.querySelector('.who').textContent = id === 'A2' ? 'Second archer' : 'Archer';
+    speech.el.querySelector('.who').textContent = 'Archer';
     speech.el.querySelector('.text').textContent = `“${line}”`;
     speech.el.hidden = false;
     speech.until = performance.now() + ms;
-    hud.announce(`The ${id === 'A2' ? 'second archer' : 'archer'}: ${line}`);
+    hud.announce(`The archer: ${line}`);
   }
   function placeSpeech() {
     if (speech.el.hidden) return;
@@ -471,7 +473,7 @@ async function boot() {
   // Session-only: the visit's clock is not saved (the kinds' rotation and every take are).
   const birds = createBirds();
   const birdAt = new THREE.Vector3();
-  let cleaning = null; // { ms } while she cleans the bench (1 s standing still)
+  let cleaning = null; // { ms } while she wipes the bench, standing still
   const benchSpot = () => world.benchSeat(new THREE.Vector3());
   function birdCtx(heroXZ) {
     const l = data.ledger;
@@ -505,7 +507,7 @@ async function boot() {
           world.archerShoot(act.archer, act.at).then(() => sfx.cue('thud'));
           sfx.cue('squawk');
           world.birdShoo();
-          hud.announce(`The ${act.archer === 'A2' ? 'second archer' : 'archer'} looses a warning arrow, and the bird flies off with nothing`);
+          hud.announce(`The archer looses a warning arrow, and the bird flies off with nothing`);
           break;
         case 'take': {
           const r = commit(act.tx);
@@ -579,11 +581,12 @@ async function boot() {
     if (who.idleMs >= 4000 && !who.glanced) { who.glanced = true; hero.yawTarget = Math.atan2(p.x - hero.body.position.x, p.z - hero.body.position.z); }
   }
 
-  // the bench stain: standing still beside the bench for a second cleans it
+  // The bench stain: a visible cloth swipe clears it over BIRDS.cleanMs.
   function updateCleaning(dt) {
     if (!cleaning) return;
-    if (hero.moving || !data.ledger.theft.stain) { cleaning = null; return; }
+    if (hero.moving || !data.ledger.theft.stain) { cleaning = null; hero.cancelMoment(); world.cleanBenchVisual(0); return; }
     cleaning.ms += dt;
+    world.cleanBenchVisual(cleaning.ms / BIRDS.cleanMs);
     if (cleaning.ms >= BIRDS.cleanMs) { cleaning = null; commit({ t: 'cleanBench' }); }
   }
 
@@ -771,12 +774,8 @@ async function boot() {
             sfx.cue('complete');
             if (s.crop && first) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel. The yard-sale table is set up: walk past it with your ${PATCH_NAME[data.ledger.crop]}.`, 4800);
             else if (s.crop) hud.toast(`The ${s.label} is ready: dig its two spots with the shovel.`, 4200);
-            if (s.hire) archerSays(e.stage === 'A2' ? ARCHER2_LINES[0] : ARCHER_LINES[0], 7000, e.stage); // v0.16: he arrives at his post and says his line
-            // v0.17: once the archer and the raised bed stand, the optional second archer can come
-            if ((e.stage === 'A1' || e.stage === 'T0') && !data.ledger.stages.A2.committed && !missingPrereqs(data.ledger, 'A2').length) {
-              world.tweens.wait(7600).then(() => hud.toast(`A second archer can guard the tomatoes and the tables: ${STAGES.A2.coins} coins and ${STAGES.A2.W} wood, at his post between the raised bed and the tables. Optional.`, 5200));
-            }
-            if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, another crop plot and the walls.', 5000);
+            if (s.hire) archerSays(ARCHER_LINES[0], 7000, e.stage); // v0.16: he arrives at his post and says his line
+            if (e.stage === 'H1') hud.toast('Foundation laid! Next: the path, restore the bench, then the crops and walls.', 5000);
             if (moreTables) {
               world.tableHold = false;
               world.sync(data.ledger, true); // the new table pops up in dust
@@ -916,6 +915,12 @@ async function boot() {
     world.updateMarker(dt, highlight && { target: highlight.target, mode, progress: ix.workProgress }, reducedMotion());
     updateContext(heroXZ, dt);
     updateCoachState(dt, heroXZ, working);
+    const markers = goal.choice?.map((c) => c.target) ?? (goal.target ? [goal.target] : []);
+    const bar = buildBar(data.ledger, atSite(heroXZ, ctxTargets)?.id);
+    if (bar?.ready && !markers.includes(bar.stage)) markers.push(bar.stage);
+    const visibleMarkers = hammering.active || eggPhase(data.ledger) ? [] : markers;
+    if (data.ledger.theft.stain && !cleaning) visibleMarkers.push('G2');
+    world.updateGoalMarkers(visibleMarkers, dt);
     updateHunt(dt, heroXZ);
     updateKeepsakes(dt, heroXZ);
     updateBirds(dt, heroXZ);
@@ -992,7 +997,7 @@ async function boot() {
       const tool = toolCtx.want;
       hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
     } else if (data.ledger.theft.stain && !cleaning && Math.hypot(benchSpot().x - heroXZ.x, benchSpot().z - heroXZ.z) < 1.9) {
-      hud.setContext('Clean the bench', () => { hero.halt(); cleaning = { ms: 0 }; }); // v0.17: one second, standing still
+      hud.setContext('Clean the bench', () => { hero.halt(); cleaning = { ms: 0 }; hero.startMoment('clean', { ms: BIRDS.cleanMs, seat: world.benchSeat() }); }); // the cloth swipes while she stands still
     } else hud.setContext(null, null);
     // nonmodal status: what Vanessa is doing or why the nearby source is idle
     let text = '';
@@ -1127,6 +1132,7 @@ async function boot() {
     rig.snap = true;
     rig.wholeBlend = 0;
     world.tableHold = false;
+    world.resetTools(data.ledger.tool);
     world.sync(data.ledger);
     world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from the home (P25-2)
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
@@ -1483,7 +1489,7 @@ async function boot() {
   const fadePts = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
   function fadePoints() {
     const p = hero.position;
-    const pts = [fadePts[0].set(p.x, 0.3, p.z), fadePts[1].set(p.x, 0.9, p.z), fadePts[2].set(p.x, 1.5, p.z)];
+    const pts = [fadePts[0].set(p.x, p.y + 0.3, p.z), fadePts[1].set(p.x, p.y + 0.9, p.z), fadePts[2].set(p.x, p.y + 1.5, p.z)];
     if (highlight) pts.push(fadePts[3].set(highlight.target.x, 0.15, highlight.target.z));
     const st = coachState?.step && world.stations[coachState.step.target];
     if (st) pts.push(fadePts[4].copy(st.pos).setY(0.3));
@@ -1556,7 +1562,7 @@ async function boot() {
     if (hammering.active) { coach.hideAll(); coach.sparkle(null); return; } // nothing over the build
     const { step, prompt, point } = coachState;
     // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
-    const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : step?.target ? [{ id: step.target }] : [];
+    const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : (step?.target ?? goal.target) ? [{ id: step?.target ?? goal.target }] : [];
     // v0.13 DIY hint: 10 s after she has everything (or at once when DIY is pressed away), the
     // arrow leads to the part, which sparkles
     const hintAt = diyState.point && world.stations[diyState.stage] ? diyState.stage : null;
@@ -1572,11 +1578,11 @@ async function boot() {
       if (!st || point) continue;
       const hp = hero.body.position;
       // v0.15: for a sale the arrow shows where she sells from, behind the first table
-      const sell = aim.id === 'table' && step?.sale;
-      const pos = sell ? world.sellSpot(tmpS) : st.pos;
-      const atTarget = sell ? atTheTable() : Math.hypot(pos.x - hp.x, pos.z - hp.z) - st.def.r <= 0.9;
+      const sell = aim.id === 'table';
+      const pos = world.standPoint(aim.id, tmpS) ?? st.pos;
+      const atTarget = sell ? atTheTable() : Math.hypot(pos.x - hp.x, pos.z - hp.z) <= 0.65;
       if (atTarget) continue;
-      tmpP.copy(pos).setY(st.obj.position.y + (ARROW_H[st.def.kind] ?? 0.6)).project(rig.camera);
+      tmpP.copy(pos).setY(pos.y + 0.9).project(rig.camera);
       const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
       const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop });
       arrows.push(aim.colour ? { ...a, colour: aim.colour } : a);
@@ -1606,7 +1612,10 @@ async function boot() {
     coach.pointAt(point === 'diy' ? $('btn-diy') : point === 'sale' ? $('btn-sale') : null);
   }
 
+  const wakeLock = createWakeLock();
+  document.addEventListener('pointerdown', () => wakeLock.refresh(), { passive: true });
   function renderStep(dt) {
+    wakeLock.setActive(session.playing && !document.hidden && (credits.active ? !credits.paused : finale.active || (opening.active && opening.phase === 'running') || !loop.paused));
     opening.update(dt);
     finale.update(dt);
     credits.update(dt);
@@ -1623,6 +1632,7 @@ async function boot() {
     world.updateLooks(dt);
     world.updateSmoke(dt);
     world.updateArcher(dt);
+    world.updateSkyBirds(dt);
     updateDance(dt);
     // v0.17c: the finished farm's evening and its fireflies
     const ev = session.playing && !finale.active && !credits.active && !backdrop ? eveningAt(data.ledger.activeMs, mainComplete(data.ledger)) : 0;

@@ -236,6 +236,25 @@ export function marker() {
   return g;
 }
 
+// A standing place, distinct from the resource's work-progress ring. Its centre is the
+// exact point used by the action. Warm gold stays legible over paper and coloured grass.
+export function standMarker() {
+  const g = group('StandHere');
+  const mat = (opacity) => new THREE.MeshBasicMaterial({ color: PAL.flower, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+  const ring = named(at(new THREE.Mesh(new THREE.RingGeometry(0.46, 0.55, 64), mat(0.9)), 0, 0.045, 0, -Math.PI / 2), 'standCircle');
+  const disc = named(at(new THREE.Mesh(new THREE.CircleGeometry(0.46, 48), mat(0.14)), 0, 0.04, 0, -Math.PI / 2), 'standDisc');
+  const star = P.sparkleStar(); star.name = 'standStar'; star.position.y = 0.8; star.scale.setScalar(1.5);
+  const sparks = group('standSparks');
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    const spark = P.sparkleStar(); spark.position.set(Math.cos(a) * 0.7, 0.1 + i % 2 * 0.18, Math.sin(a) * 0.7); spark.scale.setScalar(0.45); sparks.add(spark);
+  }
+  sparks.visible = false;
+  g.add(ring, disc, star, sparks);
+  g.traverse((o) => { o.userData.noFit = true; o.userData.noOutline = true; o.renderOrder = 5; });
+  return g;
+}
+
 // ---------- fading a tall foreground object (playtest fix: the tree hid the piles) ----------
 // Every colour material becomes a per-object transparent clone (opacity 1 renders exactly like
 // the opaque original), drawn after a depth-only copy of the same meshes so overlapping canopy

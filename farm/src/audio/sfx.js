@@ -30,6 +30,8 @@ export const CUES = {
   squawk: { files: ['squawk'], gain: 0.38, gapMs: 600, pitch: 1, vol: 0.15 },
   tap: { files: ['tap'], gain: 0.3, gapMs: 50, pitch: 0.5, vol: 0.1, density: 0 },
   cue: { files: ['cue'], gain: 0.34, gapMs: 1500, pitch: 0, vol: 0 },
+  knock: { files: ['land-wood'], gain: 0.5, gapMs: 150, pitch: 0.3, vol: 0.08 },
+  eggDrop: { files: ['thud'], gain: 0.55, gapMs: 250, pitch: 0.4, vol: 0.08 },
   // the falling branch (P25-5): it snaps free in the tree, then lands
   crack: { files: ['crack'], gain: 0.34, gapMs: 800, pitch: 1, vol: 0.1 },
   thud: { files: ['thud'], gain: 0.42, gapMs: 800, pitch: 1, vol: 0.1 },

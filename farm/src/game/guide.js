@@ -139,7 +139,7 @@ function cropSteps(l, id, label, come = false) {
 // last plot, then the §6.3 order (v0.12: the tomatoes' plot is their raised bed, built by DIY).
 export function goalOrder(l) {
   const others = BASE_STAGES.filter((id) => !isFirstCrop(l, id)).sort((a, b) => STAGES[a].coins - STAGES[b].coins);
-  const head = ['H1', 'G1', others[0], 'H2', 'A1', others[1]];
+  const head = ['H1', 'G1', 'G2', others[0], 'H2', 'A1', others[1]];
   // her first crop leads (with the tomatoes its raised bed is built first, by DIY)
   const first = firstStage(l);
   return [...(first ? [first] : []), ...head, ...ROUTE.filter((id) => !head.includes(id) && !isFirstCrop(l, id))];

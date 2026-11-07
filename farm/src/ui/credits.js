@@ -38,7 +38,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
     }
     if (c.kind === 'prints') return `<div class="credits-paper prints">${c.items.map((g) => `<img src="${esc(g.image)}" alt="${esc(g.alt)}">`).join('')}</div>`;
     if (c.kind === 'message') return `<div class="credits-paper message"><p class="from">${esc(c.from)}</p><p class="text">${esc(c.text)}</p></div>`;
-    return `<div class="credits-paper closing"><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p></div>`;
+    return `<div class="credits-paper closing" tabindex="0" role="region" aria-label="Closing text; scroll to read"><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p></div>`;
   }
   // what a screen reader hears once per card (the lyric lines are not announced one by one)
   function cardSpeech(c) {
