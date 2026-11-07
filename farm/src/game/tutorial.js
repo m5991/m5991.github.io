@@ -64,6 +64,38 @@ export function kindOf(id, l = null) {
   return null;
 }
 
+// v0.18 (captain, v0.17 playtest: "we still get arrows and yellow circles on getting crops and
+// materials for ingredients as the next step ... too many arrows and at that point the user gets
+// it"): gathering is shown once. The first time she picks up wood (a starter pile or a stick),
+// gathers stone or harvests a crop, the arrow and the standing circle lead her there; once she has
+// done that kind of gathering, a goal that only sends her for more of it keeps its words in the
+// goal line but gets no arrow and no circle. New things keep both: the first of each action, a
+// weed, a dig, the tools, a build, the yard-sale table, the songs.
+// What she has gathered at least once, from the ledger (no save field): wood and stone that left a
+// starter pile or rock, sit on her head or the pile by the house, or went into a build; a harvest.
+export function gatheredOnce(l) {
+  const spent = (r) => l.paymentEvents.some((id) => (STAGES[id]?.[r] ?? 0) > 0);
+  const W = l.carried.W > 0 || l.yard.W > 0 || spent('W') || Object.entries(PILES).some(([id, p]) => l.piles[id] < p.units);
+  const R = l.carried.R > 0 || l.yard.R > 0 || spent('R') || Object.entries(ROCKS).some(([id, r]) => !r.recovery && l.rocks[id] < r.units);
+  return { W, R, harvest: !!l.harvested };
+}
+// is the goal target `id` a routine gathering step now: a source of wood or stone, or a crop to
+// harvest, of a kind she has gathered before?
+export function routineGather(l, id) {
+  const once = gatheredOnce(l);
+  if (id in PILES) return once[PILES[id].res];
+  if (STICK_SLOTS.includes(id)) return once.W;
+  if (id in ROCKS) return once.R;
+  if (id in NODES && kindOf(id, l) === 'node') return once.harvest;
+  return false;
+}
+// the goal targets that get the arrow and the standing circle: the crop choice's patches, else the
+// goal's own target unless it is a routine gathering step
+export function guideTargets(l, goal) {
+  const ids = goal.choice?.map((c) => c.target) ?? (goal.target ? [goal.target] : []);
+  return ids.filter((id) => id && !routineGather(l, id));
+}
+
 // -> null when learned, else { phase, target, kind, tool?, choice? }
 // phase: 'move' (not moved yet) | 'take' | 'choose' | 'work' | 'dig' | 'gather' |
 //        'stock' | 'sale' | 'build' (a step to teach at `target`) | 'go' (an arrow to the goal

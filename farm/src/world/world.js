@@ -32,7 +32,8 @@ import * as CANNON from 'cannon-es';
 import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
 import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
-import { ARCHER } from './props.js';
+import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
+import { ribbonDistance } from './pathgeom.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
 import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
@@ -119,6 +120,12 @@ export const RING = { spacing: 0.34, gap: 1.9, grow: 0.15 };
 // `door` m wide at the door and `end` m at the gap (the gap is RING.gap wide), rounded over its
 // last `cap` m
 export const PATH_RING = { into: 0.5, door: 0.55, end: 0.68, cap: 0.6, past: 2.5 };
+// v0.18 (captain: "No rocks on the path, the rocks from the circle shouldn't be on top of the
+// path"): every stone keeps `clear` m between its farthest point and the path's dirt. The ring
+// leaves out the stones that would touch the path, so the path comes in through an open entrance.
+// The stones along the path's edges sit `spacing` m apart just outside the dirt (`gap` m off it),
+// stop where the ring begins and never crowd the ring's own stones (`ringGap` m between them).
+export const PATH_STONES = { clear: 0.04, spacing: 0.34, gap: 0.06, ringGap: 0.06 };
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -338,11 +345,11 @@ export class World {
     const stones = ringAt.filter((_, i) => i % 4 !== 2).map((q, i) => {
       const seed = i + 2;
       return { seed, pos: q.clone().add(new THREE.Vector3(((seed * 13) % 7 - 3) * 0.035, 0, ((seed * 7) % 5 - 2) * 0.045)) };
-    });
+    }).filter((st) => this.offPath(st.pos, scatteredStoneReach(st.seed))); // toppled ones too stay off the path
     const scattered = G.borderStones(stones);
     this.root.add(scattered);
     // G4 settles them into the ring, evenly, keeping the gap in front of the bench
-    const ring = ringAt.map((pos, i) => ({ seed: i + 3, pos }));
+    const ring = ringAt.map((pos) => ({ seed: pos.userData.seed, pos }));
     const arranged = G.borderRing(ring);
     this.root.add(arranged);
     this.addPart('D11', { model: arranged, radial: true, before: [paintable(scattered, { colour: 0 })] });
@@ -441,9 +448,11 @@ export class World {
   // v0.16: the ring round the tree and the bench, and its gap: ground points `RING.spacing` apart
   // on an ellipse round the drawn ring, leaving out those within half the gap of the gap's middle,
   // the point of the ring in front of the bench (toward the path's drawn end). `ringGap` is that
-  // point (where the path ends).
+  // point (where the path ends). v0.18: also leaving out every stone that would reach the path
+  // (PATH_STONES), so the ring opens where the path comes in instead of running across it. Each
+  // place carries its stone's seed (`userData.seed`).
   ringPlaces() {
-    if (this.ring) return this.ring.places;
+    if (this.ring?.places) return this.ring.places;
     const pts = BORDER_POLYLINE.flat().map(([u, v]) => this.proj.groundAt(u, v));
     const x0 = Math.min(...pts.map((q) => q.x)) - RING.grow; const x1 = Math.max(...pts.map((q) => q.x)) + RING.grow;
     const z0 = Math.min(...pts.map((q) => q.z)) - RING.grow; const z1 = Math.max(...pts.map((q) => q.z)) + RING.grow;
@@ -456,20 +465,30 @@ export class World {
     const end = k.point;
     const gapA = Math.atan2((end.z - c.z) / rz, (end.x - c.x) / rx);
     const on = (a) => new THREE.Vector3(c.x + Math.cos(a) * rx, 0, c.z + Math.sin(a) * rz);
+    const gapPt = on(gapA);
+    // the ellipse first: the path's shape depends on it (pathShape)
+    this.ring = { places: null, centre: c, rx, rz, gap: gapPt, gapAngle: gapA };
     // even spacing along the ellipse: walk it in small steps
     const places = [];
-    const gapPt = on(gapA);
-    let carry = 0; let prev = on(gapA);
+    let carry = 0; let prev = on(gapA); let n = 0;
     for (let k = 1; k <= 720; k++) {
       const q = on(gapA + (k / 720) * Math.PI * 2);
       carry += q.distanceTo(prev); prev = q;
       if (carry < RING.spacing) continue;
       carry = 0;
+      const seed = 3 + n++;
       if (q.distanceTo(gapPt) < RING.gap / 2) continue;
+      if (!this.offPath(q, ringStoneReach(seed))) continue;
+      q.userData = { seed };
       places.push(q);
     }
-    this.ring = { places, centre: c, rx, rz, gap: gapPt, gapAngle: gapA };
+    this.ring.places = places;
     return places;
+  }
+  // v0.18: does a stone at ground point q, reaching `reach` m from it, keep clear of the path?
+  offPath(q, reach) {
+    const { left, right } = this.pathShape();
+    return ribbonDistance(q, left, right) >= reach + PATH_STONES.clear;
   }
   // v0.15 (captain: "the way to the house should arrive to the door of the house"): the door
   // step's front edge, and a point straight out from it, on the ground
@@ -505,8 +524,26 @@ export class World {
   // v0.16 (captain: "Make the path solid, not rocks"): a solid dirt path, as in the coloured
   // drawing, and it comes into the stone ring through its gap in front of the bench
   buildPathOutline() {
-    const p = this.proj;
     this.ringPlaces();
+    const { left, right } = this.pathShape();
+    const dashes = [];
+    for (const edge of [left, right]) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge), new THREE.LineDashedMaterial({ color: G.PALETTE.ink, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.45 }));
+      line.computeLineDistances();
+      line.name = 'D08_Path_Outline';
+      this.root.add(line);
+      dashes.push(line);
+    }
+    // v0.18: the edge stones beside the dirt, never on it (pathEdgeStones)
+    const gravel = G.dirtPath(left, right, this.pathEdgeStones()); // v0.16: solid dirt (v0.13-v0.15: stepping stones)
+    this.root.add(gravel);
+    return { dashes, gravel };
+  }
+  // v0.18: the path's shape on the ground, worked out once, before any stone is placed (the ring's
+  // and the edges' stones keep off it): its centre curve, its samples and the dirt's two edges
+  pathShape() {
+    if (this.pathShapeCache) return this.pathShapeCache;
+    if (!this.ring) this.ringPlaces(); // the ring's ellipse (ringPlaces sets it before it asks for this)
     // v0.17 (captain: "the road next to the tree still looks off"): the drawn path's last points
     // lie inside the ring's outline, so the dirt crossed the ring's stones before it reached the
     // gap and ended in a wide square cut. Now the points within a metre of the ring are left out,
@@ -542,7 +579,6 @@ export class World {
       const k = Math.min(1, fromEnd[i] / PATH_RING.cap);
       return w * Math.sqrt(Math.max(0, 1 - (1 - k) ** 2)); // a round end inside the gap
     };
-    const dashes = [];
     const edges = [];
     for (const side of [-1, 1]) {
       const edge = samples.map((q, i) => {
@@ -566,17 +602,39 @@ export class World {
         const dir = new THREE.Vector3().subVectors(samples[i + 1], samples[i - 1]).setY(0).normalize();
         if (new THREE.Vector3().subVectors(edge[i], edge[i - 1]).dot(dir) < 0) edge[i].copy(edge[i - 1]);
       }
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge), new THREE.LineDashedMaterial({ color: G.PALETTE.ink, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.45 }));
-      line.computeLineDistances();
-      line.name = 'D08_Path_Outline';
-      this.root.add(line);
-      dashes.push(line);
       edges.push(edge);
     }
     this.pathCurve = curve;
-    const gravel = G.dirtPath(edges[0], edges[1]); // v0.16: solid dirt (v0.13-v0.15: stepping stones)
-    this.root.add(gravel);
-    return { dashes, gravel };
+    return (this.pathShapeCache = { curve, samples, left: edges[0], right: edges[1] });
+  }
+  // v0.18: the stones along the path's edges, just outside the dirt: one every `spacing` m along
+  // each edge, set out from it by its own reach and `gap`; none that would still touch the dirt (on
+  // the inside of a bend), none inside the ring round the tree (the path's end there is open
+  // ground) and none crowding a ring stone. -> [{ pos, seed }]
+  pathEdgeStones() {
+    const { left, right } = this.pathShape();
+    const { centre: c, rx, rz } = this.ring;
+    const ring = this.ringPlaces();
+    const out = [];
+    for (const [edge, other] of [[left, right], [right, left]]) {
+      let run = 0;
+      for (let i = 1; i < edge.length - 2; i++) {
+        run += edge[i].distanceTo(edge[i - 1]);
+        if (run < PATH_STONES.spacing) continue;
+        run = 0;
+        const seed = i;
+        const reach = ringStoneReach(seed);
+        const outward = edge[i].clone().sub(other[i]).setY(0);
+        if (outward.lengthSq() < 1e-8) continue; // the rounded end: nothing beside it
+        outward.normalize();
+        const pos = edge[i].clone().addScaledVector(outward, reach + PATH_STONES.gap).setY(0);
+        if (!this.offPath(pos, reach)) continue;
+        if (((pos.x - c.x) / (rx + reach)) ** 2 + ((pos.z - c.z) / (rz + reach)) ** 2 < 1) continue;
+        if (ring.some((q) => q.distanceTo(pos) < reach + ringStoneReach(q.userData.seed) + PATH_STONES.ringGap)) continue;
+        out.push({ pos, seed });
+      }
+    }
+    return out;
   }
 
   // D20: fine permanent pen marks at the stones, bench, crops and bed (green in the finale)

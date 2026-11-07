@@ -56,10 +56,12 @@ export const STICK_PLACES = [[29, 61.5], [25, 59], [21.5, 62], [26.5, 64.5], [30
 // former rubble piles by the house approach; the rubble spot is gone. RX, the recovery rock, sits
 // beside R1 and shows only when a save needed it (§6.6). (P25-4): `tools` is where the blue rake
 // D14 and shovel D13 lean against the house's side wall; standing there takes one. C0 has no mat.
+// v0.18 (captain: "No rocks on the path"): R1, R2 and RX move a little west, off the path's dirt
+// where it leaves the door (v0.17: R2 sat on it, R1 and RX on its edge; test/playtest-v018).
 export const ROCK_PLACES = {
-  R1: { u: 33, v: 52.5 }, R2: { u: 36.5, v: 55 }, R3: { u: 22, v: 90 }, R4: { u: 45, v: 70 },
+  R1: { u: 31.5, v: 53.5 }, R2: { u: 32.5, v: 55 }, R3: { u: 22, v: 90 }, R4: { u: 45, v: 70 },
   R5: { u: 62, v: 62 }, R6: { u: 74, v: 56 }, R7: { u: 94, v: 84 }, R8: { u: 50, v: 93 },
-  RX: { u: 30.5, v: 51.5 },
+  RX: { u: 29, v: 52.5 },
 };
 // v0.11 (captain 2026-11-02): the weeds sit where the crops will grow, two on each crop patch
 // right in front of the first two plants (corn c1/c2, sunflowers s1/s2, the tomato stems in the

@@ -73,7 +73,7 @@ import {
   atSellingSide, atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, SALE_REACH_M, toolBlocked, wantedTool,
 } from './game/interaction.js';
 import { nextGoal } from './game/guide.js';
-import { coachPrompt, dropLesson, kindOf, learned, LINGER_MS, MOVED_M, tutorialStep } from './game/tutorial.js';
+import { coachPrompt, dropLesson, guideTargets, kindOf, learned, LINGER_MS, MOVED_M, routineGather, tutorialStep } from './game/tutorial.js';
 import { fitRect, PRESETS, Projection, projectedExtent } from './world/projection.js';
 import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
@@ -915,7 +915,8 @@ async function boot() {
     world.updateMarker(dt, highlight && { target: highlight.target, mode, progress: ix.workProgress }, reducedMotion());
     updateContext(heroXZ, dt);
     updateCoachState(dt, heroXZ, working);
-    const markers = goal.choice?.map((c) => c.target) ?? (goal.target ? [goal.target] : []);
+    // v0.18: no circle for a routine gathering step she has done before (tutorial.js guideTargets)
+    const markers = guideTargets(data.ledger, goal);
     const bar = buildBar(data.ledger, atSite(heroXZ, ctxTargets)?.id);
     if (bar?.ready && !markers.includes(bar.stage)) markers.push(bar.stage);
     const visibleMarkers = hammering.active || eggPhase(data.ledger) ? [] : markers;
@@ -1563,6 +1564,8 @@ async function boot() {
     const { step, prompt, point } = coachState;
     // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
     const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : (step?.target ?? goal.target) ? [{ id: step?.target ?? goal.target }] : [];
+    // v0.18: and no arrow for a routine gathering step she has done before (the goal line still says it)
+    for (let i = aims.length - 1; i >= 0; i--) if (routineGather(data.ledger, aims[i].id)) aims.splice(i, 1);
     // v0.13 DIY hint: 10 s after she has everything (or at once when DIY is pressed away), the
     // arrow leads to the part, which sparkles
     const hintAt = diyState.point && world.stations[diyState.stage] ? diyState.stage : null;

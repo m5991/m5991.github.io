@@ -109,8 +109,8 @@ export function borderRing(places) { return shadows(addOutline(P.borderRing(plac
 export function steppingStone(i) { return shadows(addOutline(P.steppingStone(i), 0.015)); }
 export const gravelPath = P.gravelPath;
 // v0.16: the solid dirt path (its own ink edges; no hull, it lies flat on the ground)
-export function dirtPath(left, right) {
-  const g = P.dirtPath(left, right);
+export function dirtPath(left, right, edgeStones = []) {
+  const g = P.dirtPath(left, right, edgeStones);
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
   return g;
 }

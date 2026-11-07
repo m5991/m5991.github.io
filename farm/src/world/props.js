@@ -348,7 +348,59 @@ export function buyer(look) {
 // front with its string drawn back to the latch, a bolt loaded, the foot stirrup. Groups: `body`
 // (bobs), `head` (turns), `arms` (with the crossbow, raised to aim), `crossbow`. Built for a
 // 1.88 m man, facing +Z.
-export const ARCHER = { height: 1.88, shirt: 0xcfa93e, tie: 0x3b2c24, slacks: 0x6a5641, hair: 0x3a2a1f, skin: 0xe3b48f, frame: 0x2a2523 };
+// v0.18 (captain: "Dwight shouldn't be bald"): his hair. v0.17's cap was a sphere 0.68 as tall as
+// it was wide, sitting on a skull drawn 1.14 times taller than wide, so the skull's crown came out
+// through the top of the cap (and the centre part lay inside the skull): from the play camera,
+// which looks down on him, all that showed was a skin-coloured crown, a bald head. Now the hair is
+// a shell that follows the skull itself (`over` times its size on each axis, so it covers it
+// everywhere with room to spare), cut along his hairline: high at the centre part, the fringe
+// falling either side of it across the forehead in an inverted V, short over the ears, down to the
+// nape. A scalp-coloured centre part runs from the hairline back over the crown.
+export const DWIGHT_HAIR = { skull: [0.9, 1.14, 0.95], over: [1.08, 1.05, 1.08] };
+// the hairline: how far down from the top of the head (radians) the hair reaches toward azimuth
+// `az` (0 straight ahead, +Z; the sign is the side): a base line high at the brow and low at the
+// nape, the fringe a little lower either side of the part, and the part itself raised
+export function hairlineAngle(az) {
+  const base = 1.5 - 0.38 * Math.cos(az);
+  const curtain = 0.05 * Math.exp(-(((Math.abs(az) - 0.45) / 0.3) ** 2));
+  const part = 0.2 * Math.exp(-((az / 0.12) ** 2));
+  return base + curtain - part;
+}
+function dwightHair(headR, colour, skin) {
+  const g = new THREE.Group(); g.name = 'Dwight_Hair';
+  const S = V(...DWIGHT_HAIR.skull.map((k, i) => k * DWIGHT_HAIR.over[i] * headR));
+  // the shell: a sphere's cap (indexed, so its ink line closes round it) whose rim is warped onto
+  // the hairline, then scaled to the skull
+  const shell = new THREE.SphereGeometry(1, 48, 18, 0, Math.PI * 2, 0, 1);
+  const pos = shell.getAttribute('position');
+  const n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    n.fromBufferAttribute(pos, i);
+    const s = Math.acos(Math.max(-1, Math.min(1, n.y))); // 0 at the top, 1 at the rim
+    const az = Math.atan2(n.x, n.z);
+    const theta = s * hairlineAngle(az);
+    pos.setXYZ(i, Math.sin(theta) * Math.sin(az) * S.x, Math.cos(theta) * S.y, Math.sin(theta) * Math.cos(az) * S.z);
+  }
+  shell.computeVertexNormals();
+  const cap = mesh(shell, colour); cap.name = 'Dwight_HairShell';
+  g.add(cap);
+  // the centre part: a narrow scalp-coloured strip just proud of the shell, from the hairline at the
+  // front back over the crown
+  const onShell = (a, lift) => V(0, Math.cos(a) * S.y * lift, Math.sin(a) * S.z * lift);
+  const pts = [];
+  const from = hairlineAngle(0) - 0.02;
+  for (let i = 0; i <= 18; i++) pts.push(onShell(from - (i / 18) * (from + 0.35), 1.012));
+  const w = headR * 0.028; const sp = []; const idx = [];
+  pts.forEach((q, i) => { const k = w * (1 - 0.5 * (i / 18)); sp.push(q.x - k, q.y, q.z, q.x + k, q.y, q.z); }); // narrowing toward the crown
+  for (let i = 0; i < pts.length - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const strip = new THREE.BufferGeometry();
+  strip.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); strip.setIndex(idx); strip.computeVertexNormals();
+  const part = new THREE.Mesh(strip, toon(mix(skin, colour, 0.3), { side: THREE.DoubleSide }));
+  part.userData.noOutline = true; part.castShadow = false; part.name = 'Dwight_CentrePart';
+  g.add(part);
+  return g;
+}
+export const ARCHER = { height: 1.88, shirt: 0xcfa93e, tie: 0x3b2c24, slacks: 0x6a5641, hair: 0x30221a, skin: 0xe3b48f, frame: 0x2a2523 };
 export function archer() {
   const A = ARCHER;
   const root = new THREE.Group(); root.name = 'Archer';
@@ -411,17 +463,7 @@ export function archer() {
     head.add(at(mesh(box(headR * 0.03, headR * 0.03, headR * 1.0), A.frame, { ink: false, shadow: false }), sd * headR * 0.7, headR * 0.16, headR * 0.45));
   }
   head.add(at(mesh(box(headR * 0.16, headR * 0.035, headR * 0.03), A.frame, { ink: false, shadow: false }), 0, headR * 0.17, headR * 1.0));
-  const cap = new THREE.SphereGeometry(headR * 1.04, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.53);
-  cap.scale(1, 0.68, 0.96);
-  head.add(at(mesh(cap, A.hair), 0, headR * 0.33, -headR * 0.06));
-  for (const sd of [-1, 1]) {
-    const fringe = new THREE.SphereGeometry(headR * 0.57, 16, 10);
-    fringe.scale(0.94, 0.24, 0.72);
-    head.add(at(mesh(fringe, A.hair), sd * headR * 0.48, headR * 0.82, headR * 0.4, 0.12, 0, sd * -0.08));
-    head.add(at(mesh(box(headR * 0.12, headR * 0.46, headR * 0.52), A.hair), sd * headR * 0.96, headR * 0.26, -headR * 0.04));
-  }
-  const part = at(mesh(box(headR * 0.055, headR * 0.018, headR * 1.1), mix(A.skin, A.hair, 0.35), { ink: false }), 0, headR * 1.02, headR * 0.1);
-  part.name = 'Dwight_CentrePart'; head.add(part);
+  head.add(dwightHair(headR, A.hair, A.skin));
   root.add(head);
   // arms forward, holding the crossbow level at the chest (the `arms` group is raised to aim)
   const arms = new THREE.Group(); arms.name = 'arms';
@@ -765,6 +807,23 @@ export function borderStones(places) {
   return mergeByMaterial(g, 'D11_BorderStones');
 }
 
+// v0.18: how far a stone of borderRing (by its seed), or of borderStones, reaches from its place:
+// the farthest point of its shape, scaled as each places it (the world keeps stones that far, and
+// a little more, off the path)
+const reachCache = new Map();
+function shapeReach(r, seed, sx, sy, sz) {
+  const key = `${r}|${seed}|${sx}|${sy}|${sz}`;
+  if (!reachCache.has(key)) {
+    const p = stoneGeometry(r, seed, 1).attributes.position;
+    let m = 0;
+    for (let i = 0; i < p.count; i++) m = Math.max(m, Math.hypot(p.getX(i) * sx, p.getY(i) * sy, p.getZ(i) * sz));
+    reachCache.set(key, m);
+  }
+  return reachCache.get(key);
+}
+export const ringStoneReach = (seed) => shapeReach(0.13 + (seed % 4) * 0.012, seed % 6, 1.2, 0.95, 1);
+export const scatteredStoneReach = (seed) => shapeReach(0.12 + (seed % 5) * 0.015, seed % 6, 1.15, 0.85 + (seed % 3) * 0.08, 1);
+
 // ---------------- D11 border stones settled into the ring (G4) ----------------
 // The same rounded grey stones, upright and evenly bedded along the drawn ring (A22: G4 arranges
 // them), keeping the path-facing gap between the two drawn runs.
@@ -930,7 +989,7 @@ export function stonePath(left, right) {
 // band): a flat ribbon between the two drawn edges in a warm dirt wash with the paper grain, its
 // edges in ink with an uneven pressure, a few pencil strokes along it for the trodden earth and a
 // sprinkle of darker grit; short grass tufts at its edges (green with the finale's ground).
-export function dirtPath(left, right) {
+export function dirtPath(left, right, edgeStones = []) {
   const g = new THREE.Group(); g.name = 'D08_Path';
   const n = left.length;
   const pos = []; const idx = [];
@@ -978,19 +1037,8 @@ export function dirtPath(left, right) {
     em.userData.noOutline = true; em.userData.noFit = true; em.castShadow = false; em.name = 'D08_Path_Edge';
     g.add(em);
   }
-  // Stones touch the dirt edge, with enough irregularity to read as hand laid.
-  const edgeStones = [];
-  for (const edge of [left, right]) {
-    let run = 0;
-    for (let i = 1; i < edge.length - 2; i++) {
-      run += edge[i].distanceTo(edge[i - 1]);
-      if (run < 0.32) continue;
-      run = 0;
-      const c = edge[i].clone().lerp((edge === left ? right : left)[i], 0.5);
-      const outward = edge[i].clone().sub(c).normalize();
-      edgeStones.push({ pos: edge[i].clone().addScaledVector(outward, 0.06), seed: i });
-    }
-  }
+  // v0.18: the stones along its edges are placed by the world beside the dirt, never on it
+  // (world.js pathEdgeStones)
   const rocks = borderRing(edgeStones); rocks.name = 'D08_Path_EdgeRocks'; g.add(rocks);
   const tg = [];
   tufts.forEach((p, t) => {
