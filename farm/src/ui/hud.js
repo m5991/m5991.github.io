@@ -12,6 +12,17 @@ import { RESOURCE_NAMES } from '../game/data.js';
 
 export const counterText = (n) => String(Math.min(9999, n));
 
+// v0.20 (audit 2: "a note cut off by a bird warning does not replay"): what becomes of the note an
+// urgent warning interrupts. It used to come back afterwards and run its whole time again. Now a
+// note that has been up for at least NOTE_SEEN_MS, or for half its time, has been read: it is
+// dropped. One cut off sooner comes back once, for the time it had left (never from the start).
+export const NOTE_SEEN_MS = 1500;
+export function afterInterrupt(note, shownMs) {
+  if (!note) return null;
+  if (shownMs >= NOTE_SEEN_MS || shownMs >= note.ms / 2) return null;
+  return { ...note, ms: Math.max(1200, note.ms - shownMs) };
+}
+
 export const ICONS = {
   W: '<svg viewBox="0 0 24 24" aria-hidden="true"><g stroke="#253347" stroke-width="1.4" fill="#8d603e"><rect x="3" y="9" width="18" height="3" rx="1.5" transform="rotate(-12 12 10)"/><rect x="3" y="13" width="18" height="3" rx="1.5" transform="rotate(8 12 14)"/></g><path d="M8 7l2-3M15 18l2 2" stroke="#253347" stroke-width="1.4"/></svg>',
   R: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15c0-5 4-8 9-8 5 0 7 3 7 7 0 3-3 5-8 5s-8-1-8-4z" fill="#969895" stroke="#253347" stroke-width="1.4"/></svg>',
@@ -64,11 +75,13 @@ export function createHud(root = document) {
   let lastAnnounce = '';
   let announceTimer = 0;
   let toastTimer = 0;
+  let shownAt = 0; // when the note on show came up
   const toastQueue = [];
   // each note stays its time plus 1 s (P29-2), then slides up out of the way and the next slides in
   function showNext() {
     const q = toastQueue[0];
     if (!q) { toast.hidden = true; onNote?.(); return; }
+    shownAt = performance.now();
     toastText.textContent = q.text;
     toast.classList.remove('leaving');
     toast.hidden = false;
@@ -189,12 +202,16 @@ export function createHud(root = document) {
       toastQueue.push({ text, ms });
       if (toastQueue.length === 1) showNext();
     },
-    // v0.17: a warning that cannot wait (a bird on its way): shown now, ahead of the queue; the
-    // note it interrupts comes back after it
+    // v0.17: a warning that cannot wait (a bird on its way): shown now, ahead of the queue.
+    // v0.20: the note it interrupts does not replay (afterInterrupt above)
     urgent(text, ms = 2600) {
       if (toastQueue[0]?.text === text) return;
       const i = toastQueue.findIndex((q) => q.text === text);
       if (i > 0) toastQueue.splice(i, 1);
+      if (toastQueue.length) {
+        const rest = afterInterrupt(toastQueue[0], performance.now() - shownAt);
+        if (rest) toastQueue[0] = rest; else toastQueue.shift();
+      }
       toastQueue.unshift({ text, ms });
       clearTimeout(leaving);
       showNext();

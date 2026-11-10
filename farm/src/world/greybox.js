@@ -107,13 +107,14 @@ export function borderStones(places) { return shadows(addOutline(P.borderStones(
 export const steppingOutline = P.steppingOutline;
 export function borderRing(places) { return shadows(addOutline(P.borderRing(places), 0.8 * 0.02)); }
 export function steppingStone(i) { return shadows(addOutline(P.steppingStone(i), 0.015)); }
-export const gravelPath = P.gravelPath;
-// v0.16 solid dirt, v0.19 borderless: no edge rocks, no outline
-export function dirtPath(left, right) {
-  const g = P.dirtPath(left, right);
+// v0.16 solid, v0.19 borderless (no edge rocks, no outline), v0.20 grey gravel; `gravelClearing`
+// is the same gravel for the circle round the tree (the path's own material, so they are one bed)
+export function gravelPath(left, right) {
+  const g = P.gravelPath(left, right);
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
   return g;
 }
+export const gravelClearing = P.gravelClearing;
 // v0.13: the path's stepping stones in ink (their outline), on the grass wash (v0.16: unused)
 export function stonePath(left, right) {
   const g = P.stonePath(left, right);

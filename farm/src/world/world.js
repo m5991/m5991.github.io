@@ -41,7 +41,7 @@ import { ease } from '../core/tween.js';
 import { SPOTS } from '../game/songs.js';
 import { KEEPSAKES, KEEPSAKE_GLINT_M } from '../game/keepsakes.js';
 import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
-import { fader, toon, groundMaterial, paintable, paperBackdrop } from './look.js';
+import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { routeAround, routeAt, routeLength } from './walk.js';
 import { BLUEPRINT_FADE_MS, FINALE_COLOURS, PARTS, partLook, partsColouredBy, REDUCED_FADE_MS, WASH_MS } from '../game/reveal.js';
@@ -125,6 +125,20 @@ export const PATH_RING = { into: 0.5, door: 0.55, end: 0.68, cap: 0.6, past: 2.5
 // leaves out the stones that would touch the path, so the path comes in through an open entrance.
 // (v0.19: no stones along the path's edges.)
 export const PATH_STONES = { clear: 0.04 };
+
+// v0.20: the drawing height (v, % from the top) of the two song stars under the sky's things: on
+// the grass a few metres in front of the horizon, level with the back of the corn
+export const SKY_SPOT_V = 45;
+// v0.20 the extra tomatoes of a grown plant: [where they hang ('base': low on the plant, in the
+// units' own frame; or a tier of the plant, in the tier's), the size level they come with, one
+// place per harvest unit]. With the two the first crop shows: 2, then 6, then 10 on the plant.
+// They hang close to the stem, inside the leaves' width: the plant grows taller, not wider (v0.16).
+export const TOMATO_FRUIT = [
+  ['base', 1, [[-0.07, 0.385, 0.045], [0.075, 0.2, 0.05]]],
+  ['tier0', 1, [[-0.04, 0.09, 0.055], [0.045, 0.16, 0.05]]],
+  ['tier0', 2, [[-0.05, 0.22, 0.04], [0.02, 0.275, 0.06]]],
+  ['tier1', 2, [[-0.04, 0.1, 0.055], [0.045, 0.17, 0.05]]],
+];
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -264,7 +278,28 @@ export class World {
       const ground = at.clone().setY(0);
       // v0.15: the plant itself, which grows a size step with each round (plantSize)
       const plant = bedPlants.getObjectByName(`D19_Tomato_${id}`);
-      this.nodeViews[id] = { dig, units, plant, size: 1, want: 1 };
+      // v0.20 (captain: "When the tomato plant grows should have more tomato"): a grown plant
+      // carries clearly more fruit. Each harvest unit is a share of the plant's tomatoes: one each
+      // on the first crop (2 on the plant), three each once it has grown a tier (6), five each at
+      // full height (10): more low on the plant, and a truss on each tier. Picking a unit takes
+      // its share. The yield and the price stay 2 units a round (TOMATO_FRUIT; showFruit).
+      const fruit = [];
+      const inv = new THREE.Vector3(1 / bed.scale.x, 1 / bed.scale.y, 1 / bed.scale.z);
+      for (const [where, level, spots] of TOMATO_FRUIT) {
+        const parent = where === 'base' ? units : plant.getObjectByName(where);
+        if (!parent) continue;
+        spots.forEach(([x, y, z], unit) => {
+          const t = G.unitMesh('T');
+          t.position.set(x, y, z);
+          t.scale.setScalar(1.05);
+          if (parent !== units) t.scale.multiply(inv); // the plant is in the bed's scale; a tomato keeps its size
+          t.userData.keep = true; // showUnits leaves it to showFruit
+          t.visible = false;
+          parent.add(t);
+          fruit.push({ mesh: t, unit, level });
+        });
+      }
+      this.nodeViews[id] = { dig, units, plant, fruit, size: 1, want: 1 };
       this.stations[id] = { def: { id, kind: 'node', r: 0.85, label: 'tomatoes' }, obj: units, pos: ground };
     }
     // the tools at their drawn lean; `home` is where each returns (P25-4)
@@ -362,10 +397,9 @@ export class World {
     this.root.add(ovals, setStones);
     this.addPart('D12', { model: setStones, radial: true, before: [ovals] });
     const path = this.buildPathOutline();
-    const clearing = new THREE.Mesh(new THREE.CircleGeometry(1, 80), toon(0xe5d9ba, { flat: 1, grain: 1 }));
-    clearing.name = 'TreeBenchClearing'; clearing.rotation.x = -Math.PI / 2;
-    clearing.position.copy(this.ring.centre).setY(0.009); clearing.scale.set(this.ring.rx, this.ring.rz, 1);
-    clearing.receiveShadow = true; path.gravel.add(clearing);
+    // v0.20 (captain: "update the texture of both the path and the tree circle"): the circle
+    // round the tree and the bench is the path's own gravel, inside the ring of stones
+    path.gravel.add(G.gravelClearing(this.ring.centre, this.ring.rx, this.ring.rz, path.gravel.getObjectByName('D08_Path_Gravel').material));
     this.addPart('D08', { model: path.gravel, radial: true, before: path.dashes });
     this.buildSprouts();
     this.buildSky();
@@ -517,12 +551,12 @@ export class World {
     pts.push(b.clone().addScaledVector(b.clone().sub(a).setY(0).normalize(), PATH_RING.past));
     return (this.drawnCurve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'));
   }
-  // D08: the path G1 lays (v0.19: pale dirt surface with no border; no edge rocks, no outline)
+  // D08: the path G1 lays (v0.19: no border, no edge rocks, no outline; v0.20: grey gravel)
   buildPathOutline() {
     this.ringPlaces();
     const { left, right } = this.pathShape();
     const dashes = [];
-    const gravel = G.dirtPath(left, right);
+    const gravel = G.gravelPath(left, right);
     this.root.add(gravel);
     return { dashes, gravel };
   }
@@ -831,6 +865,7 @@ export class World {
       if (!this.revealing?.has(id)) c.dig.visible = committed && !dug;
       if (c.units) showUnits(c.units, l.nodes[id].remaining);
       if (c.plant) { c.want = plantSize(l, id); if (!animate) this.sizePlant(c, c.want); }
+      if (c.fruit) { c.remaining = l.nodes[id].remaining; this.showFruit(c); }
     }
     this.syncTool(l.tool, animate);
     this.syncArcher(l, animate);
@@ -1262,8 +1297,11 @@ export class World {
       case 'sunflowers': out.copy(this.stations.S0.pos).setY(0); break;
       case 'corn': out.copy(this.stations.C0.pos).setY(0); break;
       case 'table': this.sellSpot(out).setY(0); break;
-      case 'sun': out.copy(this.ground(SKY.D22.u, 33)).setY(0); break;
-      case 'birds': out.copy(this.ground(SKY.D21.u + 3, 34)).setY(0); break;
+      // v0.20 (audit 2: "walking on the sky"): the sun's and the birds' stars stand on the farm's
+      // own ground, at its back edge straight below the drawn sun and the drawn flock (SKY_SPOT_V;
+      // v0.17 had them at v 33 and 34, beyond the ground's far edge, on the paper sky)
+      case 'sun': out.copy(this.ground(SKY.D22.u, SKY_SPOT_V)).setY(0); break;
+      case 'birds': out.copy(this.ground(SKY.D21.u + 3, SKY_SPOT_V)).setY(0); break;
       default: out.copy(this.heroPos() ?? new THREE.Vector3());
     }
     return out.add(new THREE.Vector3(offset[0], 0, offset[1]));
@@ -2437,6 +2475,23 @@ export class World {
       tier.visible = t > 0.01;
       tier.scale.set(0.6 + 0.4 * t, Math.max(0.01, t), 0.6 + 0.4 * t);
     }
+    this.showFruit(c);
+  }
+  // v0.20: the extra tomatoes a grown plant carries: those of the units still on it, up to the
+  // plant's size level (a tier's truss comes with its tier, the fuller low truss with the first)
+  showFruit(c) {
+    if (!c.fruit) return;
+    const level = Math.floor((c.size - 1) / TOMATO_GROWTH.step + 0.5);
+    for (const f of c.fruit) f.mesh.visible = f.unit < (c.remaining ?? 0) && f.level <= level;
+  }
+  // how many tomatoes show on a node's plant now (checks)
+  fruitShown(id) {
+    const c = this.nodeViews[id];
+    if (!c?.units) return 0;
+    let n = 0;
+    c.units.children.forEach((m) => { if (!m.userData.outline && !m.userData.keep && m.visible) n++; });
+    for (const f of c.fruit ?? []) { let on = f.mesh.visible; for (let o = f.mesh.parent; on && o && o !== this.root; o = o.parent) on = o.visible; if (on) n++; }
+    return n;
   }
   // the plant's height above the soil now (bed space), for checks
   plantHeight(c) {

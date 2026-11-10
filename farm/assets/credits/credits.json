@@ -2,170 +2,273 @@
   "version": 1,
   "song": {
     "eggId": "E12",
+    "title": "House",
     "audio": "assets/songs/E12.mp3",
     "lyrics": "assets/credits/the-house.lyrics.json"
   },
   "gifts": [
     {
-      "id": "gift-16",
+      "id": "photo-01",
+      "year": null,
+      "title": "The drawing",
+      "caption": "",
+      "image": "assets/credits/photos/photo-01.jpg",
+      "alt": "Vanessa's farm drawing in pen: a house with a smoking chimney, birds, the sun, a corn field, a tree and a bench in a ring of stones, a winding path, a farmer in overalls, sunflowers and a raised bed.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_3681"
+    },
+    {
+      "id": "photo-02",
       "year": 2024,
       "title": "The 3D painting",
       "caption": "By Vanessa",
-      "image": "assets/credits/gifts/gift-16.jpg",
+      "image": "assets/credits/photos/photo-02.jpg",
       "alt": "Two friends laughing beside a big painted canvas of the farm, with glued-on 3D objects, signed \"By Vanessa\".",
       "placeholder": false,
-      "source": "catalogue item 16"
+      "source": "Tiffany's slideshow folder, 1"
     },
     {
-      "id": "gift-17",
-      "year": 2024,
-      "title": "The 3D painting, close up",
-      "caption": "Beets 4 Sale",
-      "image": "assets/credits/gifts/gift-17.jpg",
-      "alt": "A farmer doll on the canvas beside a \"Beets 4 Sale\" sign and a wooden crate of vegetables, under 3D sunflowers.",
-      "placeholder": false,
-      "source": "catalogue item 17"
-    },
-    {
-      "id": "gift-07",
-      "year": 2024,
-      "title": "The farm Christmas tree",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-07.jpg",
-      "alt": "Green-framed mini prints of the farm drawing hanging as ornaments on a Christmas tree.",
-      "placeholder": false,
-      "source": "catalogue item 07"
-    },
-    {
-      "id": "gift-12",
+      "id": "photo-03",
       "year": 2024,
       "title": "The tree topper",
       "caption": "",
-      "image": "assets/credits/gifts/gift-12.jpg",
+      "image": "assets/credits/photos/photo-03.jpg",
       "alt": "A farmer doll in overalls among sunflowers and corn at the top of a Christmas tree.",
       "placeholder": false,
-      "source": "catalogue item 12"
+      "source": "Tiffany's slideshow folder, IMG_7434"
     },
     {
-      "id": "gift-14",
+      "id": "photo-04",
       "year": 2024,
-      "title": "The note on the door",
-      "caption": "NESS, Jewlery? You didnt think you were getting off that easy… did you?",
-      "image": "assets/credits/gifts/gift-14.jpg",
-      "alt": "A handwritten note taped to a blue front door.",
+      "title": "The farm Christmas",
+      "caption": "",
+      "image": "assets/credits/photos/photo-04.jpg",
+      "alt": "Two friends in denim overalls hugging in front of a Christmas tree with the farmer doll on top; one wears a Santa hat.",
       "placeholder": false,
-      "source": "catalogue item 14"
+      "source": "Tiffany's slideshow folder, IMG_7449"
     },
     {
-      "id": "gift-13",
+      "id": "photo-05",
+      "year": 2024,
+      "title": "The blanket",
+      "caption": "By Vanessa",
+      "image": "assets/credits/photos/photo-05.jpg",
+      "alt": "Two friends on a couch, one in a Santa hat, holding up a white fleece blanket printed with the farm drawing and \"By Vanessa\".",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_7454"
+    },
+    {
+      "id": "photo-06",
       "year": null,
       "title": "The Christmas card",
       "caption": "Merry Christmas · Illustrated by Vanessa",
-      "image": "assets/credits/gifts/gift-13.jpg",
+      "image": "assets/credits/photos/photo-06.jpg",
       "alt": "A Christmas card with a winter version of the farm drawing, a snowman and pine trees.",
       "placeholder": false,
-      "source": "catalogue item 13"
+      "source": "Tiffany's slideshow folder, Illustrated by Vanessa [surname removed]"
     },
     {
-      "id": "gift-25",
+      "id": "photo-07",
+      "year": null,
+      "title": "Moms Night",
+      "caption": "Join us as Vanessa walks us through how to draw this amazing picture, and all in just 3 hours!",
+      "image": "assets/credits/photos/photo-07.jpg",
+      "alt": "A flyer headed \"Moms Night\" over the farm drawing: wine, cheese and pencils provided, March 29.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, MOMS NIGHT"
+    },
+    {
+      "id": "photo-08",
+      "year": 2025,
+      "title": "The banner",
+      "caption": "",
+      "image": "assets/credits/photos/photo-08.jpg",
+      "alt": "A dozen people in matching shirts sitting on the steps of a church platform, in front of a huge banner of the farm drawing.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_6444"
+    },
+    {
+      "id": "photo-09",
       "year": 2025,
       "title": "The picture book",
       "caption": "Home is where the heart is. · Illustrated by Vanessa",
-      "image": "assets/credits/gifts/gift-25.jpg",
-      "alt": "The cover of a picture book showing the farm drawing.",
+      "image": "assets/credits/photos/photo-09.jpg",
+      "alt": "A hand holding a pale yellow picture book with the farm drawing on its cover.",
       "placeholder": false,
-      "source": "catalogue item 25"
+      "source": "Tiffany's slideshow folder, Home is where the heart is."
     },
     {
-      "id": "gift-29",
+      "id": "photo-10",
       "year": 2025,
-      "title": "The bookmarks",
-      "caption": "← Vanessa drew this.",
-      "image": "assets/credits/gifts/gift-29.jpg",
-      "alt": "A fan of wrapped bookmarks with tassels, each printed with the drawing and an arrow saying \"Vanessa drew this.\"",
+      "title": "The greeting card",
+      "caption": "",
+      "image": "assets/credits/photos/photo-10.jpg",
+      "alt": "A hand holding a folded pale yellow card with the farm drawing on its front.",
       "placeholder": false,
-      "source": "catalogue item 29"
+      "source": "Tiffany's slideshow folder, IMG_7287"
     },
     {
-      "id": "gift-28",
+      "id": "photo-11",
       "year": 2025,
       "title": "The earrings",
       "caption": "",
-      "image": "assets/credits/gifts/gift-28.jpg",
-      "alt": "Two pairs of square resin earrings with the farm drawing, in an open hand.",
+      "image": "assets/credits/photos/photo-11.jpg",
+      "alt": "A pair of square resin earrings and a matching charm printed with the farm drawing, in an open hand.",
       "placeholder": false,
-      "source": "catalogue item 28"
+      "source": "Tiffany's slideshow folder, IMG_7295"
     },
     {
-      "id": "gift-30",
+      "id": "photo-12",
+      "year": 2025,
+      "title": "The bookmarks",
+      "caption": "← Vanessa drew this.",
+      "image": "assets/credits/photos/photo-12.jpg",
+      "alt": "A fan of wrapped bookmarks with tassels, each printed with the drawing and an arrow saying \"Vanessa drew this.\"",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, - Vanessa"
+    },
+    {
+      "id": "photo-13",
       "year": 2025,
       "title": "The ornament",
       "caption": "Wait… What's that farmer holding?",
-      "image": "assets/credits/gifts/gift-30.jpg",
-      "alt": "A round \"Merry Christmas\" ornament hanging from a car mirror, with a cut-out farmer holding a real baby tooth.",
+      "image": "assets/credits/photos/photo-13.jpg",
+      "alt": "A round \"Merry Christmas\" ornament hanging from a car mirror, with a cut-out farmer beside a little pink house.",
       "placeholder": false,
-      "source": "catalogue item 30"
+      "source": "Tiffany's slideshow folder, christm"
     },
     {
-      "id": "gift-31",
+      "id": "photo-14",
       "year": 2025,
       "title": "The wrapping paper",
-      "caption": "Framed by Heather",
-      "image": "assets/credits/gifts/gift-31.jpg",
-      "alt": "Vanessa and a friend hugging, holding a gift wrapped in paper printed with the farm drawing and a red bow.",
+      "caption": "",
+      "image": "assets/credits/photos/photo-14.jpg",
+      "alt": "Two friends hugging, holding a gift wrapped in paper printed with the farm drawing and topped with a red bow.",
       "placeholder": false,
-      "source": "catalogue item 31"
+      "source": "Tiffany's slideshow folder, IMG_9590"
     },
     {
-      "id": "gift-32",
+      "id": "photo-15",
       "year": 2026,
       "title": "The novel",
       "caption": "#1 Bestseller Fiction Book of 2025 · Vanessa and the Cornfield Whodunnit · The Tales of Vanessa",
-      "image": "assets/credits/gifts/gift-32.jpg",
+      "image": "assets/credits/photos/photo-15.jpg",
       "alt": "A novel cover with an illustrated Vanessa in a cap and overalls among sunflowers, in front of the farmhouse.",
       "placeholder": false,
-      "source": "catalogue item 32"
+      "source": "Tiffany's slideshow folder, AL BESTSELLER FICTION BOOK OF 2025"
     },
     {
-      "id": "gift-34",
+      "id": "photo-16",
       "year": 2026,
-      "title": "The T-shirt",
-      "caption": "My mom drew this.",
-      "image": "assets/credits/gifts/gift-34.jpg",
-      "alt": "A girl flexing her arms in a T-shirt printed with the farm drawing and \"My mom drew this.\"",
+      "title": "The T-shirts",
+      "caption": "Vanessa drew this. · My mom drew this.",
+      "image": "assets/credits/photos/photo-16.jpg",
+      "alt": "Five children in white T-shirts printed with the farm drawing, lined up beside a smiling grown-up.",
       "placeholder": false,
-      "source": "catalogue item 34"
+      "source": "Tiffany's slideshow folder, IMG_1529"
     },
     {
-      "id": "gift-37",
+      "id": "photo-17",
       "year": 2026,
       "title": "The jigsaw puzzle",
       "caption": "",
-      "image": "assets/credits/gifts/gift-37.jpg",
-      "alt": "The box of a 500-piece jigsaw puzzle: the farm repainted as a sunset scene.",
+      "image": "assets/credits/photos/photo-17.jpg",
+      "alt": "A grown-up and a child grinning over the finished jigsaw puzzle: the farm repainted as a sunset scene.",
       "placeholder": false,
-      "source": "catalogue item 37"
+      "source": "Tiffany's slideshow folder, IMG_2717"
     },
     {
-      "id": "gift-38",
-      "year": 2026,
-      "title": "The jigsaw puzzle, nearly done",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-38.jpg",
-      "alt": "Three women around the nearly finished puzzle on a table, laughing.",
-      "placeholder": false,
-      "source": "catalogue item 38"
-    },
-    {
-      "id": "gift-40",
+      "id": "photo-18",
       "year": 2026,
       "title": "The diorama",
       "caption": "What occurred on each day of CREATION?",
-      "image": "assets/credits/gifts/gift-40.jpg",
-      "alt": "A shoebox diorama of the farm, with a marshmallow farmer in overalls on the bench.",
+      "image": "assets/credits/photos/photo-18.jpg",
+      "alt": "A cardboard-box diorama of the farm, with a marshmallow farmer in overalls on the bench under a branch for a tree.",
       "placeholder": false,
-      "source": "catalogue item 40"
+      "source": "Tiffany's slideshow folder, IMG_2891"
     },
+    {
+      "id": "photo-19",
+      "year": 2026,
+      "title": "The jello",
+      "caption": "",
+      "image": "assets/credits/photos/photo-19.jpg",
+      "alt": "A friend, wide-eyed, holding a bowl of red jello with the farm drawing set inside it.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_3527"
+    },
+    {
+      "id": "photo-20",
+      "year": 2026,
+      "title": "The CD",
+      "caption": "Outdrawing All Our Dreams",
+      "image": "assets/credits/photos/photo-20.jpg",
+      "alt": "A hand holding a CD case with the farm in colour, a boombox and an \"Explicit\" sticker.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, Ortimina"
+    },
+    {
+      "id": "photo-21",
+      "year": null,
+      "title": "Vote Dogs!",
+      "caption": "By Vanessa and Tiffany",
+      "image": "assets/credits/photos/photo-21.jpg",
+      "alt": "A friend, eyes shut tight, holding a poster of the farm drawing with a red dog added beside the farmer, who says \"Vote Dogs!\".",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_9204"
+    },
+    {
+      "id": "photo-22",
+      "year": null,
+      "title": "The drawing on the ceiling",
+      "caption": "",
+      "image": "assets/credits/photos/photo-22.jpg",
+      "alt": "A friend standing with hands on hips, looking up at the farm drawing taped to the ceiling.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_9254"
+    },
+    {
+      "id": "photo-23",
+      "year": 2026,
+      "title": "The yearbook",
+      "caption": "",
+      "image": "assets/credits/photos/photo-23.jpg",
+      "alt": "Two friends at a picnic table holding a yearbook open at two pages laid out over the farm drawing.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_9291"
+    },
+    {
+      "id": "photo-24",
+      "year": 2026,
+      "title": "The invitation",
+      "caption": "Top secret: you're invited to a Surprise 3D Farm Party",
+      "image": "assets/credits/photos/photo-24.jpg",
+      "alt": "A hand-lettered invitation to a surprise 3D farm party, drawn around the house, the tree, the corn, the sunflowers and the raised bed.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, = PSSST..."
+    },
+    {
+      "id": "photo-25",
+      "year": 2026,
+      "title": "The 3D Farm Party: the drawing on the wall",
+      "caption": "",
+      "image": "assets/credits/photos/photo-25.jpg",
+      "alt": "Two friends hugging in front of a giant black-and-white mural of the drawing, with a bench and paper sunflowers.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_5137"
+    },
+    {
+      "id": "photo-26",
+      "year": 2026,
+      "title": "The 3D Farm Party: the bench",
+      "caption": "",
+      "image": "assets/credits/photos/photo-26.jpg",
+      "alt": "Two friends, one in overalls, on the bench under the tree corner.",
+      "placeholder": false,
+      "source": "Tiffany's slideshow folder, IMG_5121"
+    }
+  ],
+  "keepsakes": [
     {
       "id": "gift-03",
       "year": 2026,
@@ -185,6 +288,16 @@
       "alt": "The red jello on its plate, the drawing visible inside it.",
       "placeholder": false,
       "source": "catalogue item 05"
+    },
+    {
+      "id": "gift-30",
+      "year": 2025,
+      "title": "The ornament",
+      "caption": "Wait… What's that farmer holding?",
+      "image": "assets/credits/gifts/gift-30.jpg",
+      "alt": "A round \"Merry Christmas\" ornament hanging from a car mirror, with a cut-out farmer holding a real baby tooth.",
+      "placeholder": false,
+      "source": "catalogue item 30"
     },
     {
       "id": "gift-42",
@@ -207,74 +320,24 @@
       "source": "catalogue item 43"
     },
     {
-      "id": "gift-44",
+      "id": "gift-32",
       "year": 2026,
-      "title": "The back of the CD",
-      "caption": "Illustrated by Vanessa",
-      "image": "assets/credits/gifts/gift-44.jpg",
-      "alt": "The back of the CD case in bright paint splashes.",
+      "title": "The novel",
+      "caption": "#1 Bestseller Fiction Book of 2025 · Vanessa and the Cornfield Whodunnit · The Tales of Vanessa",
+      "image": "assets/credits/gifts/gift-32.jpg",
+      "alt": "A novel cover with an illustrated Vanessa in a cap and overalls among sunflowers, in front of the farmhouse.",
       "placeholder": false,
-      "source": "catalogue item 44"
+      "source": "catalogue item 32"
     },
     {
-      "id": "gift-54",
+      "id": "gift-40",
       "year": 2026,
-      "title": "The party reminder",
-      "caption": "PS: If Vanessa mentions surprising ME for my birthday, just smile and nod.",
-      "image": "assets/credits/gifts/gift-54.jpg",
-      "alt": "A reminder card for \"Vanessa's Secret 3D Farm Party!\", June 28th.",
+      "title": "The diorama",
+      "caption": "What occurred on each day of CREATION?",
+      "image": "assets/credits/gifts/gift-40.jpg",
+      "alt": "A shoebox diorama of the farm, with a marshmallow farmer in overalls on the bench.",
       "placeholder": false,
-      "source": "catalogue item 54"
-    },
-    {
-      "id": "gift-51",
-      "year": 2026,
-      "title": "The 3D Farm Party: the house",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-51.jpg",
-      "alt": "A life-size white house front with a red door and a chimney, built in a hallway, with stepping-stone rugs.",
-      "placeholder": false,
-      "source": "catalogue item 51"
-    },
-    {
-      "id": "gift-50",
-      "year": 2026,
-      "title": "The 3D Farm Party: the drawing on the wall",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-50.jpg",
-      "alt": "Two friends hugging in front of a giant black-and-white mural of the drawing, with a bench and paper sunflowers.",
-      "placeholder": false,
-      "source": "catalogue item 50"
-    },
-    {
-      "id": "gift-56",
-      "year": 2026,
-      "title": "The 3D Farm Party: the birds",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-56.jpg",
-      "alt": "Vanessa with her arms wide before the house front, four children in bird wings copying her.",
-      "placeholder": false,
-      "source": "catalogue item 56"
-    },
-    {
-      "id": "gift-65",
-      "year": 2026,
-      "title": "The 3D Farm Party: the bench",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-65.jpg",
-      "alt": "Vanessa and a friend in overalls on the bench under the tree corner.",
-      "placeholder": false,
-      "source": "catalogue item 65"
-    },
-    {
-      "id": "gift-69",
-      "year": 2026,
-      "title": "The 3D Farm Party",
-      "caption": "",
-      "image": "assets/credits/gifts/gift-69.jpg",
-      "alt": "Vanessa in pure surprise, hands on her chest.",
-      "placeholder": false,
-      "source": "catalogue item 69"
+      "source": "catalogue item 40"
     }
   ],
   "messages": [],

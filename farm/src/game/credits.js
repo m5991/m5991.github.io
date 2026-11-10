@@ -1,4 +1,4 @@
-// The end credits (spec §5.1, A25-9, P25-8; v0.17): the vocal The House (E12) played once, its
+// The end credits (spec §5.1, A25-9, P25-8; v0.17): the vocal House (E12) played once, its
 // checked lyrics a line at a time, Vanessa's gift jokes over the years as paper prints, the
 // messages from everyone who loves her (only from volunteers, with consent), and a closing card.
 // Pure: no DOM, no audio. `validateCredits` checks the content file (assets/credits/credits.json),
@@ -10,10 +10,19 @@
 // third of a second a word, 5–12 s, a longer one running over several cards. Nothing is
 // invented: an empty section is left out, and a player build shows no placeholder and no message
 // without consent.
+//
+// v0.20 (captain 2026-11-10: "Isn't it the credits the slide show? Also there will not be no slide
+// show on kids version"): the pictures are now the 26 photos Tiffany shared of the drawing over the
+// years (the content file's `gifts`, in date order; made by tools/make-photos.mjs), so the full
+// edition's credits are a slideshow of them over the song, each held about six seconds, with the
+// title, the lyrics and the closing card as before. The kids edition shows no photo (`photos:
+// false`): its title card, then the coloured drawing alone under the lyrics, then the closing card.
+// The prints the hidden keepsakes show are the content file's `keepsakes` (game/keepsakes.js).
 
 export const CREDITS = {
   titleS: 5, // the opening card, over the song's intro
   closingS: 14, // the closing card, at the end
+  closingAloneS: 30, // with no picture and no message before it (the kids edition): its last half minute
   tailS: 1.5, // the last moment of the song, the frame alone
   gift: { min: 3, normal: [4, 6], max: 8 },
   message: { base: 2, perWord: 1 / 3, min: 5, max: 12 },
@@ -28,7 +37,7 @@ export function validateCredits(c, lyrics = null, { player = false, durationS = 
   if (!c || c.version !== 1) return ['version'];
   if (!c.song?.eggId || !c.song.audio || !c.song.lyrics) e.push('song');
   const ids = new Set();
-  for (const [k, list] of [['gifts', c.gifts], ['messages', c.messages]]) {
+  for (const [k, list] of [['gifts', c.gifts], ['messages', c.messages], ['keepsakes', c.keepsakes ?? []]]) {
     if (!Array.isArray(list)) { e.push(k); continue; }
     for (const x of list) {
       if (!x.id) e.push(`${k}: an item has no id`);
@@ -38,7 +47,7 @@ export function validateCredits(c, lyrics = null, { player = false, durationS = 
       if (player && x.placeholder) e.push(`${x.id}: a placeholder in a player build`);
     }
   }
-  for (const g of c.gifts ?? []) {
+  for (const g of [...(c.gifts ?? []), ...(Array.isArray(c.keepsakes) ? c.keepsakes : [])]) {
     if (!(g.year === null || Number.isInteger(g.year))) e.push(`${g.id}: year`);
     if (!g.image) e.push(`${g.id}: no image`);
   }
@@ -74,8 +83,9 @@ export function messageCards(m) {
 
 // What the credits show, on the song's clock (seconds). -> { duration, cards: [{ kind, start, end, ... }] }
 // kinds: 'title', 'gift' (side 'left' | 'right'), 'prints' (the gifts that did not fit), 'message', 'closing'
-export function planCredits(c, durationS, { player = true } = {}) {
-  const show = (x) => !(player && x.placeholder);
+// `photos` false (the kids edition): no picture at all
+export function planCredits(c, durationS, { player = true, photos = true } = {}) {
+  const show = (x) => photos && !(player && x.placeholder);
   // by year, then file order; an undated gift takes the year of the one before it in the file,
   // so it keeps its place among them (an explicit `sequence` sets any other order)
   let carry = -Infinity;
@@ -83,8 +93,9 @@ export function planCredits(c, durationS, { player = true } = {}) {
   const order = Array.isArray(c.sequence) ? c.sequence : null;
   if (order) gifts.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   else gifts.sort((a, b) => a.sortYear - b.sortYear || a.order - b.order);
-  const messages = (c.messages ?? []).filter((m) => show(m) && (!player || m.consent === true) && m.text).flatMap(messageCards);
-  const cards = [{ kind: 'title', start: 0, end: CREDITS.titleS, title: 'The Farm', song: 'The House' }];
+  const messages = (c.messages ?? []).filter((m) => !(player && m.placeholder) && (!player || m.consent === true) && m.text).flatMap(messageCards);
+  // the song under its name in Tiffany's list (v0.20: "House"; the content file's `song.title`)
+  const cards = [{ kind: 'title', start: 0, end: CREDITS.titleS, title: 'The Farm', song: c.song?.title ?? 'House' }];
   const closing = c.closing?.text ? CREDITS.closingS : 0;
   const end = Math.max(CREDITS.titleS, durationS - CREDITS.tailS);
   const msgS = messages.reduce((n, m) => n + m.hold, 0);
@@ -103,14 +114,17 @@ export function planCredits(c, durationS, { player = true } = {}) {
       each = CREDITS.gift.min;
     }
     each = hold(each, CREDITS.gift.min, top);
-    shown.forEach((g, i) => { cards.push({ kind: 'gift', ...g, side: i % 2 ? 'right' : 'left', start: t, end: t + each }); t += each; });
+    shown.forEach((g, i) => { cards.push({ kind: 'gift', ...g, side: i % 2 ? 'right' : 'left', n: i + 1, of: gifts.length, start: t, end: t + each }); t += each; });
     if (rest.length) { const s = Math.max(CREDITS.gift.normal[1], room - each * shown.length); cards.push({ kind: 'prints', items: rest, start: t, end: t + s }); t += s; }
   }
   for (const m of messages) { cards.push({ ...m, start: t, end: t + m.hold }); t += m.hold; }
   if (closing) {
-    const s = Math.max(closing, end - t);
-    cards.push({ kind: 'closing', title: c.closing.title ?? '', text: c.closing.text, start: t, end: t + s });
-    t += s;
+    let s = Math.max(closing, end - t);
+    // nothing before it: the drawing alone under the lyrics first, then the closing card
+    if (!gifts.length && !messages.length) s = Math.max(closing, Math.min(s, CREDITS.closingAloneS));
+    const start = Math.max(t, end - s);
+    cards.push({ kind: 'closing', title: c.closing.title ?? '', text: c.closing.text, start, end: start + s });
+    t = start + s;
   }
   return { duration: Math.max(durationS, t), cards };
 }

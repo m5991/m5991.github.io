@@ -24,6 +24,7 @@ export function createCards(dialog, { player = null } = {}) {
     dialog.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dialog.close('close')));
     if (!dialog.open) dialog.showModal();
     (dialog.querySelector('[autofocus]') ?? dialog.querySelector('button'))?.focus();
+    dialog.scrollTop = 0; // v0.20: a long card (the songbook) opens at its top, not scrolled down to its Close button
   }
 
   // v0.16: a song found, or one from the songbook: its title, a line, and Listen (in the game),
@@ -31,7 +32,12 @@ export function createCards(dialog, { player = null } = {}) {
   // `available` false (no song files in this build) disables Listen and Download and says so.
   // v0.17b: Listen plays through the game's one song player (`player`, ui/songplayer.js), so the
   // song keeps playing when the card closes; the song that is loaded shows a seek bar and its time.
+  // v0.20 (audit 4): each song shows one line of its own lyrics, quoted (`lyric`), on its card and
+  // in the songbook; (audit 1) while its discovery clip plays (`clip`, audio/clips.js) the found
+  // card shows "A taste of it…" with a small moving equaliser, gone when the clip ends.
   let unsubs = [];
+  // a line of the song's own words; " / " in it is a line break in the song
+  const lyricLine = (line) => (line ? `<blockquote class="song-lyric"><span aria-hidden="true">“</span>${esc(line)}<span aria-hidden="true">”</span></blockquote>` : '');
   function songActions({ src, download, suno, available }) {
     return `<div class="song-actions">
       <button type="button" class="primary" data-act="listen" ${available ? '' : 'disabled'} aria-pressed="false"><span class="ic" aria-hidden="true">▶</span> <span class="lbl">Listen</span></button>
@@ -69,14 +75,16 @@ export function createCards(dialog, { player = null } = {}) {
   return {
     get isOpen() { return dialog.open; },
 
-    // v0.16 a song card: { id, title, songTitle, text, src, download, suno, available, onClose }
+    // v0.16 a song card: { id, title, songTitle, lyric, text, src, download, suno, available, clip, onClose }
     song(o) {
-      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p>${songActions(o)}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span> A taste of it…</p><p>${esc(o.text)}</p>${songActions(o)}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
       wireListen(dialog, { id: o.id, src: o.src, title: o.songTitle ?? o.title });
+      const taste = dialog.querySelector('.song-taste');
+      if (o.clip && taste) unsubs.push(o.clip.subscribe((st) => { taste.hidden = !(st.playing && st.id === o.id); }));
     },
     // v0.16 the songbook: { title, intro, songs: [{ id, title, src, download, suno }], left, available, onClose }
     songbook(o) {
-      const rows = o.songs.map((x) => `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${songActions({ ...x, available: o.available })}</li>`).join('');
+      const rows = o.songs.map((x) => `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>`).join('');
       open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
       dialog.querySelectorAll('.song-row').forEach((row, i) => wireListen(row, o.songs[i]));
     },

@@ -167,6 +167,21 @@ export const ARCHER_LINES = [
   'Question: what eats sunflower seeds? Birds. Question: what stops birds? Me. Assistant to the farmer, reporting for duty.',
   'I trained my whole life for this. Mostly on beets, but the principle is identical. Stand back, I am loading the crossbow.',
 ];
+// v0.20 (design audit 3, "Dwight takes the birds"): what he says, now and then, after his blunt
+// arrow has sent a bird off: after the first one, then after every DWIGHT_SAYS_EVERY-th (original
+// lines in his deadpan manner; the first is the audit's)
+export const DWIGHT_BIRD_LINES = [
+  'Bird. Deterred. Humanely.',
+  'Fact: that was a warning shot. I do not miss. I choose.',
+  'It will tell the other birds. Good.',
+  'Another bird, another incident report. Filed.',
+  'Question: who guards the crops? Answer: me. It has always been me.',
+  'Blunt arrow. Sharp mind.',
+  'Threat neutralised. You may resume farming.',
+];
+export const DWIGHT_SAYS_EVERY = 3;
+// the line for his n-th deterred bird (n from 1), or null when he says nothing this time
+export const dwightLine = (n) => (Number.isInteger(n) && n >= 1 && (n - 1) % DWIGHT_SAYS_EVERY === 0 ? DWIGHT_BIRD_LINES[((n - 1) / DWIGHT_SAYS_EVERY) % DWIGHT_BIRD_LINES.length] : null);
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
 export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4', 'H5'];
 // every stage the ledger keeps: the route, then the optional ones (v0.17)

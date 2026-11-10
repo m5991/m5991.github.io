@@ -16,7 +16,9 @@ export function createSaveData() {
     schema: SCHEMA,
     ledger: createLedger(),
     // v0.17: creditsSeen (spec §5.1), set when the end credits have played once
-    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false },
+    // v0.20: finishedAt, the active ms when the home was built (null before; the finished farm's
+    // evening runs from it), and dwightDeterred, the birds Dwight has sent off (the completed menu)
+    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0 },
     vanessa: { x: null, z: null }, // validated position; null = start position
     // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
     // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)
@@ -253,9 +255,13 @@ export function migratePreV017(d0) {
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
   if (!d?.session || typeof d.session !== 'object') return d;
-  const missing = ['whoKnowsHelloSeen', 'creditsSeen'].filter((k) => typeof d.session[k] !== 'boolean');
-  if (!missing.length) return d;
-  return { ...d, session: { ...d.session, ...Object.fromEntries(missing.map((k) => [k, false])) } };
+  // v0.20: finishedAt (a time or null) and dwightDeterred (a count) where missing or not valid
+  const s = d.session;
+  const finishedAt = Number.isFinite(s.finishedAt) && s.finishedAt >= 0 ? s.finishedAt : null;
+  const dwightDeterred = Number.isInteger(s.dwightDeterred) && s.dwightDeterred >= 0 ? s.dwightDeterred : 0;
+  const missing = ['whoKnowsHelloSeen', 'creditsSeen'].filter((k) => typeof s[k] !== 'boolean');
+  if (!missing.length && s.finishedAt === finishedAt && s.dwightDeterred === dwightDeterred) return d;
+  return { ...d, session: { ...s, ...Object.fromEntries(missing.map((k) => [k, false])), finishedAt, dwightDeterred } };
 }
 
 // settings added since the first v5 test saves get their defaults

@@ -17,6 +17,12 @@
 // visit, three in any two minutes, eight between the second crop plot and the home) and the
 // settings (Help me finish, Birds never steal) are checked before every take. After the home, or
 // with theft off, birds only perch on the bench.
+//
+// v0.20 (design audit 3, approved by the captain 2026-11-10: "Dwight takes the birds"): once he is
+// hired, a bird that comes for a crop plant he guards is his alone (`guarded`): no urgent warning
+// and no Wave for it. It still circles, lands and perches (the v0.17 phone note "land and stand on
+// a crop before he draws" stays); then Dwight turns, draws and looses his blunt arrow. Wave stays
+// for the birds before his hire, for the bench, and for the crops on her head outside his cover.
 import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, NODES } from './data.js';
 import { birdsActive, carriedTarget, isCommitted, mainComplete, readyNodes, theftAllowed } from './ledger.js';
 
@@ -96,7 +102,9 @@ export function warningText(t) {
 // ctx as targetFor, plus `blocked` (a sale or a build is under way, a card or the finale: a bird
 // that is not sitting yet gives up, and none comes).
 export function createBirds() {
-  const s = { phase: 'idle', t: 0, nextAt: null, target: null, archer: null, drawT: 0, why: null, lastShot: -Infinity };
+  const s = { phase: 'idle', t: 0, nextAt: null, target: null, archer: null, drawT: 0, why: null, lastShot: -Infinity, guarded: false };
+  // v0.20: is this visit Dwight's: a crop plant a hired archer guards
+  const guardedNow = (ctx) => s.target?.kind === 'node' && !!coveringArcher(ctx.archers, s.target.pos, s.target.id);
   const leave = (out, why) => { s.phase = 'leave'; s.t = 0; s.why = why; s.archer = null; out.push({ a: 'leave', why }); };
   // the target moves with her (a head thief) and a plant's spot is fixed
   const follow = (ctx) => { if (s.target?.kind === 'carried') s.target = { ...s.target, pos: ctx.hero }; };
@@ -132,12 +140,13 @@ export function createBirds() {
     return true;
   }
   return {
-    get state() { return { phase: s.phase, t: s.t, target: s.target, archer: s.archer?.id ?? null, why: s.why, nextAt: s.nextAt }; },
-    // the bird can be waved off now (before the take; not once an archer is on it)
-    get wavable() { return ['warn', 'approach', 'sit'].includes(s.phase) && !s.archer; },
+    get state() { return { phase: s.phase, t: s.t, target: s.target, archer: s.archer?.id ?? null, why: s.why, nextAt: s.nextAt, guarded: s.guarded }; },
+    // the bird can be waved off now (before the take; not once an archer is on it, and never a
+    // bird at a plant he guards: that one is his, v0.20)
+    get wavable() { return ['warn', 'approach', 'sit'].includes(s.phase) && !s.archer && !s.guarded; },
     get busy() { return s.phase !== 'idle'; },
     reset(activeMs = null) {
-      Object.assign(s, { phase: 'idle', t: 0, nextAt: activeMs === null ? null : activeMs + BIRDS.firstMs, target: null, archer: null, drawT: 0, why: null });
+      Object.assign(s, { phase: 'idle', t: 0, nextAt: activeMs === null ? null : activeMs + BIRDS.firstMs, target: null, archer: null, drawT: 0, why: null, guarded: false });
     },
     // a free Wave: off it goes with nothing. -> true when there was a bird to wave off
     wave() {
@@ -159,14 +168,16 @@ export function createBirds() {
         s.phase = 'warn';
         s.t = 0;
         s.why = null;
-        out.push({ a: 'turn' }, { a: 'warn', target: t, text: warningText(t) });
+        s.guarded = guardedNow(ctx);
+        // `guarded`: Dwight has this one, so the caller shows no warning (v0.20)
+        out.push({ a: 'turn' }, { a: 'warn', target: t, text: warningText(t), guarded: s.guarded });
         return out;
       }
       s.t += dt;
       follow(ctx);
       if (s.phase === 'leave') {
         if (s.t >= BIRDS.leaveMs) {
-          s.phase = 'idle'; s.t = 0; s.target = null;
+          s.phase = 'idle'; s.t = 0; s.target = null; s.guarded = false;
           s.nextAt = now + BIRDS.everyMs;
           out.push({ a: 'done' });
         }
@@ -174,6 +185,7 @@ export function createBirds() {
       }
       if (ctx.blocked && s.phase !== 'sit') { leave(out, 'gone'); return out; }
       if (!still(ctx)) { leave(out, 'gone'); return out; }
+      s.guarded = guardedNow(ctx); // he may be hired while the bird is on its way
       // Let plant birds land and visibly perch before Dwight draws his bow.
       if ((s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
       if (s.phase === 'warn' && s.t >= BIRDS.warnMs) {

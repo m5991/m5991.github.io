@@ -80,7 +80,14 @@ const TOON_VS = /* glsl */`
 varying vec3 vNormalV;
 varying vec3 vViewPos;
 varying vec3 vWorldPos;
+#ifdef GRAVEL
+attribute float gravelEdge; // metres from the surface's edge (0 on it)
+varying float vGravelEdge;
+#endif
 void main() {
+  #ifdef GRAVEL
+  vGravelEdge = gravelEdge;
+  #endif
   #include <color_vertex>
   #include <morphcolor_vertex>
   #include <beginnormal_vertex>
@@ -125,6 +132,12 @@ uniform float uWashRadial;
 uniform vec2 uWashC;
 uniform vec3 uPaperFill;
 uniform float uInkY;
+#ifdef GRAVEL
+// v0.20 gravel (gravelMaterial below): pebbles drawn on the ground, in world space
+#define GRAVEL_M 0.09
+uniform vec3 uGravelDark;
+varying float vGravelEdge;
+#endif
 #ifdef GRASS
 // the finale (P25-2): the ground animates into grass, spreading from Vanessa's feet
 uniform vec2 uGrassC;
@@ -145,6 +158,39 @@ ${NOISE_GLSL}
 float st_seg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a; vec2 ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h); }
 void main() {
   vec3 base = uColor;
+  #ifdef GRAVEL
+  {
+    // Pebbles: one rounded stone per cell of a jittered grid (the nearest and second-nearest
+    // cell points give each stone its outline), GRAVEL_M metres apart. Each stone has its own
+    // grey, a few are warm or pale, and the joints between them are darker. Far away (the whole
+    // drawing in the finale and the credits) the stones are smaller than a pixel, so the pattern
+    // fades to its mean grey with a soft mottle instead of shimmering. Along the surface's edge
+    // whole stones drop out, so the gravel ends in a loose scatter and no straight line.
+    vec2 gp = vWorldPos.xz / GRAVEL_M;
+    vec2 gi = floor(gp);
+    vec2 gf = gp - gi;
+    float d1 = 8.0;
+    float d2 = 8.0;
+    float id = 0.0;
+    for (int gy = -1; gy <= 1; gy++) {
+      for (int gx = -1; gx <= 1; gx++) {
+        vec2 o = vec2(float(gx), float(gy));
+        vec2 r = o + 0.14 + 0.72 * vec2(st_hash(gi + o), st_hash(gi + o + 31.7)) - gf;
+        float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; id = st_hash(gi + o + 9.3); } else if (d < d2) { d2 = d; }
+      }
+    }
+    if (vGravelEdge < 0.03 + 0.1 * id) discard;
+    float joint = 1.0 - smoothstep(0.03, 0.17, sqrt(d2) - sqrt(d1));
+    float detail = 1.0 - smoothstep(0.55, 1.15, length(fwidth(gp)));
+    vec3 stone = base * (0.88 + 0.22 * id);
+    stone = mix(stone, stone * vec3(1.06, 1.0, 0.9), step(0.82, id));   // a warm stone now and then
+    stone = mix(stone, mix(stone, uPaper, 0.35), step(id, 0.12));       // and a pale one
+    stone *= 0.97 + 0.06 * smoothstep(0.0, 0.5, sqrt(d1));              // a touch of roundness
+    vec3 far = base * (0.9 + 0.07 * st_noise(vWorldPos.xz * 2.3) + 0.08 * st_noise(vWorldPos.xz * 11.0));
+    base = mix(far, mix(stone, uGravelDark, joint * 0.62), detail);
+  }
+  #endif
   #ifdef GRASS
     float gd = 1e4;
     float gk = 0.0;
@@ -491,6 +537,19 @@ export function paperBackdrop() {
   q.userData.noFit = true;
   q.raycast = () => {};
   return q;
+}
+
+// v0.20 gravel (captain 2026-11-10: "The path is gray because it's like gravel ... we need to
+// update the texture of both the path and the tree circle"): a flat, evenly lit grey surface
+// covered in pebbles (the GRAVEL block of the toon shader). The pebbles are fixed to the ground,
+// so the path and the circle round the tree, which overlap where the path comes in, are one
+// continuous bed of gravel. The mesh needs a `gravelEdge` attribute: metres from its edge.
+export const GRAVEL = { colour: 0xb9b8b1, joint: 0x6f7378 };
+export function gravelMaterial() {
+  const m = toonMaterial({ color: GRAVEL.colour, grain: 1, flat: 1, side: THREE.DoubleSide });
+  m.defines = { ...(m.defines ?? {}), GRAVEL: '' };
+  m.uniforms.uGravelDark = { value: new THREE.Color(GRAVEL.joint) };
+  return m;
 }
 
 // The ground's paper (D24) with the finale's grass (P25-2): evenly lit, grained; the grass

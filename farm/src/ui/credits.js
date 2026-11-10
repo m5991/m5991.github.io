@@ -6,12 +6,16 @@
 // The song plays once through a plain <audio> element (the theme rests meanwhile); its clock drives
 // everything, and with Sound off or the song blocked or missing a silent clock runs the same
 // times. The content file, the lyrics and the prints load only when the credits start.
+// v0.20: the prints are the photos of the drawing over the years, shown as a slideshow (each one
+// fades in over the last, numbered "3 / 26"); `photos()` false (the kids edition) shows none.
 import { creditsAt, planCredits, validateCredits } from '../game/credits.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const CREDITS_URL = 'assets/credits/credits.json';
+const AHEAD = 3; // photos loaded ahead of the one on show
+const FADE_MS = 700; // a card fades out under the next one
 
-export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, onEnd, holdMusic, releaseMusic }) {
+export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, onEnd, holdMusic, releaseMusic, photos = () => true }) {
   const card = el.querySelector('.credits-card');
   const now = el.querySelector('.credits-lyrics .now');
   const next = el.querySelector('.credits-lyrics .next');
@@ -20,8 +24,13 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   const skipBtn = el.querySelector('[data-act="skip"]');
   const s = { active: false, paused: false, t: 0, plan: null, lyrics: null, audio: null, shown: null, lineShown: null, images: new Map(), token: 0 };
 
-  function preload(c) {
-    for (const g of c.cards) {
+  // v0.20: the photos load a few ahead of the one on show (`from`: the plan's card index), not all
+  // 26 at once when the credits start: the first is there for the title's five seconds, and each
+  // later one has three photos' time to arrive
+  function preload(c, from = 0, ahead = AHEAD) {
+    let n = 0;
+    for (const g of c.cards.slice(from)) {
+      if (g.kind === 'gift' && ++n > ahead) break;
       for (const src of g.kind === 'gift' ? [g.image] : g.kind === 'prints' ? g.items.map((x) => x.image) : []) {
         if (!src || s.images.has(src)) continue;
         const img = new Image();
@@ -34,7 +43,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   function cardHtml(c) {
     if (c.kind === 'title') return `<div class="credits-paper title"><h2>${esc(c.title)}</h2><p class="song">♪ ${esc(c.song)}</p></div>`;
     if (c.kind === 'gift') {
-      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"><figcaption><span class="t">${esc(c.title)}</span>${c.year ? `<span class="y">${c.year}</span>` : ''}${c.caption ? `<q>${esc(c.caption)}</q>` : ''}</figcaption></figure>`;
+      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"><figcaption><span class="t">${esc(c.title)}</span>${c.year ? `<span class="y">${c.year}</span>` : ''}${c.of ? `<span class="n" aria-hidden="true">${c.n} / ${c.of}</span>` : ''}${c.caption ? `<q>${esc(c.caption)}</q>` : ''}</figcaption></figure>`;
     }
     if (c.kind === 'prints') return `<div class="credits-paper prints">${c.items.map((g) => `<img src="${esc(g.image)}" alt="${esc(g.alt)}">`).join('')}</div>`;
     if (c.kind === 'message') return `<div class="credits-paper message"><p class="from">${esc(c.from)}</p><p class="text">${esc(c.text)}</p></div>`;
@@ -53,9 +62,17 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
     if (at.card !== s.shown) {
       s.shown = at.card;
       card.classList.toggle('reduced', reducedMotion());
-      card.innerHTML = at.card ? cardHtml(at.card) : '';
-      card.classList.remove('in'); void card.offsetWidth; card.classList.add('in');
-      if (at.card) live.textContent = cardSpeech(at.card);
+      // v0.20 a slideshow: the card on show fades out while the next fades in over it
+      const old = [...card.children];
+      for (const o of old.slice(0, -1)) o.remove();
+      const prev = old.at(-1);
+      if (prev) { prev.classList.remove('in'); prev.classList.add('leaving'); setTimeout(() => prev.remove(), reducedMotion() ? 160 : FADE_MS); }
+      if (at.card) {
+        card.insertAdjacentHTML('beforeend', cardHtml(at.card));
+        card.lastElementChild.classList.add('in');
+        live.textContent = cardSpeech(at.card);
+        preload(s.plan, s.plan.cards.indexOf(at.card) + 1);
+      }
     }
     const key = at.line ? at.line.t : null;
     if (key !== s.lineShown) {
@@ -86,13 +103,14 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
     s.lyrics = lyrics;
     // the song: its length from the file once known (181 s for The House), else from the lyrics
     const guess = Math.max(60, ...(lyrics?.lines ?? []).map((l) => l.end + 4));
-    s.plan = planCredits(content, guess);
+    const opts = { photos: photos() };
+    s.plan = planCredits(content, guess, opts);
     preload(s.plan);
     if (content.song?.audio) {
       const a = new Audio(content.song.audio);
       a.preload = 'auto';
       s.audio = a;
-      a.addEventListener('loadedmetadata', () => { if (token === s.token && Number.isFinite(a.duration)) { s.plan = planCredits(content, a.duration); preload(s.plan); s.shown = undefined; } });
+      a.addEventListener('loadedmetadata', () => { if (token === s.token && Number.isFinite(a.duration)) { s.plan = planCredits(content, a.duration, opts); preload(s.plan); s.shown = undefined; } });
       a.addEventListener('error', () => { if (s.audio === a) s.audio = null; }); // a failed song: the silent clock
       a.addEventListener('ended', () => { if (s.audio === a) finish(); });
       if (soundOn()) a.play().catch(() => { /* blocked: the silent clock runs, the song may still start with a tap */ });

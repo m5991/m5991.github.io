@@ -6,7 +6,7 @@
 // crisp (wood, boards, tools); organic forms are smooth. Static parts merge per material.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PAL, toon, toonMaterial } from './look.js';
+import { gravelMaterial, PAL, toon, toonMaterial } from './look.js';
 import { at, hash3, log, lumpy, mergeByMaterial, mesh, mix, noise3, stone, stoneGeometry, taperTube } from './hand.js';
 import { bake, blade, cobGeometry, paint, rng, sunflowerHeadGeometry, vmesh } from './flora.js';
 import { LOOKS } from '../game/crowd.js';
@@ -852,43 +852,6 @@ export function steppingStone(i) {
   return g;
 }
 
-// ---------------- D08 path (G1): a gravel ribbon between the two drawn edges ----------------
-// left/right: matching arrays of ground points along the path; a few pebble dots and the two
-// edges as solid pen lines (the blueprint's dashed edges hide once it is laid).
-export function gravelPath(left, right) {
-  const pos = []; const idx = [];
-  for (let i = 0; i < left.length; i++) pos.push(left[i].x, 0.012, left[i].z, right[i].x, 0.012, right[i].z);
-  for (let i = 0; i < left.length - 1; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const ribbon = new THREE.Mesh(geo, toon(mix(PAL.stone, PAL.paper, 0.5), { grain: 1, flat: 1, side: THREE.DoubleSide }));
-  ribbon.receiveShadow = true; ribbon.castShadow = false; ribbon.userData.noOutline = true;
-  ribbon.name = 'D08_Path_Gravel';
-  const g = new THREE.Group(); g.name = 'D08_Path'; g.add(ribbon);
-  const r = rng(81);
-  const dots = [];
-  for (let i = 1; i < left.length - 1; i++) {
-    for (let k = 0; k < 2; k++) {
-      const t = 0.15 + r() * 0.7;
-      const p = left[i].clone().lerp(right[i], t);
-      const d = new THREE.CircleGeometry(0.025 + r() * 0.02, 6);
-      d.rotateX(-Math.PI / 2); d.translate(p.x, 0.016, p.z);
-      dots.push(d);
-    }
-  }
-  const pebbles = new THREE.Mesh(mergeGeometries(dots, false), toon(mix(PAL.stone, PAL.ink, 0.25), { flat: 1 }));
-  pebbles.userData.noOutline = true; pebbles.castShadow = false; pebbles.receiveShadow = true;
-  g.add(pebbles);
-  for (const edge of [left, right]) {
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edge.map((q) => q.clone().setY(0.02))), new THREE.LineBasicMaterial({ color: PAL.ink, transparent: true, opacity: 0.75 }));
-    line.userData.noFit = true;
-    g.add(line);
-  }
-  return g;
-}
-
 // ---------------- D08 path (G1), v0.13: stepping stones with grass between ----------------
 // The captain: "the road looks cheap, I imagine is a placeholder"; answer 2 "Stepping stones"
 // (spec v0.13 P29-3): the drawn winding path laid as a run of flat stepping stones between its two
@@ -984,55 +947,43 @@ export function stonePath(left, right) {
   return g;
 }
 
-// ---------------- D08 path (G1), v0.16 solid dirt, v0.19 borderless ----------------
-// The captain: "remove the rocks on both sides ofthe path, only the path, no outline" (v0.18
-// note; v0.16 "Make the path solid, not rocks"): a flat ribbon between the two drawn edges in a
-// warm dirt wash with the paper grain, no ink outline or edge stones, a few pencil strokes along
-// it for the trodden earth and a sprinkle of darker grit; short grass tufts at its edges (green
-// with the finale's ground).
-export function dirtPath(left, right) {
+// ---------------- D08 path (G1), v0.20: grey gravel ----------------
+// The captain (2026-11-10): "The path is gray because it's like gravel (there's even a song that
+// refers to the gravel wanting to be a stepping stone). So we need to update the texture of both
+// the path and the tree circle, the rocks of the tree are good." v0.16 made the path solid ("not
+// rocks") and v0.19 pale dirt with no border ("only the path, no outline"); it stays solid and
+// borderless, and is now a bed of grey pebbles: the look's gravel material draws them on a flat
+// ribbon between the two drawn edges, loose at the edges, with short grass tufts beside it (green
+// with the finale's ground). `gravelClearing` is the same gravel for the circle round the tree.
+// left/right: matching arrays of ground points along the path.
+export function gravelPath(left, right, material = gravelMaterial()) {
   const g = new THREE.Group(); g.name = 'D08_Path';
   const n = left.length;
-  const pos = []; const idx = [];
-  for (let i = 0; i < n; i++) pos.push(left[i].x, 0.012, left[i].z, right[i].x, 0.012, right[i].z);
-  for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  const pos = []; const edge = []; const idx = [];
+  for (let i = 0; i < n; i++) {
+    const c = left[i].clone().lerp(right[i], 0.5);
+    pos.push(left[i].x, GRAVEL_Y, left[i].z, c.x, GRAVEL_Y, c.z, right[i].x, GRAVEL_Y, right[i].z);
+    edge.push(0, left[i].distanceTo(right[i]) / 2, 0); // metres in from the edge
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 3;
+    idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4, a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('gravelEdge', new THREE.Float32BufferAttribute(edge, 1));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const DIRT = 0xe5d9ba;
-  const ribbon = new THREE.Mesh(geo, toon(DIRT, { grain: 1, flat: 1, side: THREE.DoubleSide, hatch: 1 }));
+  const ribbon = new THREE.Mesh(geo, material);
   ribbon.receiveShadow = true; ribbon.castShadow = false; ribbon.userData.noOutline = true;
-  ribbon.name = 'D08_Path_Dirt';
+  ribbon.name = 'D08_Path_Gravel';
+  g.add(ribbon);
+  // grass tufts beside it: three short pen strokes each, now on one side, now on the other
   const r = rng(816);
-  const strokes = []; const grit = []; const tufts = [];
-  for (let i = 2; i < n - 2; i += 2) {
-    for (let k = 0; k < 2; k++) { // trodden-earth strokes along the path
-      const t = 0.2 + r() * 0.6;
-      const a = left[i].clone().lerp(right[i], t); const b = left[i + 2].clone().lerp(right[i + 2], t + (r() - 0.5) * 0.1);
-      const d = b.clone().sub(a); const len = d.length() * (0.35 + r() * 0.4); d.normalize();
-      const pts = [new THREE.Vector2(0, 0), new THREE.Vector2(len * 0.5, (r() - 0.5) * 0.02), new THREE.Vector2(len, 0)];
-      const sg = strokeGeometry(pts, (u) => 0.012 * Math.sin(Math.PI * u) + 0.003);
-      sg.rotateX(-Math.PI / 2); sg.rotateY(-Math.atan2(d.z, d.x)); sg.translate(a.x, 0.016, a.z);
-      strokes.push(sg);
-    }
-    for (let k = 0; k < 3; k++) { // grit
-      const p = left[i].clone().lerp(right[i], 0.1 + r() * 0.8);
-      const c = new THREE.CircleGeometry(0.018 + r() * 0.018, 6);
-      c.rotateX(-Math.PI / 2); c.translate(p.x, 0.017, p.z);
-      grit.push(c);
-    }
-    if (i % 6 === 2) tufts.push((r() < 0.5 ? left : right)[i].clone());
-  }
-  const strokeM = new THREE.Mesh(mergeGeometries(strokes, false), new THREE.MeshBasicMaterial({ color: mix(DIRT, PAL.ink, 0.45), side: THREE.DoubleSide, transparent: true, opacity: 0.55 }));
-  strokeM.userData.noOutline = true; strokeM.userData.noFit = true; strokeM.castShadow = false; strokeM.name = 'D08_Path_Strokes';
-  const gritM = new THREE.Mesh(mergeGeometries(grit, false), toon(mix(DIRT, PAL.ink, 0.35), { flat: 1 }));
-  gritM.userData.noOutline = true; gritM.castShadow = false; gritM.name = 'D08_Path_Grit';
-  g.add(ribbon, strokeM, gritM);
   const tg = [];
-  tufts.forEach((p, t) => {
-    const n2 = 3;
-    for (let k = 0; k < n2; k++) {
+  for (let i = 2; i < n - 2; i += 6) {
+    const p = (r() < 0.5 ? left : right)[i];
+    for (let k = 0; k < 3; k++) {
       const x0 = (k - 1) * 0.03 + (r() - 0.5) * 0.015;
       const h = 0.08 + r() * 0.06; const lean = (k - 1) * 0.025;
       const pts = [];
@@ -1041,7 +992,7 @@ export function dirtPath(left, right) {
       geo2.translate(p.x, 0.008, p.z);
       tg.push(geo2);
     }
-  });
+  }
   if (tg.length) {
     const grass = new THREE.Mesh(mergeGeometries(tg, false), new THREE.MeshBasicMaterial({ color: PAL.ink, side: THREE.DoubleSide }));
     grass.userData.noOutline = true; grass.userData.noFit = true; grass.castShadow = false;
@@ -1049,6 +1000,36 @@ export function dirtPath(left, right) {
     g.add(grass);
   }
   return g;
+}
+const GRAVEL_Y = 0.012;
+// The circle round the tree and the bench, in the path's gravel: an ellipse of half-axes rx, rz
+// round `centre`, a little under the path so the two lie as one bed where the path comes in. Its
+// rim, and a second ring `band` metres inside it, carry the edge distance the gravel's loose edge
+// reads, so that edge is as wide here as along the path.
+export function gravelClearing(centre, rx, rz, material = gravelMaterial()) {
+  const seg = 96; const band = 0.3;
+  const pos = [centre.x, GRAVEL_Y - 0.003, centre.z]; const edge = [Math.min(rx, rz)]; const idx = [];
+  for (const k of [1, 0]) { // the inner ring, then the rim
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      pos.push(centre.x + Math.cos(a) * (rx - band * k), GRAVEL_Y - 0.003, centre.z + Math.sin(a) * (rz - band * k));
+      edge.push(band * k);
+    }
+  }
+  for (let i = 0; i < seg; i++) {
+    const j = (i + 1) % seg;
+    const in0 = 1 + i; const in1 = 1 + j; const out0 = 1 + seg + i; const out1 = 1 + seg + j;
+    idx.push(0, in1, in0, in0, in1, out0, out0, in1, out1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('gravelEdge', new THREE.Float32BufferAttribute(edge, 1));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, material);
+  m.name = 'TreeBenchClearing';
+  m.receiveShadow = true; m.castShadow = false; m.userData.noOutline = true;
+  return m;
 }
 
 // ---------------- the hidden bench's footprint (P25-3) ----------------

@@ -318,6 +318,20 @@ ol.songbook { list-style: none; margin: 8px 0 0; padding: 0; }
 ol.songbook .song-row { padding: 10px 0 8px; border-bottom: 1px solid rgba(37, 51, 71, 0.25); }
 ol.songbook .song-title { font-weight: 600; }
 ol.songbook .song-actions { margin-top: 6px; }
+/* v0.20: a line of the song's own words, handwritten, on its card and in the songbook */
+.song-lyric { margin: 2px 0 10px; padding: 2px 0 2px 12px; border-left: 3px solid #d9a93a; font: 400 21px/1.3 "Pencil Title", "Comic Sans MS", cursive; color: var(--ink); overflow-wrap: anywhere; }
+.song-lyric span { opacity: 0.55; }
+ol.songbook .song-lyric { margin: 4px 0 2px; font-size: 17px; }
+/* v0.20: its discovery clip is playing as the card opens */
+.song-taste { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-weight: 600; font-size: 14px; color: #8a5a10; }
+.song-taste[hidden] { display: none; }
+.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
+.eq i { display: block; width: 3px; height: 100%; border-radius: 1px; background: currentColor; transform-origin: bottom; animation: eq 0.9s ease-in-out infinite; }
+.eq i:nth-child(2) { animation-delay: -0.3s; }
+.eq i:nth-child(3) { animation-delay: -0.55s; }
+.eq i:nth-child(4) { animation-delay: -0.15s; }
+@keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .eq i { animation: none; transform: scaleY(0.6); } .eq i:nth-child(2n) { transform: scaleY(1); } }
 ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height: 44px; padding: 6px 12px; font-size: 15px; }
 #pause .edition { margin: 0; font-size: 14px; }
 
@@ -329,7 +343,8 @@ ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height
 @media (prefers-reduced-motion: reduce) { #speech { animation: note-fade 0.15s linear; } }
 
 /* v0.17c the finished farm's evening: a golden-to-dusk wash over the world (under the HUD) */
-#evening { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(to bottom, rgba(232, 128, 72, 0.55) 0%, rgba(214, 120, 96, 0.4) 40%, rgba(70, 60, 120, 0.42) 100%); mix-blend-mode: multiply; }
+/* v0.20 (audit 2: "check that the wash reads golden, not purple"): gold all the way down; the old wash ended in a violet that dimmed the grass */
+#evening { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(to bottom, rgba(250, 172, 84, 0.42) 0%, rgba(240, 164, 84, 0.36) 45%, rgba(214, 150, 84, 0.34) 100%); mix-blend-mode: multiply; }
 body.credits #evening, body.backdrop #evening, body.finale #evening, body.opening #evening, body.whole #evening { display: none; }
 
 /* v0.17c the coins count up after a sale, a "+N" floating off the counter */
@@ -367,20 +382,25 @@ body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing,
 #credits[hidden] { display: none; }
 #credits .credits-controls { position: absolute; top: var(--edge-t); right: var(--edge-r); display: flex; gap: 8px; pointer-events: auto; }
 #credits .credits-controls button { min-width: 48px; min-height: 48px; background: rgba(255, 247, 229, 0.92); }
-#credits .credits-card { position: absolute; left: var(--edge); right: var(--edge-r); top: calc(var(--edge-t) + 60px); bottom: 30%; display: flex; align-items: center; justify-content: center; }
-#credits .credits-card > * { opacity: 0; }
-#credits .credits-card.in > * { animation: credits-in 0.7s ease-out forwards; }
-#credits .credits-card.in.reduced > * { animation: credits-fade 0.15s linear forwards; }
+/* v0.20: a slideshow. The cards share one cell, so the one on show fades out (.leaving) under the next (.in); the photos are larger */
+#credits .credits-card { position: absolute; left: var(--edge); right: var(--edge-r); top: calc(var(--edge-t) + 60px); bottom: 25%; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+#credits .credits-card > * { grid-area: 1 / 1; justify-self: center; align-self: center; opacity: 0; }
+#credits .credits-card > .in { animation: credits-in 0.7s ease-out forwards; }
+#credits .credits-card > .leaving { animation: credits-out 0.6s ease-in forwards; }
+#credits .credits-card.reduced > .in { animation: credits-fade 0.15s linear forwards; }
+#credits .credits-card.reduced > .leaving { animation: credits-out 0.15s linear forwards; }
 @keyframes credits-in { from { opacity: 0; transform: translateY(14px) rotate(var(--tilt, 0deg)); } to { opacity: 1; transform: translateY(0) rotate(var(--tilt, 0deg)); } }
+@keyframes credits-out { from { opacity: 1; transform: rotate(var(--tilt, 0deg)); } to { opacity: 0; transform: rotate(var(--tilt, 0deg)); } }
 @keyframes credits-fade { from { opacity: 0; } to { opacity: 1; transform: rotate(var(--tilt, 0deg)); } }
-.credits-print { position: relative; margin: 0; max-width: min(78vw, 440px); max-height: 100%; display: flex; flex-direction: column; background: #fffdf7; padding: 10px 10px 8px; border-radius: 2px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.25), 0 14px 30px -12px rgba(37, 51, 71, 0.45); }
-.credits-print.left { --tilt: -2.2deg; align-self: flex-start; margin-right: auto; }
-.credits-print.right { --tilt: 1.8deg; align-self: flex-start; margin-left: auto; }
-.credits-print img { display: block; max-width: 100%; max-height: calc(70vh - 220px); min-height: 0; object-fit: contain; }
+.credits-print { position: relative; margin: 0; max-width: min(84vw, 520px); max-height: 100%; display: flex; flex-direction: column; background: #fffdf7; padding: 10px 10px 8px; border-radius: 2px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.25), 0 14px 30px -12px rgba(37, 51, 71, 0.45); }
+#credits .credits-card > .credits-print.left { --tilt: -2.2deg; justify-self: start; align-self: start; }
+#credits .credits-card > .credits-print.right { --tilt: 1.8deg; justify-self: end; align-self: start; }
+.credits-print img { display: block; align-self: center; width: auto; height: auto; max-width: 100%; max-height: calc(75vh - 205px); min-height: 0; object-fit: contain; }
 .credits-print .tape { position: absolute; top: -10px; left: 50%; width: 84px; height: 22px; margin-left: -42px; background: rgba(230, 216, 170, 0.75); transform: rotate(-3deg); }
-.credits-print figcaption { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding-top: 6px; color: var(--ink); text-align: left; }
+.credits-print figcaption { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding-top: 6px; color: var(--ink); text-align: left; width: 0; min-width: 100%; } /* v0.20: the caption wraps to the photo's width, so the print is no wider than its photo */
 .credits-print .t { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 20px; font-weight: 700; }
 .credits-print .y { font-size: 14px; opacity: 0.7; }
+.credits-print .n { margin-left: auto; font-size: 13px; opacity: 0.55; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .credits-print q { flex-basis: 100%; font-size: 15px; font-style: italic; }
 .credits-paper { max-width: min(86vw, 460px); max-height: 100%; overflow: auto; background: rgba(255, 253, 247, 0.96); color: var(--ink); padding: 18px 20px; border-radius: 3px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2), 0 12px 30px -10px rgba(37, 51, 71, 0.35); text-align: center; }
 .credits-paper h2 { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 34px; margin: 0 0 6px; }
@@ -400,11 +420,23 @@ body.credits #hud, body.credits #controls, body.credits #progress, body.credits 
 body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backdrop #toast, body.backdrop #stack-badge, body.backdrop #stick-zone, body.backdrop .coach, body.backdrop #speech, body.backdrop #yard-badge { display: none; }
 #completed .paper-card { width: min(380px, 100%); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 20px; background: var(--paper); border-radius: 4px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2), 0 12px 30px -10px rgba(37, 51, 71, 0.35); }
 #completed .paper-card p { margin: 0; }
+/* v0.20: the birds Dwight sent off */
+#completed .paper-card .tally { font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 19px; color: #5b4a2a; }
+#completed .paper-card .tally[hidden] { display: none; }
 #completed { background: rgba(255, 247, 229, 0.55); }
 #btn-credits[hidden] { display: none; }
 /* the collection stamp, at every song found (spec §5) */
 .stamp { display: inline-block; margin: 4px 0 8px; padding: 6px 14px; border: 3px double #b53e36; color: #b53e36; border-radius: 8px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 20px; transform: rotate(-4deg); }
-@media (prefers-reduced-motion: reduce) { #credits .credits-card.in > * { animation-duration: 0.15s; } }
+@media (prefers-reduced-motion: reduce) { #credits .credits-card > .in, #credits .credits-card > .leaving { animation-duration: 0.15s; } }
+@media (max-height: 480px) {
+  /* v0.20: a phone on its side. The photo takes the height, its caption stands beside it, and the cards keep clear of Pause and Skip */
+  #credits .credits-card { top: var(--edge-t); bottom: calc(var(--edge-b) + 84px); right: calc(var(--edge-r) + 150px); }
+  .credits-print { flex-direction: row; align-items: flex-end; gap: 12px; max-width: min(100%, 640px); }
+  .credits-print img { max-height: calc(100vh - 150px); max-width: 64%; }
+  .credits-print figcaption { flex: 1 1 0; width: auto; min-width: 110px; flex-direction: column; align-items: flex-start; padding: 0 2px 2px 0; }
+  .credits-print .n { margin-left: 0; }
+  #credits .credits-card:has(.closing), #credits .credits-card:has(.title) { top: calc(var(--edge-t) + 50px); right: var(--edge-r); } /* the papers: full width, under the buttons as before */
+}
 
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
@@ -484,7 +516,6 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) di
 #credits .credits-card:has(.closing) ~ .credits-lyrics { display: none; }
 #credits .credits-paper.closing { max-height: 100%; scrollbar-gutter: stable; }
 @media (max-height: 480px) {
-  #credits .credits-card { top: calc(var(--edge-t) + 50px); }
   #credits .credits-paper.closing { max-width: min(88vw, 640px); padding: 14px 20px; }
   #credits .credits-paper.closing p { font-size: 15px; line-height: 1.45; }
 }

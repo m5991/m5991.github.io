@@ -2,7 +2,8 @@
 // farm): five of Vanessa's gift jokes from the credits material lie hidden on the finished farm. In
 // the exploring phase (after the finale, with the egg hunt) she can come across them; walking up
 // to one picks it up, it is saved (`keepsakes` in the save, apart from the ledger) and its card
-// shows the real photo from the end credits (assets/credits/credits.json, `gifts`). Pure: no DOM.
+// shows the real photo from the credits material (assets/credits/credits.json; v0.20: its
+// `keepsakes` list, since `gifts` became the slideshow's photos). Pure: no DOM.
 // Nothing is needed for anything; Pause → Keepsakes lists what is found.
 
 // id -> what it is, the credits prints it shows (gift ids), where it lies (drawing u, v), and the
@@ -28,6 +29,6 @@ export function keepsakeLine(saved = {}) {
 }
 // the prints of a keepsake, from the credits content (missing ones are left out)
 export function keepsakePrints(id, credits) {
-  const byId = new Map((credits?.gifts ?? []).map((g) => [g.id, g]));
+  const byId = new Map([...(credits?.gifts ?? []), ...(credits?.keepsakes ?? [])].map((g) => [g.id, g]));
   return (KEEPSAKES[id]?.gifts ?? []).map((g) => byId.get(g)).filter(Boolean);
 }

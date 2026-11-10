@@ -25,7 +25,8 @@ import {
   regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableCount, tableRoom, toolComes, undug,
 } from './ledger.js';
 
-export const WOOD_SOURCES = [...Object.keys(PILES).filter((k) => PILES[k].res === 'W'), ...STICK_SLOTS];
+export const WOOD_PILES = Object.keys(PILES).filter((k) => PILES[k].res === 'W'); // the starter logs by the path
+export const WOOD_SOURCES = [...WOOD_PILES, ...STICK_SLOTS];
 // rocks in the order the goal line names them: the recovery rock (only ever there when a save
 // needed it), then R1 and R2 by the house approach, then outward around the map (§3 P25-6). The
 // game swaps in the rock nearest Vanessa that still has stone (main.js).
@@ -74,12 +75,30 @@ export function choiceTargets(l) {
     .filter((x) => x.target);
 }
 
+// v0.20 (audit 2): the first wood is the two log piles by the path, so while one of them has wood
+// the line names them (it said "sticks by the tree", where nothing lies yet); after that, the sticks
 function gather(l, label, r, n) {
   if (r === 'W') {
-    const text = anyReady(l, WOOD_SOURCES) ? 'pick up sticks by the tree' : 'a stick falls from the tree soon';
-    return { text: `${label} · ${n} more wood: ${text}`, target: readySource(l, WOOD_SOURCES, 'k1') };
+    const logs = WOOD_PILES.filter((id) => ready(l, id));
+    if (logs.length) return { text: `${label} · ${n} more wood: pick up the logs by the path`, target: logs[0] };
+    const text = anyReady(l, STICK_SLOTS) ? 'pick up sticks by the tree' : 'a stick falls from the tree soon';
+    return { text: `${label} · ${n} more wood: ${text}`, target: readySource(l, STICK_SLOTS, 'k1') };
   }
   return { text: `${label} · ${n} more stone: gather it from the rocks`, target: readySource(l, ROCK_ORDER, null) };
+}
+
+// v0.20 (audit 2: "Growing" on spots not planted yet): what the status line says beside a crop
+// spot that has nothing to pick. A planted one is growing (or under weeds); one that is not dug
+// yet wants the shovel, after its patch's weeds; a patch she has not opened says nothing.
+export function spotStatus(l, id) {
+  if (l.overgrown[id] !== null) return 'Weeds! Rake them before it wilts';
+  if (l.nodes[id].dug) return 'Growing';
+  const stage = NODES[id].stage;
+  const weeds = plotWeeds(stage).filter((w) => !l.weeds[w]);
+  if (isCommitted(l, stage)) return weeds.length ? 'Rake its weeds, then dig it with the shovel' : l.tool === 'shovel' ? 'Stand still to dig it' : 'Dig it with the shovel';
+  // her free first crop: its patch is planted as soon as its weeds are raked
+  if (weeds.length && BASE_STAGES.includes(stage) && (!l.crop || isFirstCrop(l, stage))) return 'Rake the weeds here, then dig it with the shovel';
+  return null;
 }
 
 // coins for a stage: a full table sells with Yard Sale; crops on her head go onto the table;

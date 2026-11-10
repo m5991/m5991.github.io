@@ -40,12 +40,18 @@
 // birds.js decides, the ledger takes, capped); Wave, or a hired archer's warning arrow, sends one
 // off; a bird may leave a stain on the restored bench, cleaned with a cloth; Dwight is the sole
 // archer; the end credits follow the finale; the Who-Knows plant says hello.
+// v0.20 (captain 2026-11-10, with the design audit's changes 1-4): Tiffany's two lists are the song
+// set, each song under her label (game/songs.js); a found song's short clip plays as its egg cracks,
+// over the ducked theme, and its card shows a line of its lyrics (audio/clips.js, ui/cards.js); once
+// hired, Dwight takes the birds that come for the crops by himself, and the completed menu counts
+// them; the finished farm's evening starts from the finish; the full edition's credits are a
+// slideshow of the photos of the drawing over the years (the kids edition has none).
 import * as THREE from 'three';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
   apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
   tableCap, tables,
@@ -53,12 +59,13 @@ import {
 import { createBirds } from './game/birds.js';
 import { createCredits } from './ui/credits.js';
 import { createSongPlayer, fmtTime } from './ui/songplayer.js';
+import { createClipPlayer } from './audio/clips.js';
 import { createBeat, lowEnergy } from './audio/beat.js';
-import { eveningAt } from './game/evening.js';
+import { eveningAt, sinceFinish } from './game/evening.js';
 import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft } from './game/keepsakes.js';
 import { createDiyHint } from './game/hints.js';
-import { buildBar, PATCH_NAME, WOOD_SOURCES } from './game/guide.js';
-import { E21_COINS, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLabel, songSpot, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
+import { buildBar, PATCH_NAME, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
+import { clipPath, eggPhase, found, foundCount, huntLine, mp3Name, mp3Path, nextEgg, SONGS, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
 import { Hammering } from './world/build.js';
 import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
@@ -151,7 +158,15 @@ async function boot() {
   // v0.17b: one song player for the game: a song keeps playing when its card or the menu closes,
   // in place of the theme, until it ends or is stopped (ui/songplayer.js)
   const songs = createSongPlayer({
-    onActive: (on) => (on ? audio.holdMusic('song') : audio.releaseMusic('song')),
+    onActive: (on) => { if (on) { clips.stop(); audio.holdMusic('song'); } else audio.releaseMusic('song'); },
+    muted: () => !audio.settings.soundEnabled,
+  });
+  // v0.20 (audit 1, the approved A16): a found song's discovery clip, the captain's short crop of
+  // it, plays once as its egg cracks and its card opens; the theme ducks under it and comes back
+  // when it ends. Listen on the card goes on to the whole song (which stops the clip).
+  const clips = createClipPlayer({
+    makeAudio: (src) => audio.clipVoice(src), // through the audio owner's context: no tap of its own needed
+    onActive: (on) => (on ? audio.duckMusic('clip') : audio.unduckMusic('clip')),
     muted: () => !audio.settings.soundEnabled,
   });
   const cards = createCards($('card'), { player: songs });
@@ -202,10 +217,10 @@ async function boot() {
   }
   // ---------- v0.16: the egg hunt (phase two) and the songs ----------
   // Once the farm is finished and coloured, every song is an egg: a spot with a song left in it
-  // sparkles; when Vanessa reaches it (or, for the money song, as soon as her purse holds
-  // E21_COINS) a bird flies over and drops the egg near her; walking up to it picks it up, and the
-  // song is found (saved at once, in `discoveries`) and its card opens: listen in the game, download
-  // the MP3, and in the full edition open it in Suno. Session-only state; nothing in the ledger.
+  // sparkles; when Vanessa has done its small moment there a bird flies over and drops the egg near
+  // her; walking up to it picks it up, and the song is found (saved at once, in `discoveries`), its
+  // clip plays and its card opens: listen in the game, download the MP3, and in the full edition
+  // open it in Suno. Session-only state; nothing in the ledger.
   const hunt = { busy: false, egg: null, id: null, restMs: 0, eggs: 0, at: new THREE.Vector3(), moment: null };
   const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !opening.active && rig.mode !== 'whole';
   function spotHere(heroXZ) {
@@ -244,7 +259,7 @@ async function boot() {
       return;
     }
     const spot = spotHere(heroXZ);
-    const act = spot && spotAct(spot);
+    const act = spot && spotAct(spot, EDITION);
     if (act && $('context').hidden) hud.setContext(act.verb, () => startMoment(spot));
   }
   // ---------- v0.17c: the keepsakes hidden on the finished farm (game/keepsakes.js) ----------
@@ -374,14 +389,15 @@ async function boot() {
     return lowEnergy(tap.bytes);
   }
   function updateDance(dt) {
-    const on = songs.state.playing && !finale.active && !credits.active;
-    const b = on ? beat.update(dt, songEnergy()) : { level: 0, beat: false };
+    // (v0.20: and to a found song's clip, on the steady pulse)
+    const on = (songs.state.playing || clips.playing) && !finale.active && !credits.active;
+    const b = on ? beat.update(dt, songs.state.playing ? songEnergy() : null) : { level: 0, beat: false };
     world.dance(dt, { on, level: b.level, beat: b.beat });
   }
 
   function startMoment(spot) {
     if (hunt.moment || hunt.busy || hunt.egg) return;
-    const act = spotAct(spot);
+    const act = spotAct(spot, EDITION);
     hunt.moment = { spot, act, ms: 0 };
     hero.halt();
     world.eggSpotPos(spot, tmpH);
@@ -398,7 +414,8 @@ async function boot() {
     const at = world.freeSpotNear(hero.position);
     hunt.busy = true;
     hunt.id = id;
-    hud.announce(id === 'E21' ? 'A bird is coming: your big purse earned a song' : `A bird is coming from ${SPOTS[songSpot(id, EDITION)].label}`);
+    audio.primeClip(clipPath(id)); // its clip is ready by the time the egg is picked up
+    hud.announce(SONGS[id].coins !== undefined ? 'A bird is coming: your big purse earned a song' : `A bird is coming from ${SPOTS[songSpot(id, EDITION)].label}`);
     world.eggDrop(at, hunt.eggs++).then((egg) => { sfx.cue('eggDrop'); hunt.egg = egg; hunt.busy = false; });
   }
   function pickEgg() {
@@ -408,8 +425,11 @@ async function boot() {
     data.discoveries = { ...data.discoveries, [id]: { ...found(data.ledger), egg: true } };
     persist(); // found for good before it is shown (spec §8: discovery state first)
     sfx.cue('crack');
-    world.popEgg(egg).then(() => sfx.cue('complete'));
-    hud.announce(`Song found: ${songLabel(id, EDITION)}`);
+    // v0.20: the song itself answers the crack: its clip starts as the shell pops (the chime that
+    // played here is the clip's place now; it still plays when the clip cannot)
+    if (!songs.active) clips.play(id, clipPath(id)); // not over a whole song she is listening to
+    world.popEgg(egg).then(() => { if (!clips.playing) sfx.cue('complete'); });
+    hud.announce(`Song found: ${songTitle(id, EDITION)}`);
     // v0.17 (§5): every song found: the collection's paper stamp
     if (foundCount(EDITION, data.discoveries) === songsFor(EDITION).length) setTimeout(() => hud.toast(`Every song found! All ${songsFor(EDITION).length} are in your song collection, stamped.`, 5200), 1500);
     setTimeout(() => songCard(id), reducedMotion() ? 200 : 700);
@@ -426,10 +446,12 @@ async function boot() {
     const n = foundCount(EDITION, data.discoveries);
     const all = songsFor(EDITION).length;
     cards.song({
-      title: `♪ Song found: “${songLabel(id, EDITION)}”`,
-      text: `${id === 'E21' ? `You saved up ${E21_COINS} coins, and a bird brought the money song.` : `A bird brought it from ${SPOTS[songSpot(id, EDITION)].label}.`} ${n} of ${all} songs found.`,
-      id, songTitle: songLabel(id, EDITION),
+      title: `♪ Song found: “${songTitle(id, EDITION)}”`,
+      lyric: songLyric(id), // v0.20 (audit 4): a line of its own words
+      text: `${SONGS[id].coins !== undefined ? `You saved up ${SONGS[id].coins} coins, and a bird brought the money song.` : `A bird brought it from ${SPOTS[songSpot(id, EDITION)].label}.`} ${n} of ${all} songs found.`,
+      id, songTitle: songTitle(id, EDITION),
       src: mp3Path(id), download: mp3Name(id, EDITION), suno: sunoLink(id, EDITION), available,
+      clip: clips, // its clip is playing: the card shows it, and Listen takes over from it
       onClose: () => { loop.resume('card'); },
     });
   }
@@ -441,9 +463,9 @@ async function boot() {
     cards.songbook({
       title: `Songs · ${mine.length} of ${all}`,
       intro: !eggPhase(data.ledger) ? 'The songs are hidden in eggs. Finish the house and colour the farm, and the egg hunt begins.' : mine.length ? 'Every song you have found. Listen here, or download it.' : 'No song yet: walk to a sparkle on the farm and a bird brings an egg.',
-      songs: mine.map((id) => ({ id, title: `${String(SONGS[id].n).padStart(2, '0')} · ${songLabel(id, EDITION)}`, src: mp3Path(id), download: mp3Name(id, EDITION), suno: sunoLink(id, EDITION) })),
+      songs: mine.map((id) => ({ id, title: `${String(songNumber(id, EDITION)).padStart(2, '0')} · ${songTitle(id, EDITION)}`, lyric: songLyric(id), src: mp3Path(id), download: mp3Name(id, EDITION), suno: sunoLink(id, EDITION) })),
       stamp: mine.length === all ? `All ${all} songs found` : '',
-      left: eggPhase(data.ledger) && left.length ? `Still to find: songs at ${left.join(', ')}${mine.includes('E21') || !songsFor(EDITION).includes('E21') ? '' : ', and one for a big purse'}.` : '',
+      left: eggPhase(data.ledger) && left.length ? `Still to find: ${left.length === 1 ? 'the song' : 'songs'} at ${left.join(', ')}.` : '',
       available,
     });
   }
@@ -500,7 +522,8 @@ async function boot() {
     for (const act of acts) {
       switch (act.a) {
         case 'turn': commit({ t: 'birdTurn' }); break;
-        case 'warn': hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); sfx.cue('chirp'); break;
+        // v0.20 (audit 3): a bird at a plant Dwight guards is his: no warning to act on, only its chirp
+        case 'warn': if (!act.guarded) { hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); } sfx.cue('chirp'); break;
         case 'land': sfx.cue('chirp'); break;
         case 'draw': world.archerDraw(act.archer, act.at, BIRDS.drawMs); break;
         case 'shoot':
@@ -508,6 +531,10 @@ async function boot() {
           sfx.cue('squawk');
           world.birdShoo();
           hud.announce(`The archer looses a warning arrow, and the bird flies off with nothing`);
+          // v0.20: his tally for the completed menu, and now and then a deadpan word about it
+          data.session.dwightDeterred = (data.session.dwightDeterred ?? 0) + 1;
+          persist();
+          { const line = dwightLine(data.session.dwightDeterred); if (line) archerSays(line, 3800, act.archer); }
           break;
         case 'take': {
           const r = commit(act.tx);
@@ -758,6 +785,8 @@ async function boot() {
         }
         case 'committed': {
           const s = STAGES[e.stage];
+          // v0.20: the finished farm's day starts now (game/evening.js); kept in the save
+          if (e.stage === LAST_STAGE) { data.session.finishedAt = data.ledger.activeMs; persist(); }
           const first = BASE_STAGE[data.ledger.crop] === e.stage;
           const hammered = HAMMERED.includes(e.stage) && !!world.stations[e.stage];
           if (hammered) startBuilding(e.stage);
@@ -930,7 +959,7 @@ async function boot() {
     // v0.17c: with every song found, the goal line counts the keepsakes and gives the next hint
     const allSongs = foundCount(EDITION, data.discoveries) >= songsFor(EDITION).length;
     const nextKeep = keepsakesLeft(data.keepsakes ?? {})[0];
-    hud.setGoal(!eggPhase(data.ledger) ? goal.text : allSongs && nextKeep ? `${keepsakeLine(data.keepsakes)} · ${KEEPSAKES[nextKeep].hint}` : huntLine(EDITION, data.discoveries));
+    hud.setGoal(!eggPhase(data.ledger) ? goal.text : allSongs && nextKeep ? `${keepsakeLine(data.keepsakes)} · ${KEEPSAKES[nextKeep].hint}` : huntLine(EDITION, data.discoveries, data.ledger.purse));
   }
 
   // the goal line; when it names stone, the rock nearest Vanessa that still has some (§3 P25-6)
@@ -941,7 +970,8 @@ async function boot() {
     const wood = WOOD_SOURCES.includes(g.target);
     if (!(g.target in ROCKS) && !wood) return g;
     let best = null;
-    for (const id of wood ? WOOD_SOURCES : Object.keys(ROCKS)) {
+    // (v0.20: while the line names the logs by the path, the arrow keeps to those piles)
+    for (const id of wood ? (WOOD_PILES.includes(g.target) ? WOOD_PILES : WOOD_SOURCES) : Object.keys(ROCKS)) {
       const st = world.stations[id];
       if (!st || !available(l, id)) continue;
       const d = Math.hypot(st.pos.x - heroXZ.x, st.pos.z - heroXZ.z);
@@ -1040,7 +1070,8 @@ async function boot() {
         const res = sourceResource(n.id);
         if (n.hold) { text = 'A stick is coming down from the tree'; break; }
         if (available(data.ledger, n.id) > 0 && data.ledger.carried[res] >= CAPACITY) { text = `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
-        if (available(data.ledger, n.id) === 0 && n.kind === 'node') { text = data.ledger.overgrown[n.id] !== null ? 'Weeds! Rake them before it wilts' : 'Growing'; break; }
+        // v0.20 (audit 2): a spot that is not planted yet is not "Growing" (guide.js spotStatus)
+        if (available(data.ledger, n.id) === 0 && n.kind === 'node') { text = spotStatus(data.ledger, n.id) ?? ''; if (text) break; }
       }
       // a wilted plant's spot (spec v0.12 P28-4)
       const re = !text && ctxTargets.find((x) => x.kind === 'dig' && data.ledger.wilted[x.id] && inReach(heroXZ, x, 1.2));
@@ -1123,6 +1154,8 @@ async function boot() {
   function start(d) {
     document.body.classList.remove('booting');
     data = structuredClone(d);
+    // v0.20: a farm finished before the evening had its own clock starts its day now
+    if (mainComplete(data.ledger) && !Number.isFinite(data.session.finishedAt)) data.session.finishedAt = data.ledger.activeMs;
     ix.reset();
     Object.assign(tut, { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null, dropNoted: false });
     Object.assign(who, { idleMs: 0, glanced: false, far: false }); // v0.17: the Who-Knows hello waits for her to come up to it
@@ -1144,6 +1177,7 @@ async function boot() {
     saleShowing = false;
     world.clearEggs();
     Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null });
+    clips.stop({ fade: false });
     birds.reset(data.ledger.activeMs);
     cleaning = null;
     speech.el.hidden = true;
@@ -1167,6 +1201,7 @@ async function boot() {
     input.release();
     hero.halt();
     loop.pause('menu');
+    clips.stop();
     audio.holdMusic('menu');
     pauseEl.hidden = false;
     $('btn-resume').focus();
@@ -1232,6 +1267,7 @@ async function boot() {
       world.endSale();
       world.clearEggs(); // an egg on the grass waits for no cinematic: it comes again after
       Object.assign(hunt, { busy: false, egg: null, id: null });
+      clips.stop();
       input.release();
       hero.halt();
       loop.pause('finale');
@@ -1285,10 +1321,12 @@ async function boot() {
     fetchJson: (url) => fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.json(); }),
     soundOn: () => audio.settings.soundEnabled,
     reducedMotion,
+    photos: () => EDITION !== 'kids', // v0.20: the slideshow of photos is the full edition's only
     holdMusic: () => audio.holdMusic('credits'),
     releaseMusic: () => audio.releaseMusic('credits'),
     onStart: () => {
       songs.stop(); // the credits play their own song
+      clips.stop({ fade: false });
       completedEl.hidden = true;
       holdBackdrop(true);
       loop.pause('credits');
@@ -1311,6 +1349,10 @@ async function boot() {
       ? `The house is a home, and the whole drawing is in colour. ${n} of ${all} songs found: keep exploring, and the birds bring you the rest.`
       : `The house is a home, the whole drawing is in colour, and every song is found (${all} of ${all}).`;
     $('btn-collection').textContent = `Song collection (${n}/${all})`;
+    // v0.20 (audit 3): what Dwight did about the birds
+    const shooed = data.session.dwightDeterred ?? 0;
+    $('completed-tally').hidden = !shooed;
+    $('completed-tally').textContent = `Birds deterred by Dwight: ${shooed}`;
     completedEl.hidden = false;
     $('btn-explore').focus({ preventScroll: true });
   }
@@ -1386,6 +1428,7 @@ async function boot() {
   const watchOpening = () => {
     closePause();
     songs.stop(); // the opening starts the theme from its intro
+    clips.stop({ fade: false });
     audio.restartMusic();
     paper.place(view.w, view.h);
     opening.prepare();
@@ -1417,7 +1460,7 @@ async function boot() {
     if (document.hidden) { ix.reset(); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
     audio.setHidden(document.hidden);
     credits.setHidden(document.hidden);
-    if (document.hidden) songs.pause(); // like the theme; Play on the bar picks it up again
+    if (document.hidden) { songs.pause(); clips.stop({ fade: false }); } // like the theme; Play on the bar picks the song up again
   });
 
   // ---------- audio (audio/audio.js): the single owner; starts on an explicit gesture ----------
@@ -1444,7 +1487,7 @@ async function boot() {
     promptBtn.hidden = !p;
     if (p) promptBtn.textContent = PROMPTS[p];
   }
-  soundBtn.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); };
+  soundBtn.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); clips.setMuted(!audio.settings.soundEnabled); };
   $('opening-sound').onclick = () => audio.toggleSound(); // the page's corner toggle (P26-1)
   $('vol-music').oninput = (e) => audio.setMusicVolume(Number(e.target.value) / 100);
   $('vol-effects').oninput = (e) => audio.setEffectsVolume(Number(e.target.value) / 100);
@@ -1638,7 +1681,8 @@ async function boot() {
     world.updateSkyBirds(dt);
     updateDance(dt);
     // v0.17c: the finished farm's evening and its fireflies
-    const ev = session.playing && !finale.active && !credits.active && !backdrop ? eveningAt(data.ledger.activeMs, mainComplete(data.ledger)) : 0;
+    // (v0.20: on a clock that starts when the farm is finished, so the hunt opens by day)
+    const ev = session.playing && !finale.active && !credits.active && !backdrop ? eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)) : 0;
     world.updateFireflies(dt, ev);
     $('evening').style.opacity = String(ev.toFixed(3));
     world.updateSky(rig.camera);
@@ -1774,7 +1818,7 @@ async function boot() {
         return done;
       },
       finale, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
-      hunt, EDITION, openSongbook, songCard, archerSays, birds, doWave, credits, showCompleted, keepExploring, songs, startMoment, findKeepsake, openKeepsakes, drawIt, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
+      hunt, EDITION, openSongbook, songCard, archerSays, birds, doWave, credits, showCompleted, keepExploring, songs, clips, pickEgg, startMoment, findKeepsake, openKeepsakes, drawIt, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
       holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),
     };
