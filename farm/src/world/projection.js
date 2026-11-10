@@ -6,8 +6,9 @@
 // `?pitch=`, `?fov=`); per-object scale is solved from each object's drawn extent.
 import * as THREE from 'three';
 
-export const DRAWING_ASPECT = 1280 / 1064; // the photographed drawing, about 1.20:1
-export const MARGIN = 0.04; // 4% safety margin around the fitted composition (spec §3)
+import { DRAWING_ASPECT, MARGIN } from './drawing.js';
+import { fitRect } from './framing.js';
+export { DRAWING_ASPECT, MARGIN, fitRect }; // the drawing's aspect, the 4% margin (spec §3) and the fitted rectangle
 export const VANESSA_SHARE = 0.16; // D17 finale height as a share of the composition (14-18%)
 export const VANESSA_FEET = { u: 56, v: 81 }; // D17 roughly u53-59 / v65-81
 export const HORIZON_V = 38.5; // D23 irregular horizon v37-40
@@ -17,16 +18,6 @@ export const PRESETS = {
   persp: { type: 'perspective', pitchDeg: 20, fovDeg: 50 },
   ortho: { type: 'orthographic', pitchDeg: 20, fovDeg: null },
 };
-
-// Composition rectangle (CSS px) inside a viewport, letterboxed with the 4% margin.
-export function fitRect(w, h) {
-  const aw = w * (1 - 2 * MARGIN);
-  const ah = h * (1 - 2 * MARGIN);
-  let rw = aw;
-  let rh = rw / DRAWING_ASPECT;
-  if (rh > ah) { rh = ah; rw = rh * DRAWING_ASPECT; }
-  return { x: (w - rw) / 2, y: (h - rh) / 2, w: rw, h: rh };
-}
 
 const ndc = (u, v) => new THREE.Vector2((u / 100) * 2 - 1, 1 - (v / 100) * 2);
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -131,7 +122,12 @@ export class Projection {
   // Configure a viewport camera with the same projection, scaled so the composition rectangle
   // `rect` (CSS px) of a `w` x `h` viewport shows exactly the composition. `zoom` > 1 moves in
   // toward `focus` (gameplay); `offsetY` shifts the image centre (CSS px, positive = down).
+  // v0.21: `rect` need not be centred in the viewport (framing.js: an upright screen frames the
+  // drawing's middle, larger): the lens narrows to its height and the image shifts to its centre,
+  // so the picture is an exact crop of the same composition.
   frameViewport(cam, w, h, rect, { zoom = 1, focus = null, offsetY = 0 } = {}) {
+    const shiftX = rect.x + rect.w / 2 - w / 2;
+    const shiftY = rect.y + rect.h / 2 - h / 2 + offsetY;
     const k = h / rect.h; // viewport height in composition heights
     const target = focus ?? new THREE.Vector3();
     if (this.type === 'perspective') {
@@ -146,7 +142,7 @@ export class Projection {
     }
     cam.up.set(0, 1, 0);
     cam.lookAt(target);
-    if (offsetY) cam.setViewOffset(w, h, 0, -offsetY, w, h); else cam.clearViewOffset();
+    if (Math.abs(shiftX) > 1e-6 || Math.abs(shiftY) > 1e-6) cam.setViewOffset(w, h, -shiftX, -shiftY, w, h); else cam.clearViewOffset();
     cam.near = 0.1;
     cam.far = 500;
     cam.updateProjectionMatrix();

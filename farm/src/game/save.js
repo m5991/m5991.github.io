@@ -18,7 +18,8 @@ export function createSaveData() {
     // v0.17: creditsSeen (spec §5.1), set when the end credits have played once
     // v0.20: finishedAt, the active ms when the home was built (null before; the finished farm's
     // evening runs from it), and dwightDeterred, the birds Dwight has sent off (the completed menu)
-    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0 },
+    // v0.21: hunt, what the player asked the songbook for in the egg hunt (songs.js huntPrefs)
+    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0, hunt: { where: {}, track: null, showAll: false } },
     vanessa: { x: null, z: null }, // validated position; null = start position
     // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
     // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)

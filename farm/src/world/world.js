@@ -129,16 +129,23 @@ export const PATH_STONES = { clear: 0.04 };
 // v0.20: the drawing height (v, % from the top) of the two song stars under the sky's things: on
 // the grass a few metres in front of the horizon, level with the back of the corn
 export const SKY_SPOT_V = 45;
-// v0.20 the extra tomatoes of a grown plant: [where they hang ('base': low on the plant, in the
-// units' own frame; or a tier of the plant, in the tier's), the size level they come with, one
-// place per harvest unit]. With the two the first crop shows: 2, then 6, then 10 on the plant.
-// They hang close to the stem, inside the leaves' width: the plant grows taller, not wider (v0.16).
+// v0.20 the tomatoes on a plant: [where they hang ('base': low on the plant, in the units' own
+// frame; or a tier of the plant, in the tier's), the size level they come with, and each one's
+// place and the harvest unit it belongs to: x, y, z, unit]. 2 on a plant's first crop, then 6,
+// then 10. They hang close to the stem, inside the leaves' width: the plant grows taller, not
+// wider (v0.16).
+// v0.21 (the harvest grows with the plant: 2, 3, then 4 units a round, data.js TOMATO_YIELD): each
+// unit is a share of the fruit on the plant. One tomato each on the first crop, two each once it
+// has grown a tier (3 units, 6 tomatoes), and at full height two or three each (4 units, 10).
 export const TOMATO_FRUIT = [
-  ['base', 1, [[-0.07, 0.385, 0.045], [0.075, 0.2, 0.05]]],
-  ['tier0', 1, [[-0.04, 0.09, 0.055], [0.045, 0.16, 0.05]]],
-  ['tier0', 2, [[-0.05, 0.22, 0.04], [0.02, 0.275, 0.06]]],
-  ['tier1', 2, [[-0.04, 0.1, 0.055], [0.045, 0.17, 0.05]]],
+  ['base', 0, [[-0.055, 0.26, 0.05, 0], [0.055, 0.33, 0.05, 1]]],
+  ['base', 1, [[-0.07, 0.385, 0.045, 2], [0.075, 0.2, 0.05, 0]]],
+  ['tier0', 1, [[-0.04, 0.09, 0.055, 1], [0.045, 0.16, 0.05, 2]]],
+  ['tier0', 2, [[-0.05, 0.22, 0.04, 3], [0.02, 0.275, 0.06, 3]]],
+  ['tier1', 2, [[-0.04, 0.1, 0.055, 0], [0.045, 0.17, 0.05, 1]]],
 ];
+// how many tomatoes show on a full plant at each size level, and how many go with each unit
+export const tomatoFruitAt = (level) => TOMATO_FRUIT.filter(([, lv]) => lv <= level).reduce((n, [, , spots]) => n + spots.length, 0);
 
 // The path of a unit flight from a to b over `ms`. -> { ms, fade, at(t, out) -> opacity }:
 // `at` writes the position at t in [0, 1] into `out` and returns the unit's opacity.
@@ -265,30 +272,25 @@ export class World {
       dig.scale.setScalar(0.8);
       dig.visible = false;
       this.root.add(dig);
-      // its ripe tomatoes hang on the stem, one per unit
+      // its ripe tomatoes hang on the plant (TOMATO_FRUIT below fills it)
       const units = new THREE.Group(); units.name = `tomatoes:${id}`;
-      for (let k = 0; k < NODES[id].yield; k++) {
-        const t = G.unitMesh('T');
-        t.position.set((k - 0.5) * 0.11, 0.26 + k * 0.07, 0.05);
-        t.scale.setScalar(1.05);
-        units.add(t);
-      }
       units.position.copy(at);
       this.root.add(units);
       const ground = at.clone().setY(0);
       // v0.15: the plant itself, which grows a size step with each round (plantSize)
       const plant = bedPlants.getObjectByName(`D19_Tomato_${id}`);
       // v0.20 (captain: "When the tomato plant grows should have more tomato"): a grown plant
-      // carries clearly more fruit. Each harvest unit is a share of the plant's tomatoes: one each
-      // on the first crop (2 on the plant), three each once it has grown a tier (6), five each at
-      // full height (10): more low on the plant, and a truss on each tier. Picking a unit takes
-      // its share. The yield and the price stay 2 units a round (TOMATO_FRUIT; showFruit).
+      // carries clearly more fruit: 2 on its first crop, 6 once it has grown a tier, 10 at full
+      // height, more low on the plant and a truss on each tier.
+      // v0.21 ("the tomatoes harvest should also go up"): and it gives more: 2, 3, then 4 units a
+      // round. Each unit is a share of the tomatoes on the plant, and picking it takes its share
+      // (TOMATO_FRUIT; showFruit).
       const fruit = [];
       const inv = new THREE.Vector3(1 / bed.scale.x, 1 / bed.scale.y, 1 / bed.scale.z);
       for (const [where, level, spots] of TOMATO_FRUIT) {
         const parent = where === 'base' ? units : plant.getObjectByName(where);
         if (!parent) continue;
-        spots.forEach(([x, y, z], unit) => {
+        for (const [x, y, z, unit] of spots) {
           const t = G.unitMesh('T');
           t.position.set(x, y, z);
           t.scale.setScalar(1.05);
@@ -297,7 +299,7 @@ export class World {
           t.visible = false;
           parent.add(t);
           fruit.push({ mesh: t, unit, level });
-        });
+        }
       }
       this.nodeViews[id] = { dig, units, plant, fruit, size: 1, want: 1 };
       this.stations[id] = { def: { id, kind: 'node', r: 0.85, label: 'tomatoes' }, obj: units, pos: ground };
@@ -1358,17 +1360,44 @@ export class World {
       this.updateStandMarker(mark, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= 0.65);
     }
   }
-  updateEggSpots(spots, dtMs) {
+  // v0.21 (audit 7): `spots` show their star from anywhere (the kids edition, Show all, the one
+  // she asked to be shown); `glints` are hidden ones she has come near: a small star twinkles into
+  // view, and its ground ring only once she stands at it. A star comes and goes in a breath.
+  updateEggSpots(spots, dtMs, glints = []) {
     this.eggSparkles ??= {};
     const hero = this.heroPos();
-    for (const id of new Set([...Object.keys(this.eggSparkles), ...spots])) {
+    const still = this.reducedMotion();
+    const shown = !this.finaleActive && !this.playHidden;
+    for (const id of new Set([...Object.keys(this.eggSparkles), ...spots, ...glints])) {
       let sp = this.eggSparkles[id];
-      if (!sp) { sp = this.eggSparkles[id] = G.standMarker(); this.root.add(sp); }
-      sp.visible = !this.finaleActive && !this.playHidden && spots.includes(id);
-      if (!sp.visible) continue;
+      if (!sp) { sp = this.eggSparkles[id] = G.standMarker(); sp.userData.in = 0; this.root.add(sp); }
+      const lit = spots.includes(id);
+      const glint = !lit && glints.includes(id);
+      const on = shown && (lit || glint);
+      sp.userData.in = Math.max(0, Math.min(1, (sp.userData.in ?? 0) + (on ? 1 : -1) * (still ? 1 : dtMs / 320)));
+      sp.visible = shown && sp.userData.in > 0;
+      if (!sp.visible) { if (!shown) sp.userData.in = 0; continue; }
+      if (on) sp.userData.glint = glint;
       const at = this.eggSpotPos(id);
-      this.updateStandMarker(sp, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= (id === 'bed' ? 1.1 : 0.65), { chimney: id === 'chimney' });
+      const ready = !!hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= (id === 'bed' ? 1.1 : 0.65);
+      this.updateStandMarker(sp, at, dtMs, ready, { chimney: id === 'chimney' });
+      const k = ease.out(sp.userData.in);
+      const quiet = sp.userData.glint && !ready; // a glint: the star alone, small and twinkling
+      const star = sp.getObjectByName('standStar');
+      const ring = sp.getObjectByName('standCircle');
+      ring.visible = !quiet;
+      sp.getObjectByName('standDisc').visible = !quiet;
+      const twinkle = quiet && !still ? 0.82 + 0.18 * Math.sin(sp.userData.t / 130) : 1;
+      star.scale.multiplyScalar(Math.max(0.01, k) * (quiet ? 0.72 : 1) * twinkle);
+      if (quiet && !still) star.rotateZ(Math.sin(sp.userData.t / 420) * 0.35);
+      ring.scale.multiplyScalar(Math.max(0.01, k));
     }
+  }
+  // is a spot's star in view now, and as a glint (checks)
+  eggSpotLook(id) {
+    const sp = this.eggSparkles?.[id];
+    if (!sp?.visible) return null;
+    return sp.userData.glint && !sp.getObjectByName('standCircle').visible ? 'glint' : 'star';
   }
   hideMarkers() {
     this.marker.obj.visible = false;

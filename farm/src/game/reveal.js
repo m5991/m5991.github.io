@@ -135,16 +135,21 @@ export const FINALE_COLOURS = { grass: 0x97a886, grassStroke: 0x6f8a5c, sky: 0xb
 
 const ramp = ([a, b], t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
 const smooth = (x) => x * x * (3 - 2 * x);
-// The finale's state at time t (ms). Every value is 0..1 and only rises. Reduced motion goes
+// The finale's state at time t (ms). Every value is 0..1 and only rises (but `frame`, v0.21, which
+// is 1 and falls to 0 as the camera eases back to the whole drawing). Reduced motion goes
 // straight to the coloured composition with a short fade (REDUCED_FADE_MS) and then holds.
 export function finaleState(t, { reducedMotion = false } = {}) {
   if (reducedMotion) {
     const k = Math.max(0, Math.min(1, t / REDUCED_FADE_MS));
-    return { hide: 1, camera: 1, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
+    return { hide: 1, camera: 1, frame: 0, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
   }
   return {
     hide: smooth(ramp([0, 400], t)), // play elements shrink away in the first 0.4 s
     camera: smooth(ramp(FINALE.hide, t)),
+    // v0.21 (audit 9): on an upright screen the drawing framing is its middle, larger (1), while
+    // she settles, the outlines take their colour and the grass spreads; as the sky rises the
+    // camera eases back to the whole drawing (0), so the sky, the sun and the hold show all of it
+    frame: 1 - smooth(ramp(FINALE.sky, t)),
     settled: t >= FINALE.settle[0],
     outlines: ramp(FINALE.outlines, t),
     grass: ramp(FINALE.grass, t),

@@ -20,7 +20,7 @@
 import {
   ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, LAST_STAGE, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
-  STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TABLES_UNLIMITED, TOMATO_GROWTH, TOOLS, WEEDS, WEED_PLOT,
+  STAGE_ORDER, STICK, SALE_MIN, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLES_MAX, TABLES_UNLIMITED, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
   YARD_MATERIALS,
 } from './data.js';
 
@@ -168,11 +168,16 @@ export function carriedTarget(l) {
 }
 // v0.15: how big a crop plant is drawn (1 = as planted). A tomato plant grows one TOMATO_GROWTH
 // step for every round after its first crop, `steps` at most; other crops keep their size.
-export function plantSize(l, id) {
-  if (NODES[id]?.res !== 'T') return 1;
-  const rounds = Math.max(0, (l.grown?.[id] ?? 0) - 1);
-  return 1 + TOMATO_GROWTH.step * Math.min(TOMATO_GROWTH.steps, rounds);
+// `growthLevel` is that count of steps: 0 on a plant's first crop.
+export function growthLevel(l, id) {
+  if (NODES[id]?.res !== 'T') return 0;
+  return Math.min(TOMATO_GROWTH.steps, Math.max(0, (l.grown?.[id] ?? 0) - 1));
 }
+export const plantSize = (l, id) => 1 + TOMATO_GROWTH.step * growthLevel(l, id);
+// v0.21: what a node gives each time its crop comes ready. A tomato plant's harvest grows with the
+// plant (TOMATO_YIELD); corn and sunflowers give their fixed yield. `maxYield`: the most it ever gives.
+export const nodeYield = (l, id) => (NODES[id].res === 'T' ? TOMATO_YIELD[growthLevel(l, id)] : NODES[id].yield);
+export const maxYield = (id) => (NODES[id].res === 'T' ? Math.max(...TOMATO_YIELD) : NODES[id].yield);
 
 // wood or stone she has for building: on her head plus at the pile
 export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
@@ -334,9 +339,9 @@ function tick(l0, ms, calm = false) {
   const now = l.activeMs;
   for (const [id, n] of Object.entries(l.nodes)) {
     if (n.readyAt !== null && n.remaining === 0 && now >= n.readyAt) {
-      n.remaining = NODES[id].yield;
       n.readyAt = null;
       l.grown[id] += 1;
+      n.remaining = nodeYield(l, id); // v0.21: a grown tomato plant gives more
       events.push({ type: 'ready', src: id, round: l.grown[id] });
     }
   }
@@ -683,7 +688,7 @@ export function validateLedger(l) {
   else {
     for (const [id, n] of Object.entries(NODES)) {
       const node = l.nodes[id];
-      if (!node || !isInt(node.remaining, 0, n.yield) || !isTime(node.readyAt) || !sameKeys(node, ['remaining', 'readyAt', 'dug']) || typeof node.dug !== 'boolean') e(`node ${id}`);
+      if (!node || !isInt(node.remaining, 0, maxYield(id)) || !isTime(node.readyAt) || !sameKeys(node, ['remaining', 'readyAt', 'dug']) || typeof node.dug !== 'boolean') e(`node ${id}`);
       else if (!l.stages?.[n.stage]?.committed && (node.dug || node.remaining > 0 || node.readyAt !== null)) e(`node ${id} active before ${n.stage}`);
       else if (!node.dug && (node.remaining > 0 || node.readyAt !== null)) e(`node ${id} growing before it is dug`);
     }

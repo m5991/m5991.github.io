@@ -19,6 +19,11 @@
 // house (one per house stage, four at most), so the goal line sells once six are out and nothing
 // she carries still fits; a tool she has taken once comes to her at the job (P29-7), so the goal
 // line sends her to the tools only for a tool she has never taken.
+// v0.21 (design audit 5, "one voice on screen": "one goal line, one line long on phones, icon-first
+// (Walls · 🪵6 🪨4 🪙10)"): every goal also carries `line`, what the screen shows in one line:
+// { icon?, label, needs?: [[res, n]], now?: the need she is after now, tail?: a few words }. A
+// build is its short name and what is still missing, as icons and numbers; a step is an icon and
+// two or three words. `text` stays the whole sentence: it is what a screen reader hears.
 import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, ROUTE, SALE_MIN, STAGES, STICK_SLOTS } from './data.js';
 import {
   available, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, plotWeeds,
@@ -35,6 +40,19 @@ export const ROCK_ORDER = ['RX', 'R1', 'R2', 'R5', 'R4', 'R6', 'R3', 'R8', 'R7']
 export const CHOICE = ['C', 'S', 'T'];
 export const PATCH_NAME = { C: 'corn', S: 'sunflowers', T: 'tomatoes' };
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
+// short names for the goal line, so a build and its needs fit one line on a phone
+export const SHORT_LABEL = {
+  C0: 'Corn patch', S0: 'Sunflowers', T0: 'Raised bed', H1: 'Foundation', G1: 'Path', H2: 'Walls', A1: 'Archer', C1: 'More corn',
+  S1: 'More sunflowers', G2: 'Bench', G3: 'Step stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Home',
+};
+const NEED_ORDER = ['W', 'R', 'coins'];
+// the line of a build that still needs things: its short name, each need with its number, the
+// one she is after now, and a word when she can only wait
+export const needsLine = (id, short, now = null, tail = null) => ({
+  label: SHORT_LABEL[id] ?? cap(STAGES[id].label),
+  needs: NEED_ORDER.filter((k) => short[k] > 0).map((k) => [k, short[k]]),
+  ...(now ? { now } : {}), ...(tail ? { tail } : {}),
+});
 
 const ready = (l, id) => available(l, id) > 0 && (NODES[id] ? nodeEstablished(l, id) : true);
 const anyReady = (l, ids) => ids.some((id) => ready(l, id));
@@ -81,8 +99,9 @@ function gather(l, label, r, n) {
   if (r === 'W') {
     const logs = WOOD_PILES.filter((id) => ready(l, id));
     if (logs.length) return { text: `${label} · ${n} more wood: pick up the logs by the path`, target: logs[0] };
-    const text = anyReady(l, STICK_SLOTS) ? 'pick up sticks by the tree' : 'a stick falls from the tree soon';
-    return { text: `${label} · ${n} more wood: ${text}`, target: readySource(l, STICK_SLOTS, 'k1') };
+    const lying = anyReady(l, STICK_SLOTS);
+    const text = lying ? 'pick up sticks by the tree' : 'a stick falls from the tree soon';
+    return { text: `${label} · ${n} more wood: ${text}`, target: readySource(l, STICK_SLOTS, 'k1'), ...(lying ? {} : { wait: 'stick coming' }) };
   }
   return { text: `${label} · ${n} more stone: gather it from the rocks`, target: readySource(l, ROCK_ORDER, null) };
 }
@@ -101,6 +120,15 @@ export function spotStatus(l, id) {
   return null;
 }
 
+// v0.21: the crop to harvest next for coins: of the ripe plants she has room for, the one whose
+// crop pays best (tomatoes 5, sunflowers 3, corn 2), in node order within a crop. Before, it was
+// the first ripe one in node order, so the line kept to the corn and the dearer plots stood ripe.
+export function bestHarvest(l, nodes = pickable(l)) {
+  let best = null;
+  for (const id of nodes) if (ready(l, id) && (!best || PRICES[NODES[id].res] > PRICES[NODES[best].res])) best = id;
+  return best;
+}
+
 // coins for a stage: a full table sells with Yard Sale; crops on her head go onto the table;
 // otherwise harvest (or wait for the crops to grow)
 function coinsGoal(l, label, short) {
@@ -112,7 +140,7 @@ function coinsGoal(l, label, short) {
     return { text: `${label} · ${short} more coins: walk past the yard-sale table to set out your crops`, target: 'table' };
   }
   const all = planted(l);
-  return { text: `${label} · ${short} more coins: ${cropReady ? 'harvest your crops' : 'your crops are growing'}, then set them out on the yard-sale table`, target: readySource(l, nodes, nodes[0] ?? all[0] ?? null) };
+  return { text: `${label} · ${short} more coins: ${cropReady ? 'harvest your crops' : 'your crops are growing'}, then set them out on the yard-sale table`, target: bestHarvest(l, nodes) ?? nodes[0] ?? all[0] ?? null, ...(cropReady ? {} : { wait: 'crops growing' }) };
 }
 
 // what is still to get for a stage, in plain words: "2 wood and 3 stone to go" (v0.11 card)
@@ -138,17 +166,18 @@ export function needText(label, short) {
 // spots (shovel; also a wilted plant's spot, `Replant`)
 function cropSteps(l, id, label, come = false) {
   const weeds = plotWeeds(id).filter((w) => !l.weeds[w]);
+  const where = isFirstCrop(l, id) ? null : (SHORT_LABEL[id] ?? STAGES[id].label).toLowerCase(); // a later patch is named, her first one is the only one
   if (weeds.length) {
-    if (mustFetch(l, 'rake', come)) return { text: `${label} · Take the rake: it leans by the house`, target: 'tools', tool: 'rake' };
-    return { text: `${label} · Stand still beside the weeds to rake them`, target: weeds[0] };
+    if (mustFetch(l, 'rake', come)) return { text: `${label} · Take the rake: it leans by the house`, target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
+    return { text: `${label} · Stand still beside the weeds to rake them`, target: weeds[0], line: { icon: 'weed', label: 'Rake the weeds', ...(where ? { tail: where } : {}) } };
   }
   if (!isCommitted(l, id)) return null; // plant it (or DIY the bed) at its spot first (the caller)
   const spots = undug(l).filter((n) => NODES[n].stage === id);
   if (spots.length) {
-    if (mustFetch(l, 'shovel', come)) return { text: `${label} · ${spots.some((n) => l.wilted?.[n]) ? 'Replant: take' : 'Now take'} the shovel by the house`, target: 'tools', tool: 'shovel' };
+    if (mustFetch(l, 'shovel', come)) return { text: `${label} · ${spots.some((n) => l.wilted?.[n]) ? 'Replant: take' : 'Now take'} the shovel by the house`, target: 'tools', tool: 'shovel', line: { icon: 'shovel', label: 'Take the shovel' } };
     const re = l.wilted?.[spots[0]];
-    if (re) return { text: `${label} · Replant: dig the wilted spot with the shovel`, target: spots[0] };
-    return { text: `${label} · Stand still beside a spot to dig it`, target: spots[0] };
+    if (re) return { text: `${label} · Replant: dig the wilted spot with the shovel`, target: spots[0], line: { icon: 'shovel', label: 'Replant the wilted spot' } };
+    return { text: `${label} · Stand still beside a spot to dig it`, target: spots[0], line: { icon: 'shovel', label: spots.length > 1 ? 'Dig the spots' : 'Dig the spot', ...(where ? { tail: where } : {}) } };
   }
   return null;
 }
@@ -197,12 +226,12 @@ export function buildBar(l, hereId = null) {
 // opts.toolsCome: Help me finish (every tool comes to her, so the goal line never sends her to
 // the tools)
 export function nextGoal(l, { toolsCome = false } = {}) {
-  if (mainComplete(l)) return { text: 'The farm is finished. Keep exploring, gathering and selling if you like.', target: null };
+  if (mainComplete(l)) return { text: 'The farm is finished. Keep exploring, gathering and selling if you like.', target: null, line: { icon: 'check', label: 'The farm is finished' } };
   // the free first crop: rake any crop patch
   if (!l.crop) {
-    if (mustFetch(l, 'rake', toolsCome)) return { text: 'Take the rake: it leans by the house', target: 'tools', tool: 'rake' };
+    if (mustFetch(l, 'rake', toolsCome)) return { text: 'Take the rake: it leans by the house', target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
     const choice = choiceTargets(l);
-    return { text: 'Choose your first crop: rake the weeds on the corn, the sunflowers or the tomato bed', target: choice[0]?.target ?? null, choice };
+    return { text: 'Choose your first crop: rake the weeds on the corn, the sunflowers or the tomato bed', target: choice[0]?.target ?? null, choice, line: { icon: 'weed', label: 'Choose a crop', tail: 'rake it' } };
   }
   // a weed over her crops, once it has grown to a clump: rake it before the plant under it wilts
   const over = regrowWeeds(l).filter((w) => l.activeMs - l.overgrown[w.slice(3)] >= REGROW.warnMs);
@@ -210,15 +239,16 @@ export function nextGoal(l, { toolsCome = false } = {}) {
     const node = over[0].slice(3);
     const what = PATCH_NAME[NODES[node].res];
     const line = l.activeMs - l.overgrown[node] >= REGROW.growMs ? `Weeds are choking a ${RESOURCE_UNIT[NODES[node].res]} plant` : `Weeds in the ${what}: rake them before the plant wilts`;
-    if (mustFetch(l, 'rake', toolsCome)) return { text: `${line} · Take the rake by the house`, target: 'tools', tool: 'rake', weed: true };
-    return { text: line, target: over[0], weed: true };
+    const choking = l.activeMs - l.overgrown[node] >= REGROW.growMs;
+    if (mustFetch(l, 'rake', toolsCome)) return { text: `${line} · Take the rake by the house`, target: 'tools', tool: 'rake', weed: true, line: { icon: 'rake', label: 'Take the rake', tail: `${what} weeds` } };
+    return { text: line, target: over[0], weed: true, line: { icon: 'weed', label: choking ? 'Wilting soon!' : 'Weeds!', tail: `rake the ${what}` } };
   }
   const first = firstStage(l);
   const firstLabel = cap(PATCH_NAME[l.crop]);
   const own = cropSteps(l, first, firstLabel, toolsCome);
   if (own) return own;
   const id = nextStage(l);
-  if (!id) return { text: 'Keep gathering and selling while the next build opens.', target: null };
+  if (!id) return { text: 'Keep gathering and selling while the next build opens.', target: null, line: { label: 'Keep gathering and selling' } };
   const s = STAGES[id];
   const label = cap(s.label);
   if (s.crop) {
@@ -228,16 +258,18 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   const short = shortage(l, id);
   if (short.coins + short.W + short.R === 0) {
     const verb = actionVerb(id);
-    return { text: `${label} · You have everything: ${verb === 'DIY' ? 'DIY it' : verb.toLowerCase()} at its spot`, target: id };
+    return { text: `${label} · You have everything: ${verb === 'DIY' ? 'DIY it' : verb.toLowerCase()} at its spot`, target: id, line: { icon: 'check', label: SHORT_LABEL[id] ?? label, tail: 'ready!' } };
   }
+  // what is still missing, as icons and numbers; the need she is after now is marked
+  const lined = (g, now) => ({ ...g, line: needsLine(id, short, now, g.wait ?? null) });
   // a full table sells now; crops on her head go onto the table once they fill it (or nothing
   // more is ready to harvest)
-  if (short.coins > 0 && sellNow(l, short.coins)) return coinsGoal(l, label, short.coins);
+  if (short.coins > 0 && sellNow(l, short.coins)) return lined(coinsGoal(l, label, short.coins), 'coins');
   if (short.coins > 0 && tableAvailable(l) && cropsCarried(l) > 0 && (cropsCarried(l) >= tableRoom(l) || covers(l, short.coins))) {
-    return coinsGoal(l, label, short.coins);
+    return lined(coinsGoal(l, label, short.coins), 'coins');
   }
   // her crops grow while she gathers the wood and stone
-  if (short.W > 0) return gather(l, label, 'W', short.W);
-  if (short.R > 0) return gather(l, label, 'R', short.R);
-  return coinsGoal(l, label, short.coins);
+  if (short.W > 0) return lined(gather(l, label, 'W', short.W), 'W');
+  if (short.R > 0) return lined(gather(l, label, 'R', short.R), 'R');
+  return lined(coinsGoal(l, label, short.coins), 'coins');
 }

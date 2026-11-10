@@ -234,3 +234,73 @@ export function huntLine(edition = 'full', discoveries = {}, purse = 0) {
   }
   return `Egg hunt · ${n} of ${all} songs · walk to a sparkle and do what it asks: a bird brings an egg`;
 }
+
+// ---------- v0.21 (design audit 7, "make the hunt a hunt"; the full edition) ----------
+// The captain's first request: "finding all easter eggs is the real challenge". Until v0.20 every
+// spot with a song showed its star at once, with an arrow to the nearest: a checklist. Now, in the
+// full edition, a song's star is hidden until Vanessa comes within GLINT_M of its spot; then it
+// glints into view, and at the spot its small act is offered as before. The songbook helps in
+// three steps (spec §8's three tiers): each missing song is a silhouette with a line of its own
+// lyrics as the clue (tier 1: `songClue`); "Where is it?" names its place (tier 2: `cluePlace`);
+// "Show me" lights its star from anywhere and the arrow leads there (tier 3: `track`). "Show all
+// stars" brings back v0.20's view (every star, the arrow to the nearest). The kids edition keeps
+// its stars in view, as before, and its songbook shows no clues.
+// What the player has asked for is kept with the save (`session.hunt`): { where: { [song]: true },
+// track: a song or null, showAll }.
+export const GLINT_M = 3; // a hidden star glints into view this near (m)
+export const GLINT_OFF_M = 3.6; // and goes again beyond this (so it does not flicker at the edge)
+export const hidesStars = (edition = 'full') => edition !== 'kids';
+export const huntPrefs = (p) => ({
+  where: p?.where && typeof p.where === 'object' ? Object.fromEntries(Object.keys(p.where).filter((id) => id in SONGS && p.where[id]).map((id) => [id, true])) : {},
+  track: typeof p?.track === 'string' && p.track in SONGS ? p.track : null,
+  showAll: p?.showAll === true,
+});
+// the song the player asked to be shown, while it is still to find
+export const tracked = (edition, discoveries, prefs) => (prefs?.track && hasSong(prefs.track, edition) && !discoveries?.[prefs.track] ? prefs.track : null);
+// the spots whose star shows from anywhere: all that hold a song in the kids edition or with Show
+// all on; otherwise only the one she asked to be shown
+export function litSpots(edition = 'full', discoveries = {}, prefs = {}) {
+  const spots = spotsWithEggs(edition, discoveries);
+  if (!hidesStars(edition) || prefs?.showAll) return spots;
+  const t = tracked(edition, discoveries, prefs);
+  return t ? spots.filter((sp) => sp === songSpot(t, edition)) : [];
+}
+// the hidden spots that glint now: those with a song, not lit, that she is near. `dist(spot)` is
+// her distance to it in metres; `was` the spots glinting until now (they hold on to GLINT_OFF_M)
+export function glintSpots(edition, discoveries, prefs, dist, was = []) {
+  if (!hidesStars(edition)) return [];
+  const lit = litSpots(edition, discoveries, prefs);
+  return spotsWithEggs(edition, discoveries).filter((sp) => !lit.includes(sp) && dist(sp) <= (was.includes(sp) ? GLINT_OFF_M : GLINT_M));
+}
+// tier 1: the clue for a song still to find: a line of its own lyrics (the line its card shows
+// once it is found); tier 2: its place in words
+export const songClue = (id) => songLyric(id);
+export const cluePlace = (id, edition = 'full') => { const sp = songSpot(id, edition); return sp ? `At ${SPOTS[sp].label}.` : null; };
+// the songbook's rows for the songs still to find, in list order: { id, number, clue, place (once
+// asked for, else null), tracked }
+export function missingSongs(edition = 'full', discoveries = {}, prefs = {}) {
+  const t = tracked(edition, discoveries, prefs);
+  return songsFor(edition).filter((id) => !discoveries?.[id]).map((id) => ({
+    id, number: songNumber(id, edition), clue: songClue(id), place: prefs?.where?.[id] ? cluePlace(id, edition) : null, tracked: t === id,
+  }));
+}
+
+// The hunt's goal: { text (the sentence, for screen readers), line (one line on screen) }.
+// `egg`: 'coming' while the bird flies, 'landed' while the egg waits on the grass; `glint`: a
+// hidden star is glinting near her. The count is not here: it is the songs counter in the HUD.
+export function huntGoal({ edition = 'full', discoveries = {}, prefs = {}, glint = false, egg = null } = {}) {
+  const left = songsFor(edition).filter((id) => !discoveries?.[id]);
+  const all = songsFor(edition).length;
+  if (!left.length) return { text: `Every song found: ${all} of ${all}. Listen to them any time in the songbook.`, line: { icon: 'note', label: 'Every song found' } };
+  if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
+  if (egg === 'landed') return { text: 'An egg has landed: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg' } };
+  const one = left.length === 1 ? left[0] : null;
+  if (!hidesStars(edition) || prefs?.showAll) {
+    if (one) return { text: huntLine(edition, discoveries), line: { icon: 'note', label: 'One song left', tail: 'follow the arrow' } };
+    return { text: 'Egg hunt: walk to a star and do what it asks, and a bird brings an egg.', line: { icon: 'note', label: 'Walk to a star' } };
+  }
+  if (tracked(edition, discoveries, prefs)) return { text: 'Follow the arrow to the star you asked for.', line: { icon: 'glint', label: 'Follow the arrow' } };
+  if (glint) return { text: 'Something glints nearby: walk up to it.', line: { icon: 'glint', label: 'A glint!', tail: 'walk up to it' } };
+  if (one) return { text: 'One song left. It is hidden on the farm: the songbook has a clue.', line: { icon: 'note', label: 'One song left', tail: 'see ♪ Songs' } };
+  return { text: 'The songs are hidden around the farm. Look for a glint, or open the songbook for clues.', line: { icon: 'note', label: 'Find the hidden songs' } };
+}

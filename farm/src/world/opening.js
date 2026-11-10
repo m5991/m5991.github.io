@@ -54,6 +54,7 @@ export class Opening {
     h.yaw = 0; h.yawTarget = 0; h.view.rotation.y = 0; // facing out of the page, as drawn
     h.showFinalePose(true); // the drawing's hands-on-hips pose, nothing on her head
     w.showHeldTool(false);
+    this.rig.frameK = 1; // v0.21 (audit 9): an upright screen's page shows the drawing's middle, larger
     this.paper.show('waiting');
     this.paper.needsCapture = true;
     this.onStart();
@@ -115,7 +116,7 @@ export class Opening {
       // where the title's centre sits on a vertical plane at the horizon, through the drawing's
       // own framing (the page's last frame), and how big a metre there is on screen
       const { w, h } = this.view();
-      const r = this.paper.layout.rect;
+      const r = this.paper.layout.comp; // where the whole drawing lands (v0.21: not the sheet's crop)
       const c = this.paper.titleCentre;
       const p = this.world.proj;
       const z = p.groundAt(50, HORIZON_V).z;
@@ -167,6 +168,7 @@ export class Opening {
     w.setPlayHidden(0);
     w.drawingLook(0);
     this.rig.wholeBlend = 0;
+    this.rig.frameK = 0;
     if (!this.stepped) this.hero.showFinalePose(false);
     this.stepped = true;
     w.showHeldTool(true);

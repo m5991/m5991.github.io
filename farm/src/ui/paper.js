@@ -9,7 +9,7 @@
 // screen. The title is positioned on screen by script: with the page while it sinks, then with
 // the world as the camera eases down, so it slides out of frame. The title's lettering itself
 // (text now, Tiffany's later) is set in one place: src/ui/opening-title.js.
-import { fitRect } from '../world/projection.js';
+import { drawingFrame } from '../world/framing.js';
 
 const MAX_START_SCALE = 0.7; // at least this much of a sink, even where the page would fit larger
 
@@ -17,7 +17,11 @@ const MAX_START_SCALE = 0.7; // at least this much of a sink, even where the pag
 // the sink is fitRect itself: portrait-like screens pencil the title on one line above the
 // drawing, landscape ones on two lines beside it. `start` / `end`: the page point at the
 // screen centre (cx, cy) and the scale.
-export function pageLayout(vw, vh, r = fitRect(vw, vh)) {
+// v0.21 (audit 9): on an upright screen the sheet shows the drawing's middle, larger (framing.js):
+// `rect` is the sheet (the part of the drawing on screen at the end of the sink) and `comp` where
+// the whole drawing would land, for placing things by their place in the drawing.
+export function pageLayout(vw, vh, frame = drawingFrame(vw, vh, 1)) {
+  const r = frame.window;
   const font = Math.round(Math.min(r.w * 0.19, r.h * 0.26));
   const gap = Math.round(font * 0.35);
   const portrait = vw / vh < 1.1;
@@ -34,7 +38,7 @@ export function pageLayout(vw, vh, r = fitRect(vw, vh)) {
   const y0 = Math.min(r.y, title.y); const y1 = Math.max(r.y + r.h, title.y + title.h);
   const fit = Math.min((0.88 * vw) / (x1 - x0), (0.78 * vh) / (y1 - y0));
   return {
-    portrait, title, rect: r,
+    portrait, title, rect: r, comp: frame.rect, zoom: frame.zoom,
     start: { s: Math.min(fit, MAX_START_SCALE), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 },
     end: { s: 1, cx: vw / 2, cy: vh / 2 },
   };

@@ -8,7 +8,17 @@
 // keeps going; the DIY button shows as soon as she has everything, pulsing, and away from the part
 // it says where to go. It only presents ledger and controller state. Counters show just the number (captain,
 // 2026-11-01): the 12-unit cap is told at the refusal moment (toast and status), not here.
-import { RESOURCE_NAMES } from '../game/data.js';
+// v0.21 (design audit 5, "one voice on screen"): the goal is one line, icon-first (a build's short
+// name and what it still needs as icons and numbers: guide.js `line`), with the whole sentence kept
+// for screen readers; the bottom line's count is gone (the goal line is the one place that says
+// it) and only the DIY button is left there; a counter appears when its resource first matters
+// (countersShown) and stays; in the egg hunt the materials and crops go and the row is the songs
+// found of all, a button that opens the songbook (and the keepsakes, once one is found). On a
+// phone a counter is its icon over its number; its name shows where it fits on one line (900 px
+// and wider) and is always its accessible name.
+import { BASE_STAGE, RESOURCE_NAMES, STAGES } from '../game/data.js';
+import { isCommitted, recipe } from '../game/ledger.js';
+import { nextStage } from '../game/guide.js';
 
 export const counterText = (n) => String(Math.min(9999, n));
 
@@ -33,19 +43,98 @@ export const ICONS = {
   T: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7" fill="#c8463b" stroke="#253347" stroke-width="1.4"/><path d="M12 7l-3-2M12 7l3-2M12 7V4M12 7l-4 1M12 7l4 1" stroke="#527447" stroke-width="1.6"/></svg>',
   coins: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="#d9a93a" stroke="#253347" stroke-width="1.4"/><path d="M9 15l5-6 1.5 1.3-5 6-2 .6z" fill="#fff7e5" stroke="#253347" stroke-width="0.9"/></svg>',
 };
-const NAMES = { W: 'Wood', R: 'Stone', coins: 'Coins', C: 'Corn', S: 'Sunflowers', T: 'Tomatoes' };
-export const HUD_ORDER = ['W', 'R', 'coins', 'C', 'S', 'T']; // portrait 3x2: materials+coins, then crops
+// v0.21 the goal line's own marks, in the counters' ink-and-wash hand
+const INK = 'stroke="#253347" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"';
+export const GOAL_ICONS = {
+  rake: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.5L9 14" ${INK} stroke-width="2" fill="none"/><path d="M4.5 12.5l8 6.2" ${INK} stroke-width="2" fill="none"/><path d="M4.5 12.5l-1.6 3M7.2 14.6l-1.6 3M9.9 16.6l-1.6 3M12.5 18.7l-1.6 3" ${INK} fill="none" stroke="#2864bd" stroke-width="1.8"/></svg>`,
+  shovel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.5 3.5L10.5 12" ${INK} stroke-width="2" fill="none"/><path d="M16.5 2.6l4.6 4.3" ${INK} stroke-width="2" fill="none"/><path d="M11.8 10.4l2.6 2.6c-1 3.4-4 6.6-8.6 8.2-.9.3-1.7-.5-1.4-1.4 1.6-4.6 4.4-8.2 7.4-9.4z" fill="#2864bd" ${INK}/></svg>`,
+  weed: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21c0-5 .2-9 .4-16M12 21c-.6-4.6-3-8.6-7.4-11M12 21c.8-4.2 3-7.6 7.6-9.6M12 21c-1-2.6-3.2-4.4-6.6-5M12 21c1-2.4 2.8-3.8 6-4.4" fill="none" stroke="#527447" stroke-width="2.2" stroke-linecap="round"/><path d="M5 21.5h14" ${INK} fill="none"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#e6b83e" ${INK}/><path d="M7.5 12.4l3.2 3.3 6-7.2" fill="none" ${INK} stroke-width="2.2"/></svg>`,
+  note: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5V5.5l9-2v11" fill="none" ${INK} stroke-width="1.8"/><ellipse cx="7" cy="17.6" rx="2.9" ry="2.3" fill="#253347" ${INK}/><ellipse cx="16" cy="14.6" rx="2.9" ry="2.3" fill="#253347" ${INK}/></svg>`,
+  glint: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c.5 3.8 1.3 6.6 2 8 1.6.6 4.3 1.2 7.5 1.5-3.2.5-5.9 1.1-7.5 1.7-.7 1.6-1.4 4.4-2 7.8-.6-3.4-1.3-6.2-2-7.8-1.6-.6-4.3-1.2-7.5-1.7 3.2-.3 5.9-.9 7.5-1.5.7-1.400 1.500-4.200 2-8z" fill="#e6b83e" ${INK}/></svg>`,
+  egg: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.600 0 6.500 5.400 6.500 10.200 0 4.300-2.800 7.300-6.500 7.300s-6.500-3-6.500-7.300C5.500 8.400 8.400 3 12 3z" fill="#fff7e5" ${INK}/><path d="M5.900 11.200l2.600 1.900 2.300-2.200 2.500 2.300 2.300-2.100 2.500 1.900" fill="none" stroke="#c8463b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  gift: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10.500" rx="1.500" fill="#c8463b" ${INK}/><rect x="3" y="6.500" width="18" height="4" rx="1" fill="#d9a93a" ${INK}/><path d="M12 6.500v14M12 6.500c-2-3.800-6-3.200-4.500-.6M12 6.500c2-3.800 6-3.200 4.500-.6" fill="none" ${INK}/></svg>`,
+};
+const NAMES = { W: 'Wood', R: 'Stone', coins: 'Coins', C: 'Corn', S: 'Sunflowers', T: 'Tomatoes', songs: 'Songs', keepsakes: 'Keepsakes' };
+export const HUD_ORDER = ['W', 'R', 'coins', 'C', 'S', 'T']; // materials and coins, then crops
+// the hunt's two counters (phase two), each a button: the songbook, the keepsakes
+export const HUNT_COUNTERS = ['songs', 'keepsakes'];
+
+// v0.21 (audit 5: "a counter appears when its resource first matters (crops when planted, tomatoes
+// when the bed exists)"): the counters this ledger has a use for, in HUD order. Wood, stone and
+// coins: once she has some, the build that is next needs some, or a build has used some. A crop:
+// once its patch is planted (the tomatoes: once the raised bed is built), or she has some. A new
+// farm starts with none, and the first build's needs bring wood, stone and coins together.
+export function countersShown(l) {
+  const next = nextStage(l);
+  const need = next && !isCommitted(l, next) ? recipe(l, next) : { W: 0, R: 0, coins: 0 };
+  const used = (r) => l.paymentEvents.some((id) => (STAGES[id]?.[r] ?? 0) > 0);
+  const has = {
+    W: l.carried.W + (l.yard?.W ?? 0) > 0 || need.W > 0 || used('W'),
+    R: l.carried.R + (l.yard?.R ?? 0) > 0 || need.R > 0 || used('R'),
+    coins: l.purse > 0 || (l.lifetimeCoins ?? 0) > 0 || need.coins > 0,
+  };
+  for (const c of ['C', 'S', 'T']) has[c] = isCommitted(l, BASE_STAGE[c]) || l.carried[c] > 0 || l.table[c] > 0 || l.sold[c] > 0;
+  return HUD_ORDER.filter((k) => has[k]);
+}
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// the goal line's one line (guide.js `line`), as HTML: an icon, the name, each need as its icon
+// and number (the one she is after now marked), and a few last words
+export function goalHtml(line) {
+  if (!line) return '';
+  const ico = line.icon && GOAL_ICONS[line.icon] ? `<span class="g-ico">${GOAL_ICONS[line.icon]}</span>` : '';
+  const needs = (line.needs ?? []).map(([k, n]) => `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>`).join('');
+  const tail = line.tail ? `<span class="g-tail">${esc(line.tail)}</span>` : '';
+  return `${ico}<span class="g-label">${esc(line.label)}</span>${needs}${tail}`;
+}
+// the same line in plain words (tests, logs): "Walls · wood 6, stone 4, coins 10"
+export function goalPlain(line) {
+  if (!line) return '';
+  const needs = (line.needs ?? []).map(([k, n]) => `${NAMES[k].toLowerCase()} ${n}`).join(', ');
+  return [line.label, needs, line.tail].filter(Boolean).join(' · ');
+}
 
 export function createHud(root = document) {
   const $ = (id) => root.getElementById(id);
   const counters = $('counters');
   counters.innerHTML = HUD_ORDER.map((k) => `
-    <div class="cell" data-res="${k}">
+    <div class="cell" data-res="${k}" hidden>
       <span class="icon">${ICONS[k]}</span>
       <span class="name">${NAMES[k]}</span>
       <span class="count" aria-live="off">0</span>
-    </div>`).join('');
-  const cells = Object.fromEntries(HUD_ORDER.map((k) => [k, counters.querySelector(`[data-res="${k}"]`)]));
+    </div>`).join('') + HUNT_COUNTERS.map((k) => `
+    <button class="cell wide" type="button" data-res="${k}" hidden>
+      <span class="icon">${GOAL_ICONS[k === 'songs' ? 'note' : 'gift']}</span>
+      <span class="name">${NAMES[k]}</span>
+      <span class="count" aria-live="off"></span>
+    </button>`).join('');
+  const cells = Object.fromEntries([...HUD_ORDER, ...HUNT_COUNTERS].map((k) => [k, counters.querySelector(`[data-res="${k}"]`)]));
+  // which counters are up: one that has appeared stays (until a new farm: reset)
+  const seen = new Set();
+  let hunt = null; // { found, total, keepsakes, keepsakesTotal } in the egg hunt, else null
+  let lastLedger = null;
+  const huntHandlers = { songs: null, keepsakes: null };
+  for (const k of HUNT_COUNTERS) cells[k].addEventListener('click', () => huntHandlers[k]?.());
+  function show(k, on) {
+    const c = cells[k];
+    if (c.hidden !== on) return; // already so
+    c.hidden = !on;
+    if (on) { c.classList.remove('arrive'); void c.offsetWidth; c.classList.add('arrive'); }
+  }
+  function showCounters(l) {
+    if (l) for (const k of countersShown(l)) seen.add(k);
+    for (const k of HUD_ORDER) show(k, !hunt && seen.has(k));
+    show('songs', !!hunt);
+    show('keepsakes', !!hunt && hunt.keepsakes > 0);
+    if (hunt) {
+      cells.songs.querySelector('.count').textContent = `${hunt.found}/${hunt.total}`;
+      cells.songs.setAttribute('aria-label', `Songs: ${hunt.found} of ${hunt.total} found. Open the songbook`);
+      cells.keepsakes.querySelector('.count').textContent = `${hunt.keepsakes}/${hunt.keepsakesTotal}`;
+      cells.keepsakes.setAttribute('aria-label', `Keepsakes: ${hunt.keepsakes} of ${hunt.keepsakesTotal} found. Open the keepsakes`);
+    }
+    counters.classList.toggle('hunt', !!hunt);
+  }
   const goal = $('goal');
   const context = $('context');
   const progress = $('progress');
@@ -65,12 +154,14 @@ export function createHud(root = document) {
   showFold();
   let leaving = 0;
   const buildbar = $('buildbar');
-  const need = buildbar.querySelector('.need');
   const diy = $('btn-diy');
   const sale = $('btn-sale');
   let diyHandler = null;
   let saleHandler = null;
   let buildKey = '';
+  let goalKey = '';
+  let goalStep = null;
+  let huntKey = '';
   let contextHandler = null;
   let lastAnnounce = '';
   let announceTimer = 0;
@@ -126,6 +217,8 @@ export function createHud(root = document) {
 
   return {
     render(l) {
+      lastLedger = l;
+      showCounters(l);
       for (const k of ['W', 'R', 'C', 'S', 'T']) {
         // v0.11 (P27-1): wood and stone count the yard pile plus her head
         const pile = l.yard?.[k] ?? 0;
@@ -137,7 +230,36 @@ export function createHud(root = document) {
       countCoins(l.purse);
       cells.coins.setAttribute('aria-label', `Coins ${l.purse}`);
     },
-    setGoal(text) { if (goal.textContent !== text) goal.textContent = text; },
+    // v0.21: the goal as one line (`g.line`, guide.js), with the whole sentence (`g.text`) for
+    // screen readers; a plain string still shows as it is
+    setGoal(g) {
+      const line = typeof g === 'string' ? { label: g } : g?.line ?? (g?.text ? { label: g.text } : null);
+      const text = typeof g === 'string' ? g : g?.text ?? goalPlain(line);
+      const key = JSON.stringify([line, text]);
+      if (key === goalKey) return;
+      // a new step (not just a number counting down) gives the line one small nod
+      const step = JSON.stringify([line?.icon, line?.label, line?.now]);
+      goalKey = key;
+      goal.innerHTML = line ? `<span class="g-line" aria-hidden="true">${goalHtml(line)}</span><span class="sr-only">${esc(text)}</span>` : '';
+      goal.title = text;
+      goal.classList.toggle('wrap', !!line?.wrap);
+      if (step !== goalStep && goalStep !== null && line) { goal.classList.remove('nod'); void goal.offsetWidth; goal.classList.add('nod'); }
+      goalStep = step;
+    },
+    get goalLine() { return goal.querySelector('.g-line')?.textContent ?? ''; },
+    // v0.21 the egg hunt's row: { found, total, keepsakes, keepsakesTotal } hides the materials and
+    // crops and shows the songs found of all (and the keepsakes, once one is found); null: phase one
+    setHunt(h, { onSongs = null, onKeepsakes = null } = {}) {
+      huntHandlers.songs = onSongs; huntHandlers.keepsakes = onKeepsakes;
+      const key = h ? `${h.found}/${h.total}/${h.keepsakes}/${h.keepsakesTotal}` : '';
+      if (key === huntKey) return;
+      huntKey = key;
+      hunt = h;
+      showCounters(lastLedger);
+    },
+    // a new farm: no counter has appeared yet
+    reset() { seen.clear(); hunt = null; huntKey = ''; goalStep = null; for (const k of [...HUD_ORDER, ...HUNT_COUNTERS]) cells[k].hidden = true; },
+    get countersUp() { return [...HUD_ORDER, ...HUNT_COUNTERS].filter((k) => !cells[k].hidden); },
     setContext(label, handler) {
       contextHandler = handler;
       if (!label) { context.hidden = true; return; }
@@ -155,21 +277,16 @@ export function createHud(root = document) {
       buildbar.hidden = !bar;
       if (!bar) return;
       // v0.13: the button as soon as everything is in hand (it pulses); away from the part it
-      // says where to go, and pressing it there shows the way (main.js)
+      // says where to go, and pressing it there shows the way (main.js). v0.21: until then the
+      // bottom line shows nothing: what the build still needs is on the goal line, and only there
       const button = bar.ready;
       diy.hidden = !button;
-      need.hidden = button;
+      buildbar.hidden = !button;
       diy.classList.toggle('away', bar.ready && !bar.here);
-      if (button) {
-        diy.querySelector('.verb').textContent = bar.verb === 'DIY' ? 'DIY!' : bar.verb;
-        diy.querySelector('.what').textContent = bar.here ? bar.label : `${bar.label} · go there`;
-        diy.setAttribute('aria-label', bar.here ? `${bar.verb}: ${bar.label}` : bar.text);
-        return;
-      }
-      const cap = bar.label[0].toUpperCase() + bar.label.slice(1);
-      const items = [['W', bar.short.W], ['R', bar.short.R], ['coins', bar.short.coins]].filter(([, n]) => n > 0);
-      need.innerHTML = `<span class="label">${cap}:</span>${items.map(([k, n]) => `<span class="item">${ICONS[k]}${n}</span>`).join('')}`;
-      need.setAttribute('aria-label', bar.text);
+      if (!button) return;
+      diy.querySelector('.verb').textContent = bar.verb === 'DIY' ? 'DIY!' : bar.verb;
+      diy.querySelector('.what').textContent = bar.here ? bar.label : `${bar.label} · go there`;
+      diy.setAttribute('aria-label', bar.here ? `${bar.verb}: ${bar.label}` : bar.text);
     },
     get diyShown() { return !diy.hidden && !buildbar.hidden; },
     get diyHere() { return !diy.hidden && !buildbar.hidden && !diy.classList.contains('away'); },

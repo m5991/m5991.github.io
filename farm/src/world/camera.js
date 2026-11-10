@@ -5,7 +5,7 @@
 // `wholeBlend` (0..1) eases the play camera toward the whole-drawing framing: the colour finale
 // (spec v0.9 P25-2) eases to the drawing in its first 2 s and back afterwards.
 import * as THREE from 'three';
-import { fitRect } from './projection.js';
+import { drawingFrame } from './framing.js';
 
 export class CameraRig {
   constructor(proj) {
@@ -15,6 +15,10 @@ export class CameraRig {
     this.focus = new THREE.Vector3();
     this.snap = true;
     this.wholeBlend = 0;
+    // v0.21 (audit 9): how far the drawing framing is the upright one (framing.js drawingFrame:
+    // 0 the whole drawing, 1 its middle, larger, on an upright screen; other screens: no change).
+    // The finale and the opening set it; the whole-farm view is always the whole drawing.
+    this.frameK = 0;
   }
 
   // Vanessa's on-screen height in gameplay, CSS px (P; tuned for 390x844 / 844x390 phones)
@@ -24,7 +28,7 @@ export class CameraRig {
     const { w, h, top = 0, bottom = 0 } = view;
     const p = this.proj;
     if (this.mode === 'whole') {
-      p.frameViewport(this.camera, w, h, fitRect(w, h));
+      p.frameViewport(this.camera, w, h, drawingFrame(w, h, 0).rect);
       return;
     }
     const target = new THREE.Vector3(heroPos.x, 0.8 + (heroPos.y ?? 0), heroPos.z);
@@ -53,17 +57,21 @@ export class CameraRig {
     else this.offsetY += (want - this.offsetY) * (1 - Math.exp(-dtMs / 180));
     if (Math.abs(this.offsetY - want) < 0.05) this.offsetY = want;
     let offsetY = this.offsetY;
+    let offsetX = 0;
     const b = Math.max(0, Math.min(1, this.wholeBlend));
     if (b > 0) {
       const t = this.blendCam ??= p.makeViewportCamera();
-      p.frameViewport(t, w, h, fitRect(w, h));
+      const r = drawingFrame(w, h, this.frameK).rect;
+      p.frameViewport(t, w, h, r);
       c.position.lerp(t.position, b);
       c.quaternion.slerp(t.quaternion, b);
       if (p.type === 'perspective') c.fov += (t.fov - c.fov) * b;
       else for (const k of ['left', 'right', 'top', 'bottom']) c[k] += (t[k] - c[k]) * b;
-      offsetY *= 1 - b;
+      // the image's centre eases from Vanessa's band to the frame's own centre
+      offsetX = (r.x + r.w / 2 - w / 2) * b;
+      offsetY = offsetY * (1 - b) + (r.y + r.h / 2 - h / 2) * b;
     }
-    if (offsetY) c.setViewOffset(w, h, 0, -offsetY, w, h); else c.clearViewOffset();
+    if (Math.abs(offsetX) > 1e-6 || Math.abs(offsetY) > 1e-6) c.setViewOffset(w, h, -offsetX, -offsetY, w, h); else c.clearViewOffset();
     c.near = 0.1;
     c.far = 500;
     c.updateProjectionMatrix();

@@ -10,7 +10,7 @@ export const RESOURCE_NAMES = { W: 'wood', R: 'stone', C: 'corn', S: 'sunflowers
 export const RESOURCE_UNIT = { W: 'wood', R: 'stone', C: 'corn', S: 'sunflower', T: 'tomato' };
 
 // Fixed crop prices in coins per unit (§6.1). Wood and stone are never sellable.
-export const PRICES = { C: 2, S: 3, T: 5 };
+export const PRICES = { C: 2, S: 3, T: 4 };
 
 // Interaction cadence (§4, §6.1): A08 0.75 s/unit work, 1 s/weed, 0.15 s/unit transfer;
 // P 0.25 s stillness rule and 0.3 s coin pour. v0.9 (P25-4): 0.5 s to take or swap a tool at the
@@ -107,6 +107,14 @@ export const NODE_RENEW_MS = { C: 15000, S: 15000, T: 20000 };
 // bigger, like normal"): a step is drawn as one more tier of stem, leaves and a truss on top of the
 // plant (world.js sizePlant), so it grows taller and keeps its width.
 export const TOMATO_GROWTH = { step: 0.25, steps: 2 };
+// v0.21 (captain 2026-11-10: "When the tomato plant grows should have more tomato. the tomatoes
+// harvest should also go up"): the harvest grows with the plant. A tomato plant gives 2 tomatoes on
+// its first crop, 3 once it has grown a tier and 4 at full height (TOMATO_YIELD[size level]; the
+// level is the plant's rounds after its first crop, `steps` at most, ledger.js growthLevel). The
+// price stays 5, so two grown plants bring 40 coins a round where they brought 20: the bed, the
+// dearest plot, becomes the best one, and a plant lost to the weeds (a new plant: level 0) costs
+// more. A node's `yield` below is its first crop's.
+export const TOMATO_YIELD = [2, 3, 4];
 export const NODES = {
   c1: { res: 'C', yield: 3, stage: 'C0' },
   c2: { res: 'C', yield: 3, stage: 'C0' },

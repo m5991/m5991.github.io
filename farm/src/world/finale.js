@@ -20,8 +20,9 @@ export const FINALE_YAW = 0.8;
 export class Finale {
   // world: World; hero: Hero; rig: CameraRig; at: () => Vector3, D17 on the ground;
   // reducedMotion: () => boolean; onStart / onEnd: the UI around it (main.js)
-  constructor({ world, hero, rig, at, reducedMotion = () => false, onStart = () => {}, onEnd = () => {} }) {
-    Object.assign(this, { world, hero, rig, at, reducedMotion, onStart, onEnd });
+  // onFrame(k): the paper frame of the upright framing, 0..1 (main.js; v0.21, audit 9)
+  constructor({ world, hero, rig, at, reducedMotion = () => false, onStart = () => {}, onEnd = () => {}, onFrame = () => {} }) {
+    Object.assign(this, { world, hero, rig, at, reducedMotion, onStart, onEnd, onFrame });
     this.active = false;
     this.t = 0;
   }
@@ -29,6 +30,7 @@ export class Finale {
   start() {
     if (this.active) return;
     this.active = true;
+    this.held = false; // a check's hold (seek) never outlives its run
     this.t = 0;
     this.settled = false;
     this.reduced = this.reducedMotion();
@@ -61,6 +63,10 @@ export class Finale {
     w.setPlayHidden(st.hide);
     this.hero.stack.root.scale.setScalar(Math.max(0.01, 1 - st.hide)); // nothing on her head (V9)
     this.rig.wholeBlend = st.camera;
+    // v0.21 (audit 9): an upright screen frames the colour beats on the drawing's middle, with the
+    // paper above and below as the frame; both ease away as the sky rises (reveal.js `frame`)
+    this.rig.frameK = st.frame ?? 0;
+    this.onFrame((st.frame ?? 0) * st.camera);
     if (st.settled && !this.settled && (!this.walk || this.walkDone(this.t))) {
       this.settled = true;
       const p = this.centre;
@@ -130,6 +136,8 @@ export class Finale {
     this.hero.stack.root.scale.setScalar(1);
     this.hero.showFinalePose(false);
     w.setPlayHidden(0);
+    this.rig.frameK = 0;
+    this.onFrame(0);
     this.onEnd();
   }
 }

@@ -33,6 +33,7 @@
   <!-- "DIY time!" (spec v0.11 §10.10, src/ui/burst.js): Vanessa builds it herself -->
   <div id="diy" aria-hidden="true"></div>
   <div id="diy-ticks" aria-hidden="true"></div>
+  <!-- v0.21 (audit 5): counters that appear when they matter, and the goal in one line -->
   <header id="hud">
     <section id="counters" aria-label="Carried resources and coins"></section>
     <nav id="utility" aria-label="Game menu">
@@ -42,6 +43,9 @@
     </nav>
     <p id="goal" role="status"></p>
   </header>
+  <!-- v0.21 (audit 9): on an upright phone the finale's colour beats are framed on the drawing's
+       middle; the paper above and below it is the frame (src/world/framing.js) -->
+  <div id="paper-frame" aria-hidden="true" hidden><div class="band top"></div><div class="band bottom"></div></div>
 
   <div id="progress" role="status" hidden></div>
   <!-- v0.13: the lesson note, pinned to the top edge under the HUD; a tap folds it to one line -->
@@ -57,9 +61,9 @@
     <button type="button" data-act="stop" aria-label="Stop the song and bring back the farm's music"><span aria-hidden="true">✕</span></button>
   </div>
   <footer id="controls">
-    <!-- v0.12: the next build's needs, counting down; with everything in hand it becomes its DIY
-         button, which works only at the part (src/ui/hud.js setBuild) -->
-    <div id="buildbar" role="status" hidden><span class="need"></span><button id="btn-diy" type="button" hidden><span class="verb">DIY</span><span class="what"></span></button></div>
+    <!-- v0.12: with everything for the next build in hand, its DIY button, which works only at the
+         part (src/ui/hud.js setBuild). v0.21: what it still needs counts down on the goal line -->
+    <div id="buildbar" hidden><button id="btn-diy" type="button" hidden><span class="verb">DIY</span><span class="what"></span></button></div>
     <button id="audio-prompt" type="button" hidden>Tap to enable audio</button>
     <!-- v0.12: the yard sale, once the table holds six (tapping the stand works too) -->
     <button id="btn-sale" type="button" hidden>Yard Sale</button>
