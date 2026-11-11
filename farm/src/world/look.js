@@ -18,13 +18,19 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // spec §10.3 review swatches, plus companions the swatches do not name (skin, hair, bark, soil)
+// v0.22 (Tiffany: "Make the colors brighter"): the colours of the things on the farm are a step
+// brighter and cleaner than v0.21's muted washes (the denim, the tools' blue, the door's red, the
+// leaves, the flowers, the corn, the tomatoes, the wood); paper, ink and skin are as they were.
+// `white` is the house's walls ("Make house pure white"); `ringStone` and `ringStoneLight` the
+// stones round the tree and the stepping stones ("darker in color"; the loose rocks keep `stone`).
 export const PAL = {
-  paper: 0xfff7e5, ink: 0x253347, cap: 0x263853, denim: 0x426b91, shirt: 0xf4eddc,
-  tool: 0x2864bd, cream: 0xf1deb5, red: 0xb53e36, charcoal: 0x3d434b, wood: 0x8d603e,
-  stone: 0x969895, leaf: 0x527447, flower: 0xe6b83e,
+  paper: 0xfff7e5, ink: 0x253347, cap: 0x263853, denim: 0x3f76b5, shirt: 0xf4eddc,
+  tool: 0x1f6ee0, cream: 0xf1deb5, red: 0xd33a2c, charcoal: 0x3d434b, wood: 0x9c6536,
+  stone: 0x969895, leaf: 0x4b9238, flower: 0xf6c61a,
   ground: 0xf3ead0, skin: 0xe2b48f, hair: 0x4a2f22, flipflop: 0x8a6a4f, bark: 0x6f4a32,
-  leafLight: 0x6b8a52, woodLight: 0xa77a52, mouth: 0x8c3b33, soil: 0x6b4a33,
-  corn: 0xe8c547, tomato: 0xc8463b, coin: 0xd9a93a,
+  leafLight: 0x7ab648, woodLight: 0xb3804f, mouth: 0x8c3b33, soil: 0x6b4a33,
+  corn: 0xf4d038, tomato: 0xe5392b, coin: 0xe9b62c,
+  white: 0xffffff, ringStone: 0x666a70, ringStoneLight: 0x777b81,
 };
 
 export const LOOK = {
@@ -299,15 +305,17 @@ export class ToonMaterial extends THREE.ShaderMaterial {
 }
 
 const WASH_FULL = 1e4; // a wash front above everything: fully coloured
-export function toonMaterial({ color = 0xffffff, vertexColors = false, hatch = 0, grain = 0, flat = 0, noLight = 0, flatShading = false, side = THREE.FrontSide, transparent = false, opacity = 1 } = {}) {
+// `shade` and `light` (v0.22): how much ink the form-shade band and how much paper the light band
+// take, for a surface that should not follow the look's own (the house's white walls)
+export function toonMaterial({ color = 0xffffff, vertexColors = false, hatch = 0, grain = 0, flat = 0, noLight = 0, flatShading = false, side = THREE.FrontSide, transparent = false, opacity = 1, shade = LOOK.shadeInk, light = LOOK.lightPaper } = {}) {
   const m = new ToonMaterial({
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.lights, {
       uColor: { value: new THREE.Color(color) },
       uInk: { value: new THREE.Color(PAL.ink) },
       uPaper: { value: new THREE.Color(PAL.paper) },
-      uShadeInk: { value: LOOK.shadeInk },
+      uShadeInk: { value: shade },
       uShadowInk: { value: LOOK.shadowInk },
-      uLightPaper: { value: LOOK.lightPaper },
+      uLightPaper: { value: light },
       uHatch: { value: hatch },
       uGrain: { value: grain },
       uFlat: { value: flat },

@@ -1,4 +1,5 @@
-// The end credits on screen (spec §5.1, v0.17): quiet paper over the coloured drawing at the
+// The slideshow (v0.17's end credits, spec §5.1; v0.22, Tiffany: "Call it slideshow", offered at
+// the end and kept in Extras, never started by itself): quiet paper over the coloured drawing at the
 // finale camera. A print of each gift joke, taped onto the page on the side away from the lyrics,
 // its title, year and the words printed on it; a message card per sender (none yet: the section is
 // left out); a closing card; and the lyric being sung on a paper panel in the lower third, the
@@ -7,7 +8,7 @@
 // everything, and with Sound off or the song blocked or missing a silent clock runs the same
 // times. The content file, the lyrics and the prints load only when the credits start.
 // v0.20: the prints are the photos of the drawing over the years, shown as a slideshow (each one
-// fades in over the last, numbered "3 / 26"); `photos()` false (the kids edition) shows none.
+// fades in over the last, numbered "3 / 26"); `photos()` false shows none (v0.20's kids edition).
 import { creditsAt, planCredits, validateCredits } from '../game/credits.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -53,7 +54,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   function cardSpeech(c) {
     if (c.kind === 'gift') return `${c.title}${c.year ? `, ${c.year}` : ''}. ${c.alt}${c.caption ? ` It says: ${c.caption}` : ''}`;
     if (c.kind === 'message') return `From ${c.from}: ${c.text}`;
-    if (c.kind === 'title') return `End credits. ${c.title}. The song: ${c.song}.`;
+    if (c.kind === 'title') return `The slideshow. ${c.title}. The song: ${c.song}.`;
     if (c.kind === 'prints') return `${c.items.length} more gifts.`;
     return `${c.title} ${c.text}`;
   }

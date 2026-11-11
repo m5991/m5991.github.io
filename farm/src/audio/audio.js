@@ -13,11 +13,9 @@
 //   hidden tab also suspends the context; on return the theme does not autoplay: `prompt`
 //   becomes 'resume' and the next gesture resumes it.
 // - The theme is quiet by default (musicVolume 0.35) so footsteps and gathering cues sit on top.
-// - The theme ducks (v0.20): while a reason is set with duckMusic (a found song's short clip is
-//   playing) it keeps playing at DUCK.level of its volume, and swells back when the reason goes.
-// - A song's clip plays through this context too (clipVoice): the context was started by the
-//   player's own gesture, so the clip needs none of its own (a new <audio> element started with no
-//   tap is refused on phones), and Mute all silences it with everything else.
+// - (v0.20 played a found song's short clip through this context, over the ducked theme. v0.22: a
+//   found song plays whole, in place of the theme, through the song player's own element:
+//   ui/songplayer.js. The clip voice and the duck are gone.)
 // - One-shot effects (for the sound-effects step): loadEffect(name, url), then
 //   playEffect(name, { volume, rate }) plays through the effects bus.
 //
@@ -31,8 +29,6 @@ export const BLOCK_CHECK_MS = 900; // a resume still pending after this counts a
 export const MAX_EFFECT_VOICES = 8;
 const FADE_IN_S = 0.4;
 const FADE_OUT_S = 0.06; // short enough to feel immediate, long enough not to click
-// v0.20: the theme under a song's discovery clip: down to `level` of its volume in `downS`, back in `upS`
-export const DUCK = Object.freeze({ level: 0.18, downS: 0.25, upS: 0.8 });
 
 const unit = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d);
 export function sanitizeSettings(s) {
@@ -67,8 +63,7 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
   let hidden = false;
   let awaitingReturn = false; // came back from a hidden tab; the next gesture resumes
   const holds = new Set();
-  const ducks = new Set();
-  const musicLevel = () => settings.musicVolume * (ducks.size ? DUCK.level : 1);
+  const musicLevel = () => settings.musicVolume;
   // theme
   let musicBytes = null;
   let musicBuffer = null;
@@ -81,21 +76,6 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
   // effects
   const effects = new Map(); // name -> { buffer?, promise }
   let voices = 0;
-  // clips (v0.20): the last few decoded, by url
-  const clipBuffers = new Map();
-  const CLIPS_KEPT = 3;
-  function clipBuffer(url) {
-    if (!clipBuffers.has(url)) {
-      const p = Promise.resolve().then(() => load(url)).then((bytes) => {
-        if (!ctx) throw new Error('no audio context');
-        return decode(bytes);
-      });
-      p.catch(() => clipBuffers.delete(url)); // a failed one may be tried again
-      clipBuffers.set(url, p);
-      for (const k of clipBuffers.keys()) { if (clipBuffers.size <= CLIPS_KEPT) break; if (k !== url) clipBuffers.delete(k); }
-    }
-    return clipBuffers.get(url);
-  }
 
   const changed = () => onChange?.(api);
   const running = () => !!ctx && ctx.state === 'running';
@@ -259,10 +239,6 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     // Pause the theme at its position while any reason is held (e.g. 'menu').
     holdMusic(reason) { holds.add(reason); reconcile(); changed(); },
     releaseMusic(reason) { holds.delete(reason); reconcile(); changed(); },
-    // v0.20: keep the theme playing, quietly, while any reason is set (a song's clip over it)
-    duckMusic(reason) { ducks.add(reason); if (musicBus) ramp(musicBus.gain, musicLevel(), DUCK.downS); changed(); },
-    unduckMusic(reason) { if (!ducks.delete(reason)) return; if (musicBus) ramp(musicBus.gain, musicLevel(), DUCK.upS); changed(); },
-    get ducked() { return ducks.size > 0; },
     // Tab hidden: pause the theme and the audio thread. Visible again: wait for a gesture.
     setHidden(h) {
       h = !!h;
@@ -336,41 +312,6 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
       return true;
     },
     get effectVoices() { return voices; },
-
-    // ---------- a song's clip (v0.20, audio/clips.js) ----------
-    // Fetch and decode a clip ahead of its moment (the bird is still on its way with the egg).
-    primeClip(url) { if (running() && settings.soundEnabled) clipBuffer(url).catch(() => {}); },
-    // One clip as a voice with the few things clips.js asks of an <audio> element: play() (a
-    // promise, refused when the context is not running or Sound is off), pause(), `volume`, and
-    // the 'ended' event. It goes straight to the master gain, at the songs' own level.
-    clipVoice(url) {
-      const on = {};
-      let node = null; let gain = null; let over = false; let volume = 1;
-      return {
-        addEventListener(ev, fn) { on[ev] = fn; },
-        removeAttribute() {},
-        get volume() { return volume; },
-        set volume(v) { volume = unit(v, volume); if (gain) ramp(gain.gain, volume, 0.03); },
-        play() {
-          if (!running() || !settings.soundEnabled) return Promise.reject(new Error('audio is not running'));
-          return clipBuffer(url).then((buffer) => {
-            if (over) return;
-            node = ctx.createBufferSource();
-            node.buffer = buffer;
-            gain = ctx.createGain();
-            gain.gain.value = volume;
-            node.connect(gain);
-            gain.connect(master);
-            node.onended = () => { if (!over) { over = true; on.ended?.(); } try { gain.disconnect(); } catch { /* gone */ } };
-            node.start();
-          });
-        },
-        pause() {
-          over = true;
-          try { node?.stop(); } catch { /* not started, or already stopped */ }
-        },
-      };
-    },
   };
   return api;
 }

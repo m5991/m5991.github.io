@@ -1,5 +1,5 @@
 // The colour finale (spec v0.9 §5 and §10.9, P25-2): after the home (v0.15: H5) is saved, the play elements
-// hide (V9), the camera eases to the drawing, Vanessa settles at D17 with her hands on her hips,
+// hide (V9), the camera eases to the drawing, Vanessa settles at D17 with her hands in her pockets (v0.22),
 // anything still in outline takes its colour, the ground animates into grass from her feet, the
 // sky turns blue from the horizon and, last, the sun turns yellow; then a hold, inside the
 // approved 15 s. Skip lands on the coloured end state, and the world stays coloured afterwards
@@ -8,14 +8,16 @@
 // v0.13 (captain's v0.12 playtest: "Vanessa teleport to the position she should be, maybe we can
 // make her walk/run?"): she walks, or runs when it is far, from where she built the home to D17,
 // around the house, the tree, the bench, the bed and the tables, while the camera eases out; then
-// she turns to the viewer and puts her hands on her hips. Reduced motion and Skip still place her.
+// she turns to the viewer and puts her hands in her pockets. Reduced motion and Skip still place her.
 import { FINALE, FINALE_END, finaleState } from '../game/reveal.js';
 import { planWalk, walkAt, WALK } from './walk.js';
 
-// A29-10 (the captain at v0.13's approval: "even Vanessa position should change a bit to show her
-// ponytail sideways"): her final pose at D17 turns this far (radians) toward the screen's right,
-// so the ponytail falls to the left of her head as in the drawing; anchor and pose unchanged
-export const FINALE_YAW = 0.8;
+// Her final pose at D17. v0.13-v0.21 turned her 0.8 rad toward the screen's right, hands on her
+// hips (A29-10, so that the ponytail read sideways). v0.22 (Tiffany: "In the final cinematic show
+// her facing the front smiling like the picture instead with her hands in her pockets (see
+// drawing)"): she faces the viewer, as the drawing has her; the pose itself swings the ponytail out
+// to the side (hero.js showFinalePose, moments.js pocketPose).
+export const FINALE_YAW = 0;
 
 export class Finale {
   // world: World; hero: Hero; rig: CameraRig; at: () => Vector3, D17 on the ground;
@@ -71,7 +73,7 @@ export class Finale {
       this.settled = true;
       const p = this.centre;
       this.hero.place(p.x, p.z);
-      // A29-10: turned a little, so her ponytail reads sideways as in the drawing
+      // facing the viewer, as the drawing has her (v0.22)
       this.hero.yaw = FINALE_YAW; this.hero.yawTarget = FINALE_YAW; this.hero.view.rotation.y = FINALE_YAW;
       // the run's clips are still fading out: clear them, so the pose is exactly the drawing's
       this.hero.anim.mixer.stopAllAction();

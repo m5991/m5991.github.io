@@ -45,7 +45,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 .cell.wide .count { font-size: 17px; }
 @media (prefers-reduced-motion: reduce) { .cell.arrive, .cell.bump, #goal.nod { animation: none; } }
 #utility { display: contents; }
-#btn-pause { grid-column: 2 / 4; grid-row: 1; }
+/* v0.22: Extras stands where Pause stood once the farm is finished */
+#btn-pause, #btn-extras { grid-column: 2 / 4; grid-row: 1; }
+#btn-pause[hidden], #btn-extras[hidden] { display: none; }
+#btn-extras { background: var(--flower, #f6c61a); font-weight: 700; }
 #btn-sound { grid-column: 2; grid-row: 2; justify-content: center; }
 #btn-blueprint { grid-column: 3; grid-row: 2; justify-content: center; }
 #btn-sound { display: flex; align-items: center; gap: 6px; padding: 8px 12px 8px 10px; }
@@ -57,15 +60,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #btn-blueprint svg { width: 24px; height: 24px; display: block; flex: none; }
 #btn-blueprint .off, #btn-blueprint[aria-pressed="false"] .on { display: none; }
 #btn-blueprint[aria-pressed="false"] .off { display: inline; }
-#btn-blueprint[aria-pressed="true"], #btn-blueprint-pause[aria-pressed="true"] { background: #e6ecf5; }
-#btn-blueprint-pause { display: none; }
+#btn-blueprint[aria-pressed="true"] { background: #e6ecf5; }
 #audio-prompt { pointer-events: auto; margin-right: auto; align-self: flex-end; background: var(--paper); font-weight: 600; }
 #audio-prompt[hidden] { display: none; }
-#help-settings { width: min(320px, 100%); margin: 0; padding: 8px 16px 12px; border: 2px solid var(--ink); border-radius: 10px; display: grid; gap: 4px; text-align: left; }
-#help-settings legend { padding: 0 6px; font-weight: 600; }
-#help-settings label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
-#help-settings input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--navy); margin: 0; }
-#help-settings p { margin: 0; }
 #sound-settings { width: min(320px, 100%); margin: 0; padding: 8px 16px 12px; border: 2px solid var(--ink); border-radius: 10px; display: grid; gap: 4px; text-align: left; }
 #sound-settings legend { padding: 0 6px; font-weight: 600; }
 #sound-settings input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--navy); margin: 0; }
@@ -193,7 +190,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
   #goal { grid-column: 2; grid-row: 1; min-height: 44px; font-size: 14px; }
   #btn-sound { grid-column: 3; grid-row: 1; }
   #btn-blueprint { grid-column: 4; grid-row: 1; }
-  #btn-pause { grid-column: 5; grid-row: 1; }
+  #btn-pause, #btn-extras { grid-column: 5; grid-row: 1; }
   .cell { min-height: 44px; min-width: 38px; padding: 2px 5px; }
   .cell .icon svg { width: 20px; height: 20px; }
   .cell .count { font-size: 14px; }
@@ -207,12 +204,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
   #btn-blueprint .label, #btn-sound .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   #btn-blueprint, #btn-sound { padding: 8px 10px; }
 }
-/* ---------- narrow portrait (320 px): Blueprint moves into the Pause panel (spec §11.1) ---------- */
+/* ---------- narrow portrait (320 px): tighter counters (v0.22: Blueprint stays in the row; Pause only pauses) ---------- */
 @media (max-width: 360px) {
-  #btn-blueprint { display: none; }
-  #btn-blueprint-pause { display: block; }
-  #goal { grid-column: 1 / 3; }
-  #btn-sound { grid-column: 3; }
   .cell { min-width: 34px; padding: 3px 2px; }
   .cell .icon svg { width: 20px; height: 20px; }
 }
@@ -357,6 +350,7 @@ ol.songbook .song-lyric { margin: 4px 0 2px; font-size: 17px; }
 /* v0.20: its discovery clip is playing as the card opens */
 .song-taste { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-weight: 600; font-size: 14px; color: #8a5a10; }
 .song-taste[hidden] { display: none; }
+.song-actions.tap[hidden] { display: none; }
 .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
 .eq i { display: block; width: 3px; height: 100%; border-radius: 1px; background: currentColor; transform-origin: bottom; animation: eq 0.9s ease-in-out infinite; }
 .eq i:nth-child(2) { animation-delay: -0.3s; }
@@ -367,19 +361,6 @@ ol.songbook .song-lyric { margin: 4px 0 2px; font-size: 17px; }
 ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height: 44px; padding: 6px 12px; font-size: 15px; }
 /* v0.21 (audit 7): a song still to find: an egg in outline, a line of its lyrics as the clue,
    then its place, then its star */
-ol.songbook .song-row.missing .song-title { display: flex; align-items: center; gap: 6px; color: rgba(37, 51, 71, 0.75); }
-ol.songbook .song-row.missing .egg svg { width: 24px; height: 24px; display: block; }
-ol.songbook .song-row.missing .unknown { letter-spacing: 0.12em; }
-ol.songbook .clue-label { display: block; margin-top: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
-ol.songbook .song-row.missing .song-lyric { border-left-style: dashed; border-left-color: rgba(37, 51, 71, 0.4); }
-ol.songbook .clue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
-ol.songbook .clue-actions button { min-height: 44px; padding: 6px 14px; font-size: 15px; }
-ol.songbook .clue-actions button[data-act="show"] { background: var(--flower, #e6b83e); font-weight: 600; }
-ol.songbook .clue-actions button[data-act="show"][aria-pressed="true"] { background: var(--navy); color: var(--paper); border-color: var(--navy); }
-ol.songbook .clue-place { font-weight: 600; }
-dialog#card .show-all { display: flex; align-items: center; gap: 10px; min-height: 48px; margin-top: 8px; font-weight: 600; }
-dialog#card .show-all input { width: 22px; height: 22px; margin: 0; accent-color: var(--navy); }
-#pause .edition { margin: 0; font-size: 14px; }
 
 /* ---------- v0.16: what the archer says when he is hired ---------- */
 #speech { position: fixed; left: 0; top: 0; max-width: min(300px, calc(100vw - 32px)); padding: 9px 13px 10px; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 16px; font-size: 15px; line-height: 1.3; pointer-events: none; transform: translate(-50%, -100%); box-shadow: 0 3px 0 rgba(37, 51, 71, 0.22); z-index: 3; animation: note-in 0.2s ease-out; }
@@ -408,7 +389,6 @@ body.credits #evening, body.backdrop #evening, body.finale #evening, body.openin
 .keepsake-print .t { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 19px; font-weight: 700; }
 .keepsake-print .y { font-size: 14px; opacity: 0.7; }
 .keepsake-print q { display: block; font-size: 15px; font-style: italic; }
-#btn-keepsakes[hidden] { display: none; }
 
 /* ---------- v0.17b the song player bar: above the controls, while a found song plays ---------- */
 #now-playing { position: fixed; left: var(--edge); bottom: calc(var(--edge-b) + 104px); z-index: 4; display: flex; align-items: center; gap: 8px; width: min(360px, calc(100vw - var(--edge) - var(--edge-r))); padding: 6px 8px; background: rgba(255, 253, 247, 0.96); color: var(--ink); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
@@ -484,6 +464,30 @@ body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backd
   #credits .credits-card:has(.closing), #credits .credits-card:has(.title) { top: calc(var(--edge-t) + 50px); right: var(--edge-r); } /* the papers: full width, under the buttons as before */
 }
 
+/* ---------- v0.22 (Tiffany's notes): Pause only pauses; Extras at the end ---------- */
+#pause, #extras { z-index: 6; } /* over the song's bar, which belongs to the farm */
+#pause h2 { font-size: 30px; }
+#pause #btn-resume { min-height: 64px; font-size: 20px; }
+/* Extras: New farm first and plain to see (a bigger, tomato-red button with a sprout), then the rest */
+#extras { justify-content: safe center; }
+#extras h2 { font-size: 26px; }
+#extras button { min-height: 52px; font-size: 17px; }
+#extras button.new-farm { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 72px; margin-bottom: 8px; font-size: 22px; font-weight: 700; background: #d33a2c; color: #fffdf7; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 rgba(37, 51, 71, 0.55); }
+#extras button.new-farm svg { width: 30px; height: 30px; flex: none; }
+#extras button.new-farm:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(37, 51, 71, 0.55); }
+#extras #btn-extras-back { margin-top: 4px; }
+/* the end of the finale: watch the slideshow, or keep playing */
+#completed .paper-card button { width: 100%; min-height: 52px; font-size: 17px; }
+/* the credits card: what, and who */
+dl.credits-list { margin: 6px 0 10px; display: grid; gap: 8px; }
+dl.credits-list .credit { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 4px 14px; padding-bottom: 8px; border-bottom: 1px solid rgba(37, 51, 71, 0.2); }
+dl.credits-list dt { font-weight: 700; }
+dl.credits-list dd { margin: 0; }
+@media (max-width: 480px) { dl.credits-list .credit { grid-template-columns: 1fr; gap: 0; } }
+/* the drawing, to download: the whole sheet */
+.keepsake-print.drawing { transform: none; }
+.keepsake-print.drawing img { max-height: 56vh; }
+
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
    with no attribute nothing below applies. Cards, the pause screen and the save notice get a
@@ -531,7 +535,7 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) di
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card h2 { padding-right: 44px; background: var(--crop-paper); }
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card h2::after { content: ""; position: absolute; top: -13px; right: -14px; width: 44px; height: 44px; background: var(--crop-sprig) center / contain no-repeat; pointer-events: none; }
 /* the pause screen: the motifs sit in the screen corners, behind the column of controls */
-html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #pause {
+html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) :is(#pause, #extras) {
   background:
     var(--crop-cluster) right 0 bottom 0 / 112px 112px no-repeat,
     var(--crop-sprig) right 8px top 8px / 68px 68px no-repeat,
@@ -539,7 +543,7 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #p
     var(--crop-wash),
     var(--crop-veil);
 }
-html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #pause fieldset { background: var(--crop-veil); }
+html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) :is(#pause, #extras) fieldset { background: var(--crop-veil); }
 /* the save notice: a sprig in each top corner, either side of the centred heading */
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #title .paper-card {
   position: relative;
@@ -551,7 +555,7 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #t
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #title .paper-card::before { content: ""; position: absolute; left: 2px; top: 2px; width: 50px; height: 50px; background: var(--crop-sprig) center / contain no-repeat; transform: scaleX(-1); pointer-events: none; }
 /* phones: smaller motifs that hug the corners */
 @media (max-width: 480px) {
-html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) #pause { background-size: 80px 80px, 52px 52px, 30px 60px, auto, auto; }
+html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) :is(#pause, #extras) { background-size: 80px 80px, 52px 52px, 30px 60px, auto, auto; }
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card { background-size: 76px 76px, auto, auto; }
 }
 

@@ -24,6 +24,9 @@
 // { icon?, label, needs?: [[res, n]], now?: the need she is after now, tail?: a few words }. A
 // build is its short name and what is still missing, as icons and numbers; a step is an icon and
 // two or three words. `text` stays the whole sentence: it is what a screen reader hears.
+// v0.22 (Tiffany: 'Instead of "rake the corn" say "remove the weeds"'): the line for a weed over a
+// crop named the crop as the thing to rake ("Weeds! · rake the corn"). Every line about weeds now
+// says what is done to the weeds: "Remove the weeds" (the rake is the tool, named where it is fetched).
 import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, ROUTE, SALE_MIN, STAGES, STICK_SLOTS } from './data.js';
 import {
   available, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, plotWeeds,
@@ -110,13 +113,13 @@ function gather(l, label, r, n) {
 // spot that has nothing to pick. A planted one is growing (or under weeds); one that is not dug
 // yet wants the shovel, after its patch's weeds; a patch she has not opened says nothing.
 export function spotStatus(l, id) {
-  if (l.overgrown[id] !== null) return 'Weeds! Rake them before it wilts';
+  if (l.overgrown[id] !== null) return 'Weeds! Remove them before it wilts';
   if (l.nodes[id].dug) return 'Growing';
   const stage = NODES[id].stage;
   const weeds = plotWeeds(stage).filter((w) => !l.weeds[w]);
-  if (isCommitted(l, stage)) return weeds.length ? 'Rake its weeds, then dig it with the shovel' : l.tool === 'shovel' ? 'Stand still to dig it' : 'Dig it with the shovel';
+  if (isCommitted(l, stage)) return weeds.length ? 'Remove its weeds, then dig it with the shovel' : l.tool === 'shovel' ? 'Stand still to dig it' : 'Dig it with the shovel';
   // her free first crop: its patch is planted as soon as its weeds are raked
-  if (weeds.length && BASE_STAGES.includes(stage) && (!l.crop || isFirstCrop(l, stage))) return 'Rake the weeds here, then dig it with the shovel';
+  if (weeds.length && BASE_STAGES.includes(stage) && (!l.crop || isFirstCrop(l, stage))) return 'Remove the weeds here, then dig it with the shovel';
   return null;
 }
 
@@ -169,7 +172,7 @@ function cropSteps(l, id, label, come = false) {
   const where = isFirstCrop(l, id) ? null : (SHORT_LABEL[id] ?? STAGES[id].label).toLowerCase(); // a later patch is named, her first one is the only one
   if (weeds.length) {
     if (mustFetch(l, 'rake', come)) return { text: `${label} · Take the rake: it leans by the house`, target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
-    return { text: `${label} · Stand still beside the weeds to rake them`, target: weeds[0], line: { icon: 'weed', label: 'Rake the weeds', ...(where ? { tail: where } : {}) } };
+    return { text: `${label} · Stand still beside the weeds to remove them with the rake`, target: weeds[0], line: { icon: 'weed', label: 'Remove the weeds', ...(where ? { tail: where } : {}) } };
   }
   if (!isCommitted(l, id)) return null; // plant it (or DIY the bed) at its spot first (the caller)
   const spots = undug(l).filter((n) => NODES[n].stage === id);
@@ -231,17 +234,17 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   if (!l.crop) {
     if (mustFetch(l, 'rake', toolsCome)) return { text: 'Take the rake: it leans by the house', target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
     const choice = choiceTargets(l);
-    return { text: 'Choose your first crop: rake the weeds on the corn, the sunflowers or the tomato bed', target: choice[0]?.target ?? null, choice, line: { icon: 'weed', label: 'Choose a crop', tail: 'rake it' } };
+    return { text: 'Choose your first crop: remove the weeds on the corn, the sunflowers or the tomato bed with the rake', target: choice[0]?.target ?? null, choice, line: { icon: 'weed', label: 'Choose a crop', tail: 'remove its weeds' } };
   }
   // a weed over her crops, once it has grown to a clump: rake it before the plant under it wilts
   const over = regrowWeeds(l).filter((w) => l.activeMs - l.overgrown[w.slice(3)] >= REGROW.warnMs);
   if (over.length) {
     const node = over[0].slice(3);
     const what = PATCH_NAME[NODES[node].res];
-    const line = l.activeMs - l.overgrown[node] >= REGROW.growMs ? `Weeds are choking a ${RESOURCE_UNIT[NODES[node].res]} plant` : `Weeds in the ${what}: rake them before the plant wilts`;
+    const line = l.activeMs - l.overgrown[node] >= REGROW.growMs ? `Weeds are choking a ${RESOURCE_UNIT[NODES[node].res]} plant` : `Weeds in the ${what}: remove them before the plant wilts`;
     const choking = l.activeMs - l.overgrown[node] >= REGROW.growMs;
     if (mustFetch(l, 'rake', toolsCome)) return { text: `${line} · Take the rake by the house`, target: 'tools', tool: 'rake', weed: true, line: { icon: 'rake', label: 'Take the rake', tail: `${what} weeds` } };
-    return { text: line, target: over[0], weed: true, line: { icon: 'weed', label: choking ? 'Wilting soon!' : 'Weeds!', tail: `rake the ${what}` } };
+    return { text: line, target: over[0], weed: true, line: { icon: 'weed', label: 'Remove the weeds', tail: choking ? `${what}: wilting soon!` : `in the ${what}` } };
   }
   const first = firstStage(l);
   const firstLabel = cap(PATCH_NAME[l.crop]);

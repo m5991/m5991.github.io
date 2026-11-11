@@ -263,10 +263,13 @@ export function standMarker() {
 // drawn between the two, so only their rim shows. Built transparent from the start: fading later
 // changes a uniform only, never a shader, so it cannot hitch.
 const depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true });
-export function fadeable(root) {
+// `fades(mesh)` (v0.22): which of its meshes fade; the others stay solid and hide nothing from the
+// occlusion test (the tree's trunk and branches: only its leaves give way, so she can be seen to
+// hug the trunk).
+export function fadeable(root, fades = () => true) {
   const colour = [];
   const hulls = [];
-  root.traverse((m) => { if (m.isMesh) (m.userData.outline ? hulls : colour).push(m); });
+  root.traverse((m) => { if (m.isMesh && fades(m.userData.outline ? m.parent : m)) (m.userData.outline ? hulls : colour).push(m); });
   for (const m of colour) {
     m.material = m.material.clone();
     m.material.transparent = true;
@@ -356,6 +359,7 @@ export function elfArcher() { return shadows(addOutline(P.elfArcher(), 0.014)); 
 export function warningArrow() { return shadows(addOutline(P.warningArrow(), 0.008)); }
 export function benchStain() { return P.benchStain(); }
 export function keepsake(kind) { return shadows(addOutline(P.keepsake(kind), 0.008)); }
+export function crumpledSketch() { return shadows(addOutline(P.crumpledSketch(), 0.01)); }
 export function buyer(look) { return shadows(addOutline(P.buyer(look), 0.014)); }
 export function dustPuff(seed) { const g = addOutline(P.dustPuff(seed), 0.012); g.traverse((m) => { if (m.isMesh) m.castShadow = false; }); return g; }
 // Carried-stack unit meshes (W log, R stone, C cob, S sunflower head, T tomato, coins), the same

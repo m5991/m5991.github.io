@@ -18,8 +18,10 @@ export function createSaveData() {
     // v0.17: creditsSeen (spec §5.1), set when the end credits have played once
     // v0.20: finishedAt, the active ms when the home was built (null before; the finished farm's
     // evening runs from it), and dwightDeterred, the birds Dwight has sent off (the completed menu)
-    // v0.21: hunt, what the player asked the songbook for in the egg hunt (songs.js huntPrefs)
-    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0, hunt: { where: {}, track: null, showAll: false } },
+    // (v0.21 kept `hunt`, what the player asked the songbook for; v0.22 has no clues to ask for,
+    // and a save that still carries it is read as it is and the field left alone)
+    // v0.22: creditsSeen now means the end's slideshow choice has been offered once
+    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0 },
     vanessa: { x: null, z: null }, // validated position; null = start position
     // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
     // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)
@@ -293,10 +295,11 @@ function probeStorage(storage) {
   }
 }
 
-// v0.16: the kids edition keeps its own farm (`edition` 'kids'), apart from the full one's
-export const keysFor = (edition = 'full') => (edition === 'kids' ? { key: `${KEY}/kids`, backup: `${BACKUP_KEY}/kids` } : { key: KEY, backup: BACKUP_KEY });
-export function createSaveManager(storage = globalThis.localStorage, { edition = 'full' } = {}) {
-  const { key: KEY, backup: BACKUP_KEY } = keysFor(edition);
+// v0.16-v0.21 had a kids edition with its own farm, under these keys. v0.22 is one game (Tiffany's
+// one song list; the captain: "there will only be one version"): a device that only ever played the
+// kids edition gets that farm in the one game (`load` adopts it when there is no other save).
+export const KIDS_KEYS = { key: `${KEY}/kids`, backup: `${BACKUP_KEY}/kids` };
+export function createSaveManager(storage = globalThis.localStorage) {
   let sessionOnly = !storage || !probeStorage(storage);
   let memory = null; // session-only copy
   let lastWriteError = null;
@@ -324,7 +327,15 @@ export function createSaveManager(storage = globalThis.localStorage, { edition =
     load() {
       if (sessionOnly) return memory ? { status: 'ok', data: structuredClone(memory) } : { status: 'none' };
       const primary = parse(read(KEY));
-      if (primary.status === 'ok' || primary.status === 'none' || primary.status === 'newer') return primary;
+      if (primary.status === 'none') {
+        // no farm of the one game yet: the kids edition's farm, if this device has one
+        const kids = parse(read(KIDS_KEYS.key));
+        if (kids.status === 'ok') return { ...kids, adopted: 'kids' };
+        const kidsBackup = kids.status === 'corrupt' ? parse(read(KIDS_KEYS.backup)) : null;
+        if (kidsBackup?.status === 'ok') return { ...kidsBackup, adopted: 'kids' };
+        return primary;
+      }
+      if (primary.status === 'ok' || primary.status === 'newer') return primary;
       const backup = parse(read(BACKUP_KEY));
       return { ...primary, backup: backup.status === 'ok' ? backup.data : null };
     },
@@ -352,7 +363,7 @@ export function createSaveManager(storage = globalThis.localStorage, { edition =
       const fresh = createSaveData();
       if (keepSettings) fresh.settings = structuredClone(keepSettings);
       if (!sessionOnly) {
-        try { storage.removeItem(KEY); storage.removeItem(BACKUP_KEY); } catch { /* storage gone */ }
+        try { for (const k of [KEY, BACKUP_KEY, KIDS_KEYS.key, KIDS_KEYS.backup]) storage.removeItem(k); } catch { /* storage gone */ }
       }
       memory = null;
       return fresh;

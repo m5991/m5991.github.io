@@ -1,10 +1,13 @@
 // The opening's page (spec v0.10 §4.1; game/opening.js, world/opening.js): paper filling the
-// view, seen from straight above, with the redrawn drawing on it and the title pencilled
-// beside it (above it on portrait screens), a pencilled tap mark (`Start`) and a Sound toggle in
-// opposite corners. The drawing is a still of the live world, drawn in ink through the drawing's
-// own framing and copied once (and again on a resize), so when the camera has sunk until the
-// drawing fills its frame (fitRect) the page can give way to the live world, which shows exactly
-// the same picture there. Sinking straight down toward a flat sheet is a pure zoom, so the
+// view, seen from straight above, with the drawing on it and the title pencilled beside it
+// (above it on portrait screens), a pencilled tap mark (`Start`) and a Sound toggle in opposite
+// corners.
+// v0.22 (Tiffany: "Change the opening to the actual farm drawing"): the drawing on the page is
+// Vanessa's own drawing (assets/reference/drawing.jpg), its pen lines lifted off their white
+// paper onto the page's paper (`inkOnPaper`). v0.10-v0.21 showed the game's redrawing of it, a
+// still of the live world in ink. The drawing lies in the drawing's own frame (fitRect, where the
+// live world is fitted to it), so when the camera has sunk until it fills that frame the page
+// gives way to the live world drawn in ink over the same lines, which then takes its colour. Sinking straight down toward a flat sheet is a pure zoom, so the
 // camera over the page is a CSS transform and nothing 3D is drawn while the page covers the
 // screen. The title is positioned on screen by script: with the page while it sinks, then with
 // the world as the camera eases down, so it slides out of frame. The title's lettering itself
@@ -12,6 +15,27 @@
 import { drawingFrame } from '../world/framing.js';
 
 const MAX_START_SCALE = 0.7; // at least this much of a sink, even where the page would fit larger
+export const DRAWING_SRC = 'assets/reference/drawing.jpg';
+// the drawing's pen (a dark blue-violet ballpoint), and the paper white that becomes clear
+export const PEN = { rgb: [30, 26, 78], white: 246, range: 150 };
+// A photo of pen on white paper -> the pen alone: each pixel becomes the pen's colour with an
+// alpha from how dark it is (white and near-white: clear), so the lines sit on the page's own
+// paper with no white rectangle round them. `px`: RGBA bytes, changed in place.
+export function inkOnPaper(px) {
+  const [r, g, b] = PEN.rgb;
+  for (let i = 0; i < px.length; i += 4) {
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    const a = Math.max(0, Math.min(1, (PEN.white - lum) / PEN.range));
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = Math.round(255 * a * (px[i + 3] / 255));
+  }
+  return px;
+}
+// the part of the drawing's picture (nw x nh px) that the sheet shows: `rect` (the sheet) within
+// `comp` (where the whole drawing lands); on an upright screen that is its middle (v0.21)
+export function drawingCrop(L, nw, nh) {
+  const r = L.rect; const c = L.comp;
+  return { sx: ((r.x - c.x) / c.w) * nw, sy: ((r.y - c.y) / c.h) * nh, sw: (r.w / c.w) * nw, sh: (r.h / c.h) * nh };
+}
 
 // The page in CSS px for a viewport, in page coordinates where the drawing's frame at the end of
 // the sink is fitRect itself: portrait-like screens pencil the title on one line above the
@@ -58,7 +82,8 @@ export function toScreen(vw, vh, cam, x, y) {
 }
 const css = (vw, vh, cam) => `translate(${(vw / 2).toFixed(2)}px, ${(vh / 2).toFixed(2)}px) scale(${cam.s.toFixed(5)}) translate(${(-cam.cx).toFixed(2)}px, ${(-cam.cy).toFixed(2)}px)`;
 
-export function createPaper(root) {
+// `loadImage(src, onload)` -> an image element (injected for tests); `dpr`: device px per CSS px
+export function createPaper(root, { loadImage = (src, onload) => { const im = new Image(); im.decoding = 'async'; im.onload = onload; im.src = src; return im; }, dpr = () => Math.min(2, globalThis.devicePixelRatio || 1) } = {}) {
   const sheet = root.querySelector('.sheet');
   const drawing = root.querySelector('canvas.drawing');
   const title = root.querySelector('#opening-title');
@@ -69,6 +94,8 @@ export function createPaper(root) {
   let vw = 1; let vh = 1;
   let dive = 0;
   let fadeTimer = 0;
+  // the drawing itself: painted onto the sheet once it has loaded and the page is laid out
+  const art = loadImage(DRAWING_SRC, () => api.paint());
   const api = {
     needsCapture: true,
     captured: false,
@@ -110,36 +137,35 @@ export function createPaper(root) {
       title.classList.toggle('stacked', t.lines === 2);
       root.classList.add('laid');
       api.needsCapture = true;
+      api.paint(); // the drawing, for the new sheet (once its picture has loaded)
       api.setDive(dive);
     },
-    // copy the drawing out of the frame just rendered (call right after renderer.render, in the
-    // same task, so the WebGL buffer is still there); its edges fade into the page's paper
-    capture(glCanvas, dpr) {
-      if (!L) return;
+    // Paint the drawing onto the sheet: the part of it the sheet shows, its pen lines on clear
+    // (inkOnPaper). Called when the picture has loaded and whenever the page is laid out again.
+    // -> true when it is on the page (`needsCapture` then false: main.js stops drawing the world
+    // under the page)
+    paint() {
+      if (!L || !art || !(art.naturalWidth > 0)) return false;
       const r = L.rect;
-      const w = Math.max(1, Math.round(r.w * dpr));
-      const h = Math.max(1, Math.round(r.h * dpr));
+      const k = dpr();
+      const w = Math.max(1, Math.round(r.w * k));
+      const h = Math.max(1, Math.round(r.h * k));
       if (drawing.width !== w || drawing.height !== h) { drawing.width = w; drawing.height = h; }
-      const g = drawing.getContext('2d');
+      const g = drawing.getContext('2d', { willReadFrequently: true });
+      const c = drawingCrop(L, art.naturalWidth, art.naturalHeight);
       g.globalCompositeOperation = 'copy';
-      g.drawImage(glCanvas, Math.round(r.x * dpr), Math.round(r.y * dpr), w, h, 0, 0, w, h);
-      g.globalCompositeOperation = 'destination-out';
-      const f = Math.round(Math.min(w, h) * 0.06);
-      const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => {
-        const gr = g.createLinearGradient(x0, y0, x1, y1);
-        gr.addColorStop(0, 'rgba(0,0,0,1)');
-        gr.addColorStop(1, 'rgba(0,0,0,0)');
-        g.fillStyle = gr;
-        g.fillRect(rx, ry, rw, rh);
-      };
-      edge(0, 0, f, 0, 0, 0, f, h);
-      edge(w, 0, w - f, 0, w - f, 0, f, h);
-      edge(0, 0, 0, f, 0, 0, w, f);
-      edge(0, h, 0, h - f, 0, h - f, w, f);
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(art, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
       g.globalCompositeOperation = 'source-over';
+      try {
+        const img = g.getImageData(0, 0, w, h);
+        inkOnPaper(img.data);
+        g.putImageData(img, 0, 0);
+      } catch { drawing.style.mixBlendMode = 'multiply'; } // pixels not readable here: the white multiplies into the paper
       api.needsCapture = false;
       api.captured = true;
       root.classList.add('ready');
+      return true;
     },
     // a skip from the live part: the frame on screen now, held over the end state while it fades
     captureView(glCanvas) {

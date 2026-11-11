@@ -2,7 +2,7 @@
 // (audio.js): the Blueprint toggle (P25-3) is a setting, not progress, so it survives a reload,
 // a New game and a progress reset. On by default, so a new player sees where things go.
 // `openingSeen`: the opening (game/opening.js) has played once on this device, so later
-// launches go straight to play; Pause → Help replays it. src/ui/opening-title.js reads the same
+// launches go straight to play (v0.22: `?opening=1` on the address shows it again). src/ui/opening-title.js reads the same
 // key before the game loads, to paint the paper or not.
 export const PREFS_KEY = 'vanessas-farm/view';
 export const DEFAULT_PREFS = Object.freeze({ blueprint: true, openingSeen: false });

@@ -19,7 +19,7 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
-import { actionPose, stepUpHeight } from './moments.js';
+import { actionPose, pocketPose, stepUpHeight } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
@@ -53,12 +53,12 @@ export class Hero {
     a.defineAction('walk', ['walk']);
     a.defineAction('run', ['run']);
     a.addClip({ name: 'celebrate', clip: registry.clip('V_Celebrate') });
-    a.addClip({ name: 'finale', clip: registry.clip('V_Finale') });
     a.clips.celebrate.setLoop(THREE.LoopOnce, 1);
     a.clips.celebrate.clampWhenFinished = true;
     a.defineAction('gather', ['idleLegs', 'gatherUpper']);
     a.defineAction('celebrate', ['celebrate']);
-    a.defineAction('finale', ['finale']);
+    // (the model's V_Finale clip, hands on hips, is not used since v0.22: the drawing's pose is
+    // hands in her pockets, laid over her idle stance: showFinalePose, moments.js pocketPose)
     // the stack rides on her head, so her arms stay free: no carry pose
     a.play('idle', 0);
     this.celebrateMs = 0; // a stage commit's cheer, feet planted (spec §10.2), while she stands
@@ -167,9 +167,12 @@ export class Hero {
     this.poseSaved.push([bone, bone.quaternion.clone()]);
     bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
   }
-  startMoment(kind, { ms, seat, route, yaw } = {}) {
+  // v0.17c a spot's moment; v0.22: one for every song spot (moments.js). `seat` and `yaw`: the
+  // bench; `route`: the chimney climb (there and back) or the stepping stones (one way: she ends
+  // on the last one); `to`: the act's own place a step away (the tree's trunk, the window).
+  startMoment(kind, { ms, seat, route, yaw, to } = {}) {
     this.restorePose();
-    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw };
+    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to };
     this.celebrateMs = 0;
     if (kind === 'clean' && !this.cloth) {
       this.cloth = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.16), new THREE.MeshLambertMaterial({ color: 0xfff4d6 }));
@@ -177,15 +180,44 @@ export class Hero {
       this.view.getObjectByName('Hand_R_Tool')?.add(this.cloth);
     }
   }
-  cancelMoment() { this.moment = null; if (this.cloth) this.cloth.visible = false; this.restorePose(); }
+  cancelMoment() {
+    this.moment = null;
+    this.momentSmile = 0;
+    if (this.cloth) this.cloth.visible = false;
+    for (const p of Object.values(this.props ?? {})) p.visible = false;
+    this.view.rotation.z = 0;
+    this.restorePose();
+  }
+  // What she holds in a moment: the sheet with her drawing on it (held up over her head, or as
+  // the pad she sketches on) and the crumpled sketch she picks up. Made on first use.
+  momentProps() {
+    if (this.props) return this.props;
+    const paper = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    this.drawingTexture?.(paper); // main.js: the drawing itself on the sheet, once it has loaded
+    const edge = new THREE.MeshBasicMaterial({ color: 0x253347, side: THREE.DoubleSide });
+    const sheet = new THREE.Group(); sheet.name = 'MomentSheet';
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.4), paper); face.position.z = 0.003;
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(0.53, 0.43), edge);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.4), new THREE.MeshBasicMaterial({ color: 0xfffaf0, side: THREE.DoubleSide })); back.position.z = -0.003; // plain paper behind
+    sheet.add(border, face, back);
+    const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 0), new THREE.MeshLambertMaterial({ color: 0xfffaf0, flatShading: true }));
+    ball.name = 'MomentSketchBall';
+    for (const o of [sheet, ball]) { o.visible = false; o.traverse((x) => { x.userData.noOutline = true; x.userData.noFit = true; }); }
+    this.view.add(sheet);
+    (this.view.getObjectByName('Hand_R_Tool') ?? this.view).add(ball);
+    this.props = { sheet, ball };
+    return this.props;
+  }
   updateMoment(dtMs) {
     const m = this.moment;
     if (this.cloth) this.cloth.visible = m?.kind === 'clean';
     if (!m) return;
     if (this.moving) { this.cancelMoment(); return; }
     m.t = Math.min(m.ms, m.t + dtMs);
-    const q = actionPose(m.kind, m.t / m.ms, this.reducedMotion());
+    const still = this.reducedMotion();
+    const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5 });
     for (const [name, angles] of Object.entries(q.bones)) this.poseBone(name, ...angles);
+    this.momentSmile = q.smile;
     if (m.kind === 'bench' && m.seat) {
       const at = m.seat.clone(); at.y -= 0.86;
       this.position.copy(m.from).lerp(at, q.blend);
@@ -197,9 +229,32 @@ export class Hero {
       this.position.copy(points[i]).lerp(points[i + 1], at - i);
       const d = points[i + 1].clone().sub(points[i]);
       this.view.rotation.y = Math.atan2(d.x, d.z);
+    } else if (m.kind === 'hop' && m.route?.length > 1) {
+      // from stone to stone along the line; she ends on the last one
+      const at = q.travel * (m.route.length - 1);
+      const i = Math.min(m.route.length - 2, Math.floor(at));
+      this.position.copy(m.route[i]).lerp(m.route[i + 1], at - i);
+      this.position.y = (this.groundY ?? 0) + q.lift;
+      const d = m.route[i + 1].clone().sub(m.route[i]);
+      this.yaw = Math.atan2(d.x, d.z); this.yawTarget = this.yaw;
+      this.view.rotation.y = this.yaw;
+      this.body.position.x = this.position.x; this.body.position.z = this.position.z;
     } else if (m.kind === 'clean' && m.seat) {
       this.view.rotation.y = Math.atan2(m.seat.x - this.body.position.x, m.seat.z - this.body.position.z);
       this.position.y -= 0.1 * q.blend;
+    } else {
+      if (m.to && q.to > 0) { this.position.x = m.from.x + (m.to.x - m.from.x) * q.to; this.position.z = m.from.z + (m.to.z - m.from.z) * q.to; }
+      this.position.y = (this.groundY ?? 0) + q.lift;
+      this.view.rotation.y = this.yaw + q.spin;
+      this.view.rotation.z = q.roll;
+    }
+    // what she holds
+    if (['show', 'sketch', 'pickup'].includes(m.kind)) {
+      const { sheet, ball } = this.momentProps();
+      sheet.visible = m.kind !== 'pickup' && q.prop > 0.25;
+      ball.visible = m.kind === 'pickup' && m.t / m.ms > 0.36 && q.prop > 0.2;
+      if (m.kind === 'show') { sheet.position.set(0, 1.3, 0.56); sheet.rotation.set(-0.1, 0, 0); sheet.scale.setScalar(1.25 * (0.4 + 0.6 * q.prop)); }
+      if (m.kind === 'sketch') { sheet.position.set(0.02, 1.12, 0.36); sheet.rotation.set(-1.0, 0, 0.12); sheet.scale.setScalar(0.62 * (0.4 + 0.6 * q.prop)); }
     }
     if (m.t >= m.ms) this.cancelMoment();
   }
@@ -215,7 +270,7 @@ export class Hero {
       blink = f.blinkT < 75 ? f.blinkT / 75 : Math.max(0, 1 - (f.blinkT - 75) / 75);
       if (f.blinkT > 150) f.blinkT = -1;
     }
-    let smile = focused ? 0 : 0.15;
+    let smile = Math.max(focused ? 0 : 0.15, this.momentSmile ?? 0); // a moment's own smile (v0.22)
     if (f.smileMs > 0) {
       f.smileT += dtMs;
       const k = f.smileT / f.smileMs;
@@ -234,13 +289,26 @@ export class Hero {
     this.celebrateMs = this.anim.clips.celebrate.getClip().duration * 1000;
   }
 
-  // the drawing's pose for the finale camera (D17, spec §5, V9): hands on hips, nothing on her
-  // head; applied at once, because the world is paused in the whole-farm view
+  // The drawing's pose for the finale camera (D17, spec §5, V9), nothing on her head; applied at
+  // once, because the world is paused in the whole-farm view. v0.22 (Tiffany: "show her facing the
+  // front smiling like the picture instead with her hands in her pockets (see drawing)"): her idle
+  // stance with her hands in her hip pockets, elbows out, her ponytail out to the side, and a
+  // smile (it was the hands-on-hips clip, turned to one side).
   showFinalePose(on) {
     this.stack.root.visible = !on;
-    this.anim.play(on ? 'finale' : 'idle', 0);
+    this.cancelMoment();
+    this.anim.play('idle', 0);
     this.anim.update(1 / 60);
-    if (on) this.view.updateMatrixWorld(true);
+    this.restorePose();
+    for (const h of this.heads) {
+      h.morphTargetInfluences[h.morphTargetDictionary.blink] = 0;
+      h.morphTargetInfluences[h.morphTargetDictionary.smile] = on ? 1 : 0.15;
+    }
+    if (on) {
+      for (const [name, angles] of Object.entries(pocketPose(1))) this.poseBone(name, ...angles);
+      this.view.rotation.z = 0;
+      this.view.updateMatrixWorld(true);
+    }
   }
 
   // carried counts from the ledger: the stack reconciles to them (no flights)

@@ -5,37 +5,39 @@
 // v0.16 (captain's notes on the v0.15 build, 2026-11-04):
 // - "Collecting the easter eggs should be the second phase of the game, after the picture is
 //   completed and all of the colour is filled in": the hunt opens once the home (H5) is built and
-//   the finale has coloured the drawing (`eggPhase`), in Keep exploring. Each egg is one song.
+//   the finale has coloured the drawing (`eggPhase`). Each egg is one song.
 // - "When you get an easter egg, a bird flies by and drops an egg": every song comes as an egg a
 //   bird drops near Vanessa; she picks it up and the song is hers (main.js, world.js).
-// - "Two versions at the end of the game ... one for kids with only a selection of the songs ...
-//   the kids are not going to have the Suno link, only listening inside the game. In both versions
-//   you can download the mp3": the edition is 'full' or 'kids' (`EDITIONS`); `sunoLink` gives no
-//   link in the kids edition, and every found song can be heard in the game and downloaded as an
-//   MP3 (`mp3Path`, made locally by tools/make-songs.mjs).
 // v0.17c: at a spot with a song, a button names a small thing to do there (`act.verb`); Vanessa
 // does it (`act.ms`), an ink word pops up (`act.word`), the farm answers (world.js spotPoke), and
 // then the bird brings the egg.
 //
-// v0.20 (captain 2026-11-10: "We have the list of songs ... We should use the titles Tiffany uses
-// in the google drive for the songs"; Tiffany's lists become the whole song set: "Yes that's what
-// needs to be done"): Tiffany's two Google Drive lists, one song per farm object, are the song set.
-// The full edition has exactly the 12 songs of her "Adult farm songs" and the kids edition exactly
-// the 11 of her "Kid's farm songs" (`LISTS`, in her order). Each song is shown by her label for it,
-// exactly as she wrote it (`songTitle`: "Smoke" for the kids' chimney song, "Chimney" for the
-// adults'), and waits at its object's spot on the farm (`songSpot`). The other recordings stay in
-// the archive below (`SONGS`, so an older save's discoveries still read) but are out of play: no
-// star, no card, no count. The money song (E21) is one of them, so no song comes from the purse
-// any more; `songsDue` still brings any song given `coins`, should a list name one again.
+// v0.22 (Tiffany's notes "Changes to game" and her doc "Kid's farm songs", 2026-11-11; the captain:
+// "there will only be one version that includes all 22 songs", "let's take the titles, she says,
+// in the document"):
+// - One game, one song set. The full and kids editions of v0.16-v0.21 are gone. The set is the 22
+//   songs of her doc, in her order, each under her title exactly as she wrote it (her place hints
+//   in brackets, "(About the bench)", are not part of the title: they place the song), then the
+//   two songs she added from another Suno account: 24 in all (`SONG_LIST`).
+// - Every song waits at its own spot on the farm (`SPOTS`: 24 spots, one song each), the thing its
+//   title or its words are about. A spot with a song left shows a yellow circle and a star ("The
+//   circles should be the actions that you perform to get the Easter egg song"), from anywhere:
+//   v0.21's hidden stars, its songbook clues and "Show all" are gone ("The keepsakes and the songs
+//   should appear little by little as you collect"), and the songbook lists only what is found.
+// - "Make sure she does everything it says to do, 'hop the stepping stones' etc": every act's
+//   words name something Vanessa visibly does (world/moments.js has the pose and the motion of
+//   each `act.kind`; test/v022.test.mjs holds the two together).
+// - A found song starts by itself as its egg cracks, at the first second of its preview (the
+//   captain's crop of it, `previewStart`), and plays on to its end (ui/songplayer.js).
+// The archive's other recordings stay below (`SONGS`, so an older save's discoveries still read)
+// but are out of play: no star, no card, no count.
 //
 // E## is the playlist's track ##, identified by its recording id (the Suno song id). `title` is
-// the recording's own title in the October archive, kept only to tell the files apart.
+// the recording's own title in the archive, kept only to tell the files apart. E34 and E35 are the
+// two recordings added on 2026-11-11.
 import { mainComplete } from './ledger.js';
 
-export const E21_COINS = 80;
-export const EDITIONS = ['full', 'kids'];
-
-const S = (n, title, uuid) => ({ n, title, suno: `https://suno.com/song/${uuid}` });
+const S = (n, title, uuid, shared = true) => ({ n, title, suno: shared ? `https://suno.com/song/${uuid}` : null, uuid });
 export const SONGS = {
   E01: S(1, 'I gave it to the world', '7936e058-846b-4016-9cbc-3ffe8ea5efd6'),
   E02: S(2, 'Heat down low', '2f4bb9ea-02f8-4b47-a1fb-4ab549c2817f'),
@@ -70,237 +72,182 @@ export const SONGS = {
   E31: S(31, 'Pockets Full of Treasures', '5104f147-0c10-4e3a-acde-73bf318b13c3'),
   E32: S(32, 'Pockets Full of Treasures', 'e6d38364-0b9e-4585-9434-c754d7268768'),
   E33: S(33, 'Pockets Full of Treasures', '00d5c9f3-a38d-4d23-8b6d-6f3856c884bc'),
+  // the two recordings from the other Suno account (2026-11-11). Their Suno pages are not public
+  // (the song page answers "not found"), so they carry no Suno link.
+  E34: S(34, 'Outdrawing all our dreams', 'ae7f9849-12ee-4813-8717-7041f327fe4b', false),
+  E35: S(35, 'Vanessa in her flip flops', '098bc09e-7320-4a66-b307-0a8f529cdad9', false),
 };
-// the money song's trigger, kept with its recording (out of play since v0.20: see above)
-SONGS.E21.coins = E21_COINS;
 export const SONG_IDS = Object.keys(SONGS);
 
-// Tiffany's lists, in her order: [her label, exactly as written; the recording; its spot on the farm]
-// (Google Docs "Adult farm songs" and "Kid's farm songs", fetched 2026-11-10; each line there is a
-// label and a Suno link, matched to a recording here by its Suno id)
-const LISTS = {
-  full: [
-    ['Tree', 'E05', 'tree'],
-    ['Bench', 'E17', 'bench'],
-    ['Pebble and Stepping Stone', 'E08', 'stones'],
-    ['Birds', 'E15', 'birds'],
-    ['House', 'E12', 'door'],
-    ['Chimney', 'E04', 'chimney'],
-    ['Corn', 'E14', 'corn'],
-    ['Weed', 'E03', 'weeds'],
-    ['Who knows plant', 'E25', 'bed'],
-    ['Sunflower', 'E07', 'sunflowers'],
-    ['Sun', 'E11', 'sun'],
-    ['Rake and Shovel', 'E09', 'tools'],
-  ],
-  kids: [
-    ['Sunflower', 'E07', 'sunflowers'],
-    ['Sun', 'E11', 'sun'],
-    ['Rake and Shovel', 'E13', 'tools'],
-    ['Bench', 'E27', 'bench'],
-    ['Smoke', 'E02', 'chimney'],
-    ['Weeds', 'E06', 'weeds'],
-    ['Tree', 'E05', 'tree'],
-    ['Corn', 'E28', 'corn'],
-    ['Pebble and Stepping stone', 'E08', 'stones'],
-    ['House', 'E12', 'door'],
-    ['Birds', 'E15', 'birds'],
-  ],
-};
-const listOf = (edition) => LISTS[edition === 'kids' ? 'kids' : 'full'];
-const entry = (id, edition) => listOf(edition).find((x) => x[1] === id) ?? LISTS.full.find((x) => x[1] === id) ?? LISTS.kids.find((x) => x[1] === id) ?? null;
-export const EDITION_SONGS = { full: LISTS.full.map((x) => x[1]), kids: LISTS.kids.map((x) => x[1]) };
-export const KIDS_SONGS = EDITION_SONGS.kids;
-// the recordings in either list (17), and the archive's others, which are out of play
-export const LISTED_SONGS = SONG_IDS.filter((id) => EDITION_SONGS.full.includes(id) || EDITION_SONGS.kids.includes(id));
-export const UNLISTED_SONGS = SONG_IDS.filter((id) => !LISTED_SONGS.includes(id));
+// Tiffany's list, in her order: [her title, exactly as written; the recording; its spot on the
+// farm; the first second of its preview]. Her doc "Kid's farm songs" (the Drive folder "New farm",
+// copied 2026-11-11) gives each song as a title and a Suno link, matched to a recording here by
+// its Suno id. Four of her titles carry a place hint in brackets, which fixes the spot: (About the
+// bench) Stay in the Shade, (Near a weed) Weeds Elite, (About the corn) Corny, (About the sun) Tu
+// Kaafi Zyaada Yellow Hai. Two of her links are recordings the archive holds under another title:
+// "Stay in the Shade" is the recording archived as "Benched" (E27), "And She Goes By Vanessa" the
+// one archived as "Demon Hunter (Vanessa's Song)" (E29). The last two are the songs she added as
+// files, named as her files are.
+// The preview's start is the start of the captain's crop of the song (source/songs/crops/Kaji
+// Crops, `NN - title start-end`); the two new songs have no crop, and start where their first
+// chorus comes in.
+const LIST = [
+  ['Sunflower Squad', 'E07', 'sunflowers', 30.3],
+  ['Insecure Sun', 'E11', 'sun', 48.5],
+  ['Rake to Shovel', 'E13', 'tools', 65.2],
+  ['Stay in the Shade', 'E27', 'bench', 44.5],
+  ['The Chimney', 'E02', 'chimney', 40.3],
+  ['Weeds Elite', 'E06', 'weeds', 41.7],
+  ['Tree and Bench', 'E05', 'tree', 59.5],
+  ['Corny', 'E28', 'corn', 34.8],
+  ['Pebble and Stepping Stone', 'E08', 'stones', 28.9],
+  ['The House', 'E12', 'door', 74.1],
+  ['Let the Birds Debate', 'E15', 'birds', 0.6],
+  ['I gave it to the world', 'E01', 'world', 52.7],
+  ['Cornstalk and Sunflower', 'E14', 'between', 73.5],
+  ['Pockets', 'E16', 'table', 0],
+  ['Tu Kaafi Zyaada Yellow Hai', 'E18', 'glare', 59.2],
+  ['Put it on Paper', 'E19', 'paper', 37.5],
+  ['Home Sweet Home', 'E20', 'window', 80.1],
+  ['One Day She’ll Be Rich', 'E21', 'path', 41.1],
+  ['Luckiest Man Alive', 'E22', 'field', 30.6],
+  ['Don’t You Worry', 'E23', 'sketch', 74.0],
+  ['Who Knows', 'E25', 'bed', 28.1],
+  ['And She Goes By Vanessa', 'E29', 'pose', 0],
+  ['Outdrawing all our dreams', 'E34', 'easel', 41.0],
+  ['Vanessa in her flip flops', 'E35', 'flipflops', 39.5],
+];
+const entry = (id) => LIST.find((x) => x[1] === id) ?? null;
+// the songs in play, in Tiffany's order, and the archive's others
+export const SONG_LIST = LIST.map((x) => x[1]);
+export const LISTED_SONGS = SONG_LIST;
+export const UNLISTED_SONGS = SONG_IDS.filter((id) => !SONG_LIST.includes(id));
 
-// The spots where the songs wait: the farm object each one is about. `label` is how the cards name
-// the place, `hint` a first hint about it (spec §8's tier one), `act` the small thing to do there
-// before the bird comes (v0.17c), `anchor` and `offset` (metres on the ground) where its star
-// stands (world.js eggSpotPos). v0.20: one spot per object, one song per spot in each edition.
-// The sun's and the birds' stars stand on the farm's own ground, at its back edge beneath the
-// drawn sun and the drawn flock (v0.17 had them far out on the paper sky's side of the horizon).
-const act = (verb, word, ms = 1500) => ({ verb, word, ms });
+// The spots where the songs wait: the farm thing each one is about, one song per spot. `label` is
+// how the cards and the announcements name the place. `act` is the small thing to do there before
+// the bird comes: `verb` is the button's words, `kind` the pose and motion Vanessa does for it
+// (world/moments.js), `word` the pencilled word that pops up, `ms` how long it takes. Where the
+// spot stands on the ground (world.js eggSpotPos): at its `anchor` (a thing on the farm; default:
+// the spot's own name) plus `offset` metres, or at the drawing point `uv`.
+// Tiffany: "Make sure she does everything it says to do": every verb names what she is seen doing.
+const act = (verb, kind, word, ms) => ({ verb, kind, word, ms });
 export const SPOTS = {
-  tree: { label: 'the old tree', hint: 'The tree and the bench make a good team.', act: act('Thank the old tree', 'Good team!') },
-  bench: { label: 'the bench', hint: 'Sit a while on the bench under the tree.', act: act('Rest on the bench', 'Aah…', 2600) },
-  stones: { label: 'the stepping stones', hint: 'Small stones dream big behind the house.', act: act('Hop the stepping stones', 'Hop! Hop!') },
-  birds: { label: 'the corner under the birds', hint: 'The birds argue over the best perch.', act: act('Let the birds debate', 'Tweet? Tweet!', 1600) },
-  door: { label: 'the front door', hint: 'A finished house leaves the light on.', act: act('Knock on the door', 'Knock knock!') },
-  chimney: { label: 'the chimney', hint: 'Follow the smoke up from the roof.', act: act('Climb to the chimney', 'Up we go!', 7200) },
-  corn: { label: 'the corn', hint: 'One stalk is outstanding in its field.', act: act('Tell the corn a joke', 'Corny!') },
-  weeds: { label: 'the weeds by the raised bed', hint: 'Something beside the raised bed is plotting.', anchor: 'bed', offset: [1.8, 0.4], act: act('Challenge the garden weeds', 'Not today!') },
-  bed: { label: 'the Who-Knows plant in the raised bed', hint: 'A scribble in the raised bed wonders what it is.', act: act('Say hello to the Who-Knows plant', '?♪') },
-  sunflowers: { label: 'the sunflowers', hint: 'The sunflowers do everything together.', act: act('Dance with the sunflowers', 'Ta-da!') },
-  sun: { label: 'the field\'s edge under the sun', hint: 'Somebody up there feels a little too bright today.', act: act('Greet the sun', 'Hello, sunshine!') },
-  tools: { label: 'the shovel and rake', hint: 'The tools by the house have something to say.', act: act('Lean the rake on the shovel', 'Clink!') },
-};
-// the full edition's own moment where its song at a spot tells another joke than the kids' one
-const ACTS = {
-  full: {
-    corn: act('Look over at the sunflowers', 'Sigh…'), // Cornstalk and Sunflower: the corn longing for a sunflower
-    weeds: act('Inspect the mystery weed', 'Hmm…'), // Wrong Kind Weed
-    tools: act('Tell the rake to behave', 'At ease!'), // I'm not your hoe: the shovel has had enough of the rake
-  },
+  sunflowers: { label: 'the sunflowers', act: act('Dance with the sunflowers', 'dance', 'Ta-da!', 3000) },
+  sun: { label: 'the field’s edge under the sun', act: act('Wave to the sun', 'wave', 'Hello, sunshine!', 2400) },
+  tools: { label: 'the shovel and the rake', act: act('Lean the rake on the shovel', 'reach', 'Clink!', 2600) },
+  bench: { label: 'the bench', act: act('Rest on the bench', 'bench', 'Aah…', 2800) },
+  chimney: { label: 'the chimney', act: act('Climb to the chimney', 'chimney', 'Up we go!', 7200) },
+  weeds: { label: 'the weeds by the raised bed', anchor: 'bed', offset: [1.9, 0.5], act: act('Shake a fist at the weeds', 'fist', 'Not today!', 2400) },
+  tree: { label: 'the old tree', act: act('Hug the old tree', 'hug', 'Good team!', 2600) },
+  corn: { label: 'the corn', act: act('Tell the corn a joke', 'joke', 'Corny!', 3000) },
+  stones: { label: 'the stepping stones', act: act('Hop the stepping stones', 'hop', 'Hop! Hop!', 3200) },
+  door: { label: 'the front door', act: act('Knock on the door', 'door', 'Knock knock!', 1600) },
+  birds: { label: 'the corner under the birds', act: act('Whistle to the birds', 'whistle', 'Tweet? Tweet!', 2400) },
+  world: { label: 'the front of the farm', uv: [52.2, 95.5], act: act('Show your drawing to the world', 'show', 'Look, world!', 2800) },
+  between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh…', 2800) },
+  table: { label: 'the yard-sale table', act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
+  glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Shade your eyes from the sun', 'shade', 'Oye, Sun!', 2600) },
+  paper: { label: 'the grass with the best view', uv: [30.6, 88.7], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
+  window: { label: 'the window by the door', act: act('Peek in the window', 'peek', 'Home sweet home!', 2600) },
+  path: { label: 'the middle of the path', uv: [40, 60], act: act('Toss your coins in the air', 'toss', 'Rich!', 2400) },
+  field: { label: 'the middle of the field', uv: [50, 70.7], act: act('Blow a kiss', 'kiss', '♥', 2400) },
+  sketch: { label: 'the crumpled sketch in the corner', uv: [10.1, 93.1], act: act('Pick up the crumpled sketch', 'pickup', 'Keep it!', 2600) },
+  bed: { label: 'the Who-Knows plant in the raised bed', act: act('Say hello to the Who-Knows plant', 'hello', '?♪', 2400) },
+  pose: { label: 'Vanessa’s place in the drawing', act: act('Strike your pose', 'pose', 'Vanessa!', 2600) },
+  easel: { label: 'the corner past the sunflowers', uv: [94.1, 83.9], act: act('Draw a big circle in the air', 'draw', 'Dream big!', 2800) },
+  flipflops: { label: 'the open grass left of the house', uv: [11.8, 51.3], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
 };
 // what to do at a spot before its egg comes
-export const spotAct = (spot, edition = 'full') => ACTS[edition === 'kids' ? 'kids' : 'full']?.[spot] ?? SPOTS[spot]?.act ?? null;
+export const spotAct = (spot) => SPOTS[spot]?.act ?? null;
 
-// One short line of each song's own words for its card (audit 4: "a lyric line on every song
-// card, kid-safe lines in the kids edition"). Each is from the song's published lyrics (checked
-// in test/songs-v020.test.mjs against source/songs/report.md); the kids list's eleven are gentle
-// lines, and the full edition's bench line prints its one rude word with asterisks.
+// One short line of each song's own words for its card and the songbook (audit 4). Each is from
+// the song's published lyrics (test/v022.test.mjs checks it against source/songs/report.md); the
+// two new songs' lines are as sung (their lyrics are not published; heard and written down
+// 2026-11-11, source/songs/new/notes.md). All of them are fit for a child to read.
 const LYRICS = {
+  E01: 'I gave it to the world / And they ate it up',
   E02: 'I write my name across the sky',
-  E03: 'Man, I’d even be a gummy if that’s what it takes to be your weed',
-  E04: 'You smokin’ like a chimney',
   E05: 'You’re the bench and I’m the tree and we understand',
   E06: 'Still we rise — HA HA HO!',
   E07: 'If I lean left, you lean too',
   E08: 'When I’m a stepping stone someday',
-  E09: 'No, I’m not your hoe, I’m a shovel—built to move mountains',
   E11: 'I’m lookin’ like a highlighter in a buttercup',
   E12: 'I’ll leave the light on in the hall',
   E13: 'I dig it up, you smooth the way',
-  E14: 'I’m corn, planted in lines I didn’t choose',
+  E14: 'I would lean if I could',
   E15: 'Let the birds debate, let the birds use voice',
-  E17: '’Cause the birds keep sh**tin’ on me and it’s not okay',
+  E16: 'These overalls got pockets / Stitched with stories I adore',
+  E18: 'Duniya keh rahi hai tu kaafi zyaada yellow hai',
+  E19: 'Maybe one day she’ll put it on paper',
+  E20: 'My mom’s the best thing that grew on the farm',
+  E21: 'The best drawer in the world / One day she’ll be rich',
+  E22: 'She doesn’t know how good she is',
+  E23: 'And Vanessa / Don’t you worry / You’ll be great',
   E25: 'I look like a scribble / Not a plant',
   E27: 'Can I stay in the shade?',
   E28: 'I’m a-maize-ing every single day',
+  E29: 'And she goes by Vanessa',
+  E34: 'Vanessa, what will you draw next?',
+  E35: 'Vanessa in her flip flops / Dancing down the garden rows',
 };
 export const songLyric = (id) => LYRICS[id] ?? null;
 
-export const isEdition = (e) => EDITIONS.includes(e);
-// the songs an edition has, in Tiffany's order
-export const songsFor = (edition = 'full') => EDITION_SONGS[edition === 'kids' ? 'kids' : 'full'];
-export const hasSong = (id, edition = 'full') => songsFor(edition).includes(id);
-// Tiffany's label for a song, exactly as she wrote it in this edition's list (a recording in
-// neither list keeps its archive title: it is never shown)
-export const songTitle = (id, edition = 'full') => entry(id, edition)?.[0] ?? SONGS[id]?.title ?? id;
-// its place in the edition's list, from 1 (0: not in it)
-export const songNumber = (id, edition = 'full') => songsFor(edition).indexOf(id) + 1;
+// the songs in play, in Tiffany's order
+export const songsFor = () => SONG_LIST;
+export const hasSong = (id) => SONG_LIST.includes(id);
+// Tiffany's title for a song, exactly as she wrote it (a recording out of play keeps its archive
+// title: it is never shown)
+export const songTitle = (id) => entry(id)?.[0] ?? SONGS[id]?.title ?? id;
+// its place in her list, from 1 (0: not in it)
+export const songNumber = (id) => SONG_LIST.indexOf(id) + 1;
 // the spot where it waits (null for a recording out of play)
-export const songSpot = (id, edition = 'full') => (hasSong(id, edition) ? entry(id, edition)[2] : null);
-// the song's Suno page: only in the full edition (the kids listen only inside the game)
-export const sunoLink = (id, edition = 'full') => (edition === 'kids' || !SONGS[id] ? null : SONGS[id].suno);
-// the MP3 of a song (tools/make-songs.mjs), its short discovery clip (the captain's crop of it,
-// played as its egg cracks) and the name it downloads as: its number and label in this edition
+export const songSpot = (id) => entry(id)?.[2] ?? null;
+// where its preview starts in the song (s): the found song starts here and plays on to its end
+export const previewStart = (id) => entry(id)?.[3] ?? 0;
+// The song's Suno page, for the songbook (as the full edition showed it; the songbook is reached at
+// the end of the game). Null for the two recordings whose pages are not public.
+export const sunoLink = (id) => SONGS[id]?.suno ?? null;
+// the MP3 of a song (tools/make-songs.mjs) and the name it downloads as: its number and title
 export const mp3Path = (id) => `assets/songs/${id}.mp3`;
-export const clipPath = (id) => `assets/songs/clips/${id}.mp3`;
-export const mp3Name = (id, edition = 'full') => `${String(songNumber(id, edition) || SONGS[id].n).padStart(2, '0')} ${songTitle(id, edition).replace(/[\\/:*?"<>|]/g, '')}.mp3`;
+export const mp3Name = (id) => `${String(songNumber(id) || SONGS[id].n).padStart(2, '0')} ${songTitle(id).replace(/[\\/:*?"<>|]/g, '')}.mp3`;
 
 // the hunt is phase two: open once the home is built and the drawing has its colour
 export const eggPhase = (l) => mainComplete(l);
-// how many of the edition's songs are found
-export const foundCount = (edition = 'full', discoveries = {}) => songsFor(edition).filter((id) => discoveries?.[id]).length;
-// the songs still waiting at a spot, in list order
-export const eggsAt = (spot, edition = 'full', discoveries = {}) => songsFor(edition).filter((id) => songSpot(id, edition) === spot && !discoveries?.[id]);
-// the spots that still hold a song
-export const spotsWithEggs = (edition = 'full', discoveries = {}) => Object.keys(SPOTS).filter((s) => eggsAt(s, edition, discoveries).length > 0);
+// how many of the songs are found
+export const foundCount = (discoveries = {}) => SONG_LIST.filter((id) => discoveries?.[id]).length;
+// the songs found, in list order (the songbook lists these, and only these)
+export const foundSongs = (discoveries = {}) => SONG_LIST.filter((id) => discoveries?.[id]);
+// the song still waiting at a spot (in list order, should a spot ever hold two)
+export const eggsAt = (spot, discoveries = {}) => SONG_LIST.filter((id) => songSpot(id) === spot && !discoveries?.[id]);
+// the spots that still hold a song: each shows its yellow circle and its star
+export const spotsWithEggs = (discoveries = {}) => Object.keys(SPOTS).filter((s) => eggsAt(s, discoveries).length > 0);
 
-// the songs this ledger has just earned that are not found yet (a song with `coins`: a big purse),
-// in list order: only in the hunt (phase two), and only the edition's own. None since v0.20.
-export function songsDue(l, discoveries = {}, edition = 'full') {
-  if (!eggPhase(l)) return [];
-  return songsFor(edition).filter((id) => !discoveries?.[id] && SONGS[id].coins !== undefined && l.purse >= SONGS[id].coins);
-}
-
-// The next egg a bird brings: a purse song as soon as it is due (wherever she is), otherwise the
-// song of the spot she is at (`spot`, or null). Nothing before the hunt opens.
-export function nextEgg(l, { edition = 'full', discoveries = {}, spot = null } = {}) {
+// The next egg a bird brings: the song of the spot she is at (`spot`, or null). Nothing before
+// the hunt opens.
+export function nextEgg(l, { discoveries = {}, spot = null } = {}) {
   if (!eggPhase(l)) return null;
-  const due = songsDue(l, discoveries, edition);
-  if (due.length) return due[0];
-  return spot ? eggsAt(spot, edition, discoveries)[0] ?? null : null;
+  return spot ? eggsAt(spot, discoveries)[0] ?? null : null;
 }
 
 // the found record for a song
 export const found = (l) => ({ at: l.activeMs });
 
-// The goal line in the hunt. v0.20 (audit 2: "the last song is a dead end"): when one song is
-// left, the line names it and where it waits (or, for a purse song, how many coins it still wants).
-export function huntLine(edition = 'full', discoveries = {}, purse = 0) {
-  const all = songsFor(edition).length;
-  const left = songsFor(edition).filter((id) => !discoveries?.[id]);
-  const n = all - left.length;
-  if (!left.length) return `Every song found: ${n} of ${all}. Listen to them any time in Pause → Songs.`;
-  if (left.length === 1) {
-    const id = left[0];
-    const title = songTitle(id, edition);
-    if (SONGS[id].coins !== undefined) return `One song left: “${title}” · save a big purse · ${Math.min(purse, SONGS[id].coins)}/${SONGS[id].coins} coins`;
-    return `One song left: “${title}” · go to ${SPOTS[songSpot(id, edition)].label}`;
-  }
-  return `Egg hunt · ${n} of ${all} songs · walk to a sparkle and do what it asks: a bird brings an egg`;
-}
-
-// ---------- v0.21 (design audit 7, "make the hunt a hunt"; the full edition) ----------
-// The captain's first request: "finding all easter eggs is the real challenge". Until v0.20 every
-// spot with a song showed its star at once, with an arrow to the nearest: a checklist. Now, in the
-// full edition, a song's star is hidden until Vanessa comes within GLINT_M of its spot; then it
-// glints into view, and at the spot its small act is offered as before. The songbook helps in
-// three steps (spec §8's three tiers): each missing song is a silhouette with a line of its own
-// lyrics as the clue (tier 1: `songClue`); "Where is it?" names its place (tier 2: `cluePlace`);
-// "Show me" lights its star from anywhere and the arrow leads there (tier 3: `track`). "Show all
-// stars" brings back v0.20's view (every star, the arrow to the nearest). The kids edition keeps
-// its stars in view, as before, and its songbook shows no clues.
-// What the player has asked for is kept with the save (`session.hunt`): { where: { [song]: true },
-// track: a song or null, showAll }.
-export const GLINT_M = 3; // a hidden star glints into view this near (m)
-export const GLINT_OFF_M = 3.6; // and goes again beyond this (so it does not flicker at the edge)
-export const hidesStars = (edition = 'full') => edition !== 'kids';
-export const huntPrefs = (p) => ({
-  where: p?.where && typeof p.where === 'object' ? Object.fromEntries(Object.keys(p.where).filter((id) => id in SONGS && p.where[id]).map((id) => [id, true])) : {},
-  track: typeof p?.track === 'string' && p.track in SONGS ? p.track : null,
-  showAll: p?.showAll === true,
-});
-// the song the player asked to be shown, while it is still to find
-export const tracked = (edition, discoveries, prefs) => (prefs?.track && hasSong(prefs.track, edition) && !discoveries?.[prefs.track] ? prefs.track : null);
-// the spots whose star shows from anywhere: all that hold a song in the kids edition or with Show
-// all on; otherwise only the one she asked to be shown
-export function litSpots(edition = 'full', discoveries = {}, prefs = {}) {
-  const spots = spotsWithEggs(edition, discoveries);
-  if (!hidesStars(edition) || prefs?.showAll) return spots;
-  const t = tracked(edition, discoveries, prefs);
-  return t ? spots.filter((sp) => sp === songSpot(t, edition)) : [];
-}
-// the hidden spots that glint now: those with a song, not lit, that she is near. `dist(spot)` is
-// her distance to it in metres; `was` the spots glinting until now (they hold on to GLINT_OFF_M)
-export function glintSpots(edition, discoveries, prefs, dist, was = []) {
-  if (!hidesStars(edition)) return [];
-  const lit = litSpots(edition, discoveries, prefs);
-  return spotsWithEggs(edition, discoveries).filter((sp) => !lit.includes(sp) && dist(sp) <= (was.includes(sp) ? GLINT_OFF_M : GLINT_M));
-}
-// tier 1: the clue for a song still to find: a line of its own lyrics (the line its card shows
-// once it is found); tier 2: its place in words
-export const songClue = (id) => songLyric(id);
-export const cluePlace = (id, edition = 'full') => { const sp = songSpot(id, edition); return sp ? `At ${SPOTS[sp].label}.` : null; };
-// the songbook's rows for the songs still to find, in list order: { id, number, clue, place (once
-// asked for, else null), tracked }
-export function missingSongs(edition = 'full', discoveries = {}, prefs = {}) {
-  const t = tracked(edition, discoveries, prefs);
-  return songsFor(edition).filter((id) => !discoveries?.[id]).map((id) => ({
-    id, number: songNumber(id, edition), clue: songClue(id), place: prefs?.where?.[id] ? cluePlace(id, edition) : null, tracked: t === id,
-  }));
+// The last song gets the arrow (v0.20, audit 2: "the last song is a dead end"): the spot the
+// guide's arrow leads to, or null while more than one is left.
+export function lastSpot(discoveries = {}) {
+  const left = spotsWithEggs(discoveries);
+  return left.length === 1 ? left[0] : null;
 }
 
 // The hunt's goal: { text (the sentence, for screen readers), line (one line on screen) }.
-// `egg`: 'coming' while the bird flies, 'landed' while the egg waits on the grass; `glint`: a
-// hidden star is glinting near her. The count is not here: it is the songs counter in the HUD.
-export function huntGoal({ edition = 'full', discoveries = {}, prefs = {}, glint = false, egg = null } = {}) {
-  const left = songsFor(edition).filter((id) => !discoveries?.[id]);
-  const all = songsFor(edition).length;
-  if (!left.length) return { text: `Every song found: ${all} of ${all}. Listen to them any time in the songbook.`, line: { icon: 'note', label: 'Every song found' } };
+// `egg`: 'coming' while the bird flies, 'landed' while the egg waits on the grass. The count is
+// not here: it is the songs counter in the HUD.
+export function huntGoal({ discoveries = {}, egg = null } = {}) {
+  const left = SONG_LIST.filter((id) => !discoveries?.[id]);
+  const all = SONG_LIST.length;
+  if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
   if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
   if (egg === 'landed') return { text: 'An egg has landed: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg' } };
-  const one = left.length === 1 ? left[0] : null;
-  if (!hidesStars(edition) || prefs?.showAll) {
-    if (one) return { text: huntLine(edition, discoveries), line: { icon: 'note', label: 'One song left', tail: 'follow the arrow' } };
-    return { text: 'Egg hunt: walk to a star and do what it asks, and a bird brings an egg.', line: { icon: 'note', label: 'Walk to a star' } };
-  }
-  if (tracked(edition, discoveries, prefs)) return { text: 'Follow the arrow to the star you asked for.', line: { icon: 'glint', label: 'Follow the arrow' } };
-  if (glint) return { text: 'Something glints nearby: walk up to it.', line: { icon: 'glint', label: 'A glint!', tail: 'walk up to it' } };
-  if (one) return { text: 'One song left. It is hidden on the farm: the songbook has a clue.', line: { icon: 'note', label: 'One song left', tail: 'see ♪ Songs' } };
-  return { text: 'The songs are hidden around the farm. Look for a glint, or open the songbook for clues.', line: { icon: 'note', label: 'Find the hidden songs' } };
+  if (left.length === 1) return { text: `One song left: follow the arrow to ${SPOTS[songSpot(left[0])].label}.`, line: { icon: 'note', label: 'One song left', tail: 'follow the arrow' } };
+  return { text: 'A song waits at every yellow circle on the farm: walk to one and do what it says, and a bird brings an egg.', line: { icon: 'note', label: 'Walk to a yellow circle' } };
 }

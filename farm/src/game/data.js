@@ -10,7 +10,9 @@ export const RESOURCE_NAMES = { W: 'wood', R: 'stone', C: 'corn', S: 'sunflowers
 export const RESOURCE_UNIT = { W: 'wood', R: 'stone', C: 'corn', S: 'sunflower', T: 'tomato' };
 
 // Fixed crop prices in coins per unit (§6.1). Wood and stone are never sellable.
-export const PRICES = { C: 2, S: 3, T: 4 };
+// v0.22 (the captain, 2026-11-11: "tomatoes, 5 coins"): a tomato sells for 5 again (v0.21 had cut
+// it to 4 when the harvest began to grow with the plant; the yields stay, so the bed pays more).
+export const PRICES = { C: 2, S: 3, T: 5 };
 
 // Interaction cadence (§4, §6.1): A08 0.75 s/unit work, 1 s/weed, 0.15 s/unit transfer;
 // P 0.25 s stillness rule and 0.3 s coin pour. v0.9 (P25-4): 0.5 s to take or swap a tool at the
@@ -110,10 +112,10 @@ export const TOMATO_GROWTH = { step: 0.25, steps: 2 };
 // v0.21 (captain 2026-11-10: "When the tomato plant grows should have more tomato. the tomatoes
 // harvest should also go up"): the harvest grows with the plant. A tomato plant gives 2 tomatoes on
 // its first crop, 3 once it has grown a tier and 4 at full height (TOMATO_YIELD[size level]; the
-// level is the plant's rounds after its first crop, `steps` at most, ledger.js growthLevel). The
-// price stays 5, so two grown plants bring 40 coins a round where they brought 20: the bed, the
-// dearest plot, becomes the best one, and a plant lost to the weeds (a new plant: level 0) costs
-// more. A node's `yield` below is its first crop's.
+// level is the plant's rounds after its first crop, `steps` at most, ledger.js growthLevel). At 5
+// coins a tomato (v0.22) two grown plants bring 40 coins a round where v0.20's brought 20: the
+// bed, the dearest plot, is the best one, and a plant lost to the weeds (a new plant: level 0)
+// costs more. A node's `yield` below is its first crop's.
 export const TOMATO_YIELD = [2, 3, 4];
 export const NODES = {
   c1: { res: 'C', yield: 3, stage: 'C0' },
@@ -257,11 +259,19 @@ export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null;
 // one unit; a head thief chases her for `approachMs`; a free Wave before the take, or a hired
 // archer whose cover the bird enters, sends it off with nothing. An archer covers the crops he
 // guards (ARCHER_GUARDS: Dwight guards all three crops) and, for crops on her head,
-// coverM round his post. Caps: one unit per event, windowMax in windowMs, totalMax
+// coverM round his post. Caps: one visit's take per event, windowMax takes in windowMs, totalMax
 // between the second crop plot and the home. Nothing else is ever taken.
+// v0.22 (Tiffany: "Have the birds more obviously steal crops and fly off with them so the crops
+// need to grow back"): a bird that gets to a plant strips it. It flies off with the crop in its
+// claws, big enough to see, every unit that was ripe on that plant is gone, and the plant grows
+// its crop again from nothing (its usual renewal time). From her head it still takes one. So that
+// the route still flows the caps count plants now: `windowMax` plants in `windowMs`, `totalMax`
+// plants in all (5, where v0.21 allowed 8 single units), and the bird sits `sitMs` (3.6 s, with a
+// tug at the crop) before it takes off, so there is time to see it and wave. It leaves slowly
+// enough to watch (`leaveMs`).
 export const BIRDS = {
-  everyMs: 16000, firstMs: 8000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3000, leaveMs: 1200,
-  windowMs: 120000, windowMax: 3, totalMax: 8,
+  everyMs: 16000, firstMs: 8000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3600, leaveMs: 2200,
+  windowMs: 120000, windowMax: 2, totalMax: 5,
   coverM: 3.5, drawMs: 800, fireMs: 3000, perchMs: 3000, cleanMs: 1800,
 };
 export const BIRD_KINDS = ['perch', 'node', 'carried'];

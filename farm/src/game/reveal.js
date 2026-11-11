@@ -131,7 +131,10 @@ export const FINALE = {
 // Finale colours (§10.9): light steps of the leaf and tool-blue swatches, within §10.6 item 6;
 // none more saturated than the flower yellow. The sun fills with the flower yellow and its
 // spiral and rays take a deeper step of it.
-export const FINALE_COLOURS = { grass: 0x97a886, grassStroke: 0x6f8a5c, sky: 0xb4c4d7, sun: 0xe6b83e, sunInk: 0xc08a2c, sprout: 0x6f8a5c };
+// v0.22 (Tiffany: "Make the colors brighter especially the grass sky and sun at the end"): a fresh
+// spring green, a clear sky blue and a bright yellow sun with orange strokes (v0.21: a sage
+// 0x97a886, a grey-blue 0xb4c4d7 and an ochre 0xe6b83e). `sunGlow` is the light of its rays.
+export const FINALE_COLOURS = { grass: 0x86c754, grassStroke: 0x559a34, sky: 0x8fd4f8, sun: 0xffd932, sunInk: 0xf2960a, sprout: 0x559a34, sunGlow: 0xffe46b };
 
 const ramp = ([a, b], t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
 const smooth = (x) => x * x * (3 - 2 * x);

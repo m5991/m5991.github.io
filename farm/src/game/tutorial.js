@@ -139,7 +139,7 @@ export function dropLesson(l, distToYardM) {
   return distToYardM <= DROP_NOTE_M ? DROP_NOTE : null;
 }
 
-const VERB = { weed: 'rake the weeds', source: 'gather', node: 'harvest', dig: 'dig' };
+const VERB = { weed: 'remove the weeds', source: 'gather', node: 'harvest', dig: 'dig' };
 
 // The one short prompt to show now, or null.
 // s: { step (tutorialStep result or null), learned, mode ('touch'|'mouse'|'keyboard'),
@@ -159,7 +159,7 @@ export function coachPrompt(s) {
   }
   if (!step) return null;
   if (step.phase === 'move') return mode === 'keyboard' ? 'Move with WASD or the arrow keys' : 'Drag anywhere to move';
-  if (step.phase === 'choose') return 'Choose your first crop: rake any patch';
+  if (step.phase === 'choose') return 'Choose your first crop: remove the weeds on any patch';
   if (step.phase === 'stock') return 'Walk past the table to set out your crops';
   if (step.phase === 'sale') return mode === 'keyboard' ? 'The table is full: press E for Yard Sale' : 'The table is full: tap Yard Sale';
   if (step.phase === 'take' && step.tool === 'shovel' && here !== 'tools' && !working) return 'Now take the shovel';

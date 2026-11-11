@@ -29,19 +29,20 @@
 // flat hand-drawn stepping stones with grass between.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { HOUSE_STAGES, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
+import { BIRDS, HOUSE_STAGES, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
 import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
 import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
 import { ribbonDistance } from './pathgeom.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START } from './layout.js';
 import { ease } from '../core/tween.js';
 import { SPOTS } from '../game/songs.js';
-import { KEEPSAKES, KEEPSAKE_GLINT_M } from '../game/keepsakes.js';
+import { drawnShare, hopSpans } from './moments.js';
+import { KEEPSAKES, KEEPSAKE_NEAR_M } from '../game/keepsakes.js';
 import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
-import { fader, groundMaterial, paintable, paperBackdrop } from './look.js';
+import { fader, groundMaterial, PAL, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { routeAround, routeAt, routeLength } from './walk.js';
 import { BLUEPRINT_FADE_MS, FINALE_COLOURS, PARTS, partLook, partsColouredBy, REDUCED_FADE_MS, WASH_MS } from '../game/reveal.js';
@@ -110,7 +111,29 @@ export const SMOKE = { puffs: 4, ms: 3200, rise: 2.0, drift: 0.6, size: [2.4, 5.
 // other. Each stone is drawn `size` times the v0.14 ones. (v0.15's half circle round the house
 // is gone.)
 export const SKY_BIRDS = 1.9; // v0.16 (captain: "Make birds on the sky bigger"): this many times their v0.15 size
-export const STEPPING = { from: [2.95, -1.9], to: [48.4, 46.2], stones: 4, size: 1.25 };
+// v0.22 (Tiffany: "Add one stepping stone at the back leading to the back of the house (north
+// side)"): one more stone beyond the line's house end, round the house's back corner (`back`, in
+// the house's own metres like `from`); it is the last of steppingPlaces
+export const STEPPING = { from: [2.95, -1.9], to: [48.4, 46.2], stones: 4, size: 1.25, back: [2.25, -2.55] };
+// the front window's centre across the house front (hand.js cottage), house metres
+const WINDOW_X = -1.08;
+// v0.22 (Tiffany: "shovel and rake should be leaning against the house"): each tool stands with
+// its foot `foot` m out from the house's right wall and its top resting on the wall (v0.21 fitted
+// them to their drawn spots, which left them leaning in the air about a metre from the wall).
+// `along`: where each stands along the wall, in house metres from the house's middle (the front
+// corner is at +1.65); the station where she takes them is `stand` m out from the wall.
+// how far the rake tips along the wall to rest on the shovel's handle (rad)
+export const RAKE_ON_SHOVEL = 0.46;
+export const TOOL_LEAN = { along: { shovel: 1.3, rake: 0.72 }, stand: 0.95, gap: 0.03 };
+// the bird that takes a crop (v0.22): its size, and the crop in its claws, big enough to see
+// a keepsake on the grass: this many times its model's size (0.25-0.4 m; v0.21: 1.3)
+// a song spot's star while she is not standing in its circle, against its full size
+export const SPOT_STAR = 0.6;
+export const KEEPSAKE_SIZE = 1.9;
+// the end's sun: the spiral's turn (rad/s), how far a ray reaches out and draws back and how
+// long that takes, the beams' light (least, most) and the time of the wave that goes round them
+export const SUN = { spin: 0.55, reach: 0.09, reachMs: 760, beam: [0.1, 0.36], waveMs: 620 };
+export const THIEF = { size: 2.3, crop: 2.1, away: [9, 4.2, -5] };
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
@@ -234,7 +257,9 @@ export class World {
     this.buildSmoke(house);
     const tree = fitted('D09', G.tree());
     this.addCylinder(tree.position, TREE_TRUNK_R * tree.scale.x);
-    this.faders = [G.fadeable(tree)];
+    // v0.22: only the canopy fades when it hides her or a target; the trunk and the branches stay
+    const leaves = [PAL.leaf, PAL.leafLight];
+    this.faders = [G.fadeable(tree, (m) => leaves.includes(m.material?.color?.getHex?.()))];
     // House parts already own paintable materials; fade those uniforms rather than clone
     // them away from their build/wash owners. Only committed walls occlude during play.
     const houseFade = { opacity: 1, meshes: [], set: (o) => {
@@ -304,10 +329,12 @@ export class World {
       this.nodeViews[id] = { dig, units, plant, fruit, size: 1, want: 1 };
       this.stations[id] = { def: { id, kind: 'node', r: 0.85, label: 'tomatoes' }, obj: units, pos: ground };
     }
-    // the tools at their drawn lean; `home` is where each returns (P25-4)
+    // the tools at their lean; `home` is where each returns (P25-4). v0.22: against the house's
+    // right wall, the handle's top on the wall (TOOL_LEAN)
     this.tools = {};
     for (const [id, kind] of [['D13', 'shovel'], ['D14', 'rake']]) {
       const o = fitted(id, G.tool(kind));
+      this.leanOnWall(o, kind);
       o.updateMatrixWorld(true);
       this.tools[kind] = { obj: o, home: { pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.clone() }, tween: 0 };
     }
@@ -408,6 +435,13 @@ export class World {
 
     // stations
     for (const def of STATIONS) this.buildStation(def);
+    // v0.22: she takes the tools where they lean now: before the wall, between the two
+    {
+      const h = this.objects.D01;
+      const mid = (TOOL_LEAN.along.shovel + TOOL_LEAN.along.rake) / 2;
+      this.stations.tools.pos.copy(h.localToWorld(new THREE.Vector3(G.HOUSE.w / 2 + TOOL_LEAN.stand / h.scale.x, 0, mid))).setY(0);
+      this.stations.tools.obj.position.copy(this.stations.tools.pos);
+    }
     // v0.15: the stepping stones' site is one of them (v0.16: the middle one of their line)
     const line = this.steppingPlaces();
     this.stations.G3.pos.copy(line[Math.floor(line.length / 2)]).setY(0);
@@ -425,6 +459,23 @@ export class World {
     this.stations.G2.pos.copy(benchSite.localToWorld(new THREE.Vector3(0, 0, 0.85))).setY(0);
     this.boundsQuad = [[BOUNDS.uMin, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMax], [BOUNDS.uMin, BOUNDS.vMax]]
       .map(([u, v]) => p.groundAt(u, v));
+  }
+
+  // v0.22: stand a tool against the house's right wall. It keeps its fitted size; it turns with
+  // the house, so the lean built into its model (props.js tool: its top tips toward its own -x)
+  // points at the wall, and its foot goes just far enough out that the grip's top touches it.
+  leanOnWall(o, kind) {
+    const h = this.objects.D01;
+    h.updateMatrixWorld(true);
+    const lean = o.rotation.z; // the model's own lean (props.js tool): 0.2 rad the shovel, 0.17 the rake
+    o.rotation.set(0, h.rotation.y, lean);
+    o.updateMatrixWorld(true);
+    // how far the grip's top stands in from the foot: the handle's length along the lean, and half its width
+    const box = new THREE.Box3();
+    o.traverse((m) => { if (m.isMesh && !m.userData.outline) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); } });
+    const reach = (Math.sin(lean) * box.max.y + 0.026) * o.scale.x;
+    const out = (G.HOUSE.w / 2) + (reach + TOOL_LEAN.gap) / h.scale.x;
+    o.position.copy(h.localToWorld(new THREE.Vector3(out, 0, TOOL_LEAN.along[kind]))).setY(0);
   }
 
   buildGround() {
@@ -477,6 +528,10 @@ export class World {
       at.userData = { yaw: yaw + 0.25 * Math.sin(i * 1.7) };
       out.push(at);
     }
+    // v0.22: and one at the back, leading round the corner to the back of the house (the last one)
+    const back = h.localToWorld(new THREE.Vector3(STEPPING.back[0], 0, STEPPING.back[1])).setY(0);
+    back.userData = { yaw: yaw + 0.5 };
+    out.push(back);
     this.stepping = out;
     return out;
   }
@@ -669,7 +724,9 @@ export class World {
     sun.position.copy(sunC);
     sun.lookAt(p.camera.position);
     this.root.add(sun);
-    this.sunParts = { disc: sun.getObjectByName('D22_SunDisc'), ink: sun.getObjectByName('D22_SunInk') };
+    const sunInk = sun.getObjectByName('D22_SunInk');
+    this.sunParts = { disc: sun.getObjectByName('D22_SunDisc'), ink: sunInk, inkMat: sunInk.userData.ink, spiral: sun.getObjectByName('D22_SunSpiral'), rays: sun.getObjectByName('D22_SunRays'), glow: sun.getObjectByName('D22_SunGlow'), t: 0 };
+    this.sunParts.disc.material.uniforms.uColor.value.set(FINALE_COLOURS.sun);
     const bc = p.backdropAt(SKY.D21.u, SKY.D21.v, z);
     const bw = bc.distanceTo(p.backdropAt(SKY.D21.u + SKY.D21.wu, SKY.D21.v, z));
     // v0.16 (captain: "Make birds on the sky bigger", the coloured drawing's big check marks)
@@ -789,6 +846,7 @@ export class World {
       if (s.def.kind === 'site' && isCommitted(l, id)) continue; // built
       if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
+      if (s.def.kind === 'rock' && this.finished) continue; // v0.22: the leftover rocks are gone from the finished farm (sync hides them): nothing to gather there
       if (s.def.regrow && !weedPresent(l, id)) continue;
       const kind = s.def.kind === 'node' && digOpen(l, id) ? 'dig' : s.def.kind;
       const t = { id, kind, x: s.pos.x, z: s.pos.z, r: s.def.r, label: s.def.label };
@@ -1102,11 +1160,12 @@ export class World {
       sp.mat.color.copy(ink).lerp(green, Math.max(0, Math.min(1, (r - d) / 1.5)));
     }
     this.skyMesh.material.uniforms.uSky.value = sky;
-    const { disc, ink: strokes } = this.sunParts;
+    const { disc, inkMat } = this.sunParts;
     disc.visible = sun > 0;
     disc.material.opacity = sun;
-    strokes.material.color.copy(ink).lerp(new THREE.Color(FINALE_COLOURS.sunInk), sun);
+    inkMat.color.copy(ink).lerp(new THREE.Color(FINALE_COLOURS.sunInk), sun);
     this.finaleColour = { grass, sky, sun };
+    this.updateSun(0);
     // v0.14 (captain: "in the postgame sticks have the old floor background, not grass"): a
     // branch's trodden paper patch belongs to the paper ground; where the grass has come it goes,
     // and the sticks and the starter piles lie on the grass itself, as everything else does
@@ -1115,6 +1174,32 @@ export class World {
       const patch = st.obj.getObjectByName('patch');
       if (patch) patch.visible = !this.onGrass(st.pos) && (st.def.kind !== 'pile' || (this.lastLedger?.piles[st.def.id] ?? 1) > 0);
     }
+  }
+  // v0.22 (Tiffany: "At the end, have the sun actually illuminating rays and the spiral
+  // rotating"): once the sun has its colour (the finale's last beat, and the finished farm ever
+  // after) its spiral turns, slowly, each ray reaches out and draws back in its own time, and a
+  // beam of light lies along every ray inside a soft halo, the beams brightening in a slow wave
+  // round the sun. Per rendered frame (main.js), so it lives while the world is paused. Reduced
+  // motion: the light is there, still.
+  updateSun(dtMs) {
+    const s = this.sunParts;
+    if (!s) return;
+    const k = this.finaleColour?.sun ?? 0;
+    s.glow.visible = k > 0.001;
+    if (!s.glow.visible) { s.spiral.rotation.z = 0; for (const r of s.rays.children) r.scale.x = 1; return; }
+    const still = this.reducedMotion();
+    if (!still) s.t += dtMs;
+    const t = s.t;
+    s.spiral.rotation.z = still ? 0 : -(t / 1000) * SUN.spin;
+    s.rays.children.forEach((r, i) => { r.scale.x = still ? 1 : 1 + SUN.reach * Math.sin(t / SUN.reachMs + i * 1.7); });
+    for (const o of s.glow.children) {
+      if (o.name === 'D22_SunHalo') { for (const ring of o.children) ring.material.opacity = k * ring.userData.level * (still ? 1 : 0.9 + 0.1 * Math.sin(t / 900)); continue; }
+      const i = Number(o.name.split('_').pop());
+      const wave = still ? 0.5 : 0.5 + 0.5 * Math.sin(t / SUN.waveMs - i * 0.9);
+      o.material.opacity = k * (SUN.beam[0] + (SUN.beam[1] - SUN.beam[0]) * wave);
+      o.scale.x = still ? 1 : 0.94 + 0.1 * wave;
+    }
+    for (const o of s.glow.children) if (o.material) o.material.color.set(FINALE_COLOURS.sunGlow);
   }
   // has the finale's grass reached this point of the ground (it stays after the finale)
   onGrass(pos) {
@@ -1288,17 +1373,25 @@ export class World {
     const offset = spec?.offset ?? [0, 0];
     const h = this.objects.D01;
     h.updateMatrixWorld(true);
+    // v0.22: a spot out on open ground stands at its drawing point
+    if (spec?.uv) return out.copy(this.ground(spec.uv[0], spec.uv[1])).setY(0);
     switch (anchor) {
       case 'door': { const [a, b] = this.doorPoints(); out.copy(a).lerp(b, 0.55).setY(0); break; }
       case 'chimney': out.copy(h.localToWorld(new THREE.Vector3(-2.9, 0, 0.9))).setY(0); break;
+      // v0.22: before the front window, left of the door (hand.js cottage: the window at x -1.08)
+      case 'window': out.copy(h.localToWorld(new THREE.Vector3(WINDOW_X, 0, G.HOUSE.d / 2 + 1.0))).setY(0); break;
       case 'bench': out.copy(this.stations.G2?.pos ?? this.ground(23, 72)).setY(0); break;
-      case 'tree': out.copy(this.ground(27.5, 63.5)).setY(0); break;
-      case 'tools': out.copy(this.stations.tools.pos).add(new THREE.Vector3(0.35, 0, 0.45)).setY(0); break;
-      case 'stones': out.copy(this.stations.G3.pos).setY(0); break;
+      // v0.22: a step from the trunk, on the viewer's side of it and away from the bench (it
+      // stood out under the canopy's edge, three metres from the tree it is about)
+      case 'tree': out.copy(this.objects.D09.position).add(new THREE.Vector3(-0.2, 0, 0.85)).setY(0); break;
+      case 'tools': out.copy(this.stations.tools.pos).setY(0); break;
+      // v0.22: the stone at the corn end of the line: she hops from it to the back of the house
+      case 'stones': out.copy(this.hopRoute()[0]).setY(0); break;
       case 'bed': out.copy(this.stations.T0.pos).setY(0); break;
       case 'sunflowers': out.copy(this.stations.S0.pos).setY(0); break;
       case 'corn': out.copy(this.stations.C0.pos).setY(0); break;
       case 'table': this.sellSpot(out).setY(0); break;
+      case 'pose': out.copy(this.ground(VANESSA_START.u, VANESSA_START.v)).setY(0); break; // D17, her place in the drawing
       // v0.20 (audit 2: "walking on the sky"): the sun's and the birds' stars stand on the farm's
       // own ground, at its back edge straight below the drawn sun and the drawn flock (SKY_SPOT_V;
       // v0.17 had them at v 33 and 34, beyond the ground's far edge, on the paper sky)
@@ -1307,6 +1400,60 @@ export class World {
       default: out.copy(this.heroPos() ?? new THREE.Vector3());
     }
     return out.add(new THREE.Vector3(offset[0], 0, offset[1]));
+  }
+  // how near a spot's centre she stands "at" it (the bed's is the Who-Knows plant, over its boards)
+  spotReach(id) { return id === 'bed' ? 1.1 : 0.65; }
+  // the stepping stones in the order she hops them: from the corn end of the line to the stone at
+  // the back of the house (v0.22)
+  hopRoute() {
+    const line = this.steppingPlaces();
+    const n = STEPPING.stones;
+    return [...line.slice(0, n).reverse(), ...line.slice(n)].map((q) => q.clone().setY(0));
+  }
+  // when each hop lands, on the act's clock (ms): the sound of her feet on the stone
+  hopTimes(ms) { return hopSpans(this.hopRoute().length).map(([, b]) => b * ms); }
+  // Which way she turns for a spot's act (rad), or null to stay as she is: to the thing the act
+  // is about, or to the viewer for the acts that are shown to the viewer.
+  spotFacing(spot, hero, camera = this.camera) {
+    const to = (p) => Math.atan2(p.x - hero.x, p.z - hero.z);
+    const viewer = () => (camera ? Math.atan2(camera.position.x - hero.x, camera.position.z - hero.z) : 0);
+    const h = this.objects.D01;
+    switch (spot) {
+      case 'sun': return to(this.objects.D22.position); // her back to the viewer, her arm up to it
+      // a hand at her brow or her lips is seen from the front: she stands to the viewer, turned a
+      // little toward the sun, or the birds, and looks up at them
+      case 'glare': return viewer() + 0.55 * Math.sign(this.objects.D22.position.x - hero.x || 1);
+      case 'birds': return viewer() + 0.55 * Math.sign(this.objects.D21.position.x - hero.x || 1);
+      case 'tools': return to(this.tools.rake.home.pos);
+      case 'weeds': return this.weedProp ? to(this.weedProp.position) : null;
+      case 'tree': return to(this.objects.D09.position);
+      case 'corn': return to(this.stations.c2?.pos ?? this.stations.C0.pos);
+      case 'door': return to(h.localToWorld(new THREE.Vector3(0.55, 0, G.HOUSE.d / 2)));
+      case 'window': return to(h.localToWorld(new THREE.Vector3(WINDOW_X, 0, G.HOUSE.d / 2)));
+      case 'bed': { const p = this.whoKnowsPos(new THREE.Vector3()); return p ? to(p) : null; }
+      case 'sketch': return this.sketchProp ? to(this.sketchProp.position) : null;
+      // she stands side on to the sunflowers and leans toward them (her left)
+      case 'between': return to(this.stations.s3?.pos ?? this.stations.S0.pos) - Math.PI / 2;
+      case 'sunflowers': case 'world': case 'table': case 'paper': case 'path': case 'field': case 'pose': case 'easel': case 'flipflops': return viewer();
+      default: return null; // the bench, the chimney and the stones turn her themselves
+    }
+  }
+  // What the act needs of the place, for hero.startMoment: the bench's seat, the climb's route,
+  // the line of stones, the place a step away she moves to (the trunk, the glass).
+  spotStage(spot, hero) {
+    const h = this.objects.D01;
+    switch (spot) {
+      case 'bench': return { seat: this.benchSeat(), yaw: this.objects.D10.rotation.y };
+      case 'chimney': return { route: this.chimneyRoute() };
+      case 'stones': return { route: this.hopRoute() };
+      case 'tree': {
+        const trunk = this.objects.D09.position;
+        const d = new THREE.Vector3(hero.x - trunk.x, 0, hero.z - trunk.z).normalize();
+        return { to: trunk.clone().addScaledVector(d, TREE_TRUNK_R * this.objects.D09.scale.x + 0.3).setY(0) };
+      }
+      case 'window': return { to: h.localToWorld(new THREE.Vector3(WINDOW_X, 0, G.HOUSE.d / 2 + 0.46)).setY(0) };
+      default: return {};
+    }
   }
   chimneyRoute() {
     const h = this.objects.D01;
@@ -1360,50 +1507,62 @@ export class World {
       this.updateStandMarker(mark, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= 0.65);
     }
   }
-  // v0.21 (audit 7): `spots` show their star from anywhere (the kids edition, Show all, the one
-  // she asked to be shown); `glints` are hidden ones she has come near: a small star twinkles into
-  // view, and its ground ring only once she stands at it. A star comes and goes in a breath.
-  updateEggSpots(spots, dtMs, glints = []) {
+  // v0.22 (Tiffany: "The circles should be the actions that you perform to get the Easter egg
+  // song"): every spot in `spots` (those with a song left) shows its yellow circle on the ground
+  // and its star over it, from anywhere; the circle grows and sparkles when she stands in it. They
+  // come and go in a breath. (v0.21 hid the stars until she came near; that is gone.) The two
+  // things the acts are about that the farm did not have, the weeds by the bed and the crumpled
+  // sketch, lie at their spots while their song waits.
+  updateEggSpots(spots, dtMs) {
     this.eggSparkles ??= {};
     const hero = this.heroPos();
     const still = this.reducedMotion();
     const shown = !this.finaleActive && !this.playHidden;
-    for (const id of new Set([...Object.keys(this.eggSparkles), ...spots, ...glints])) {
+    for (const id of new Set([...Object.keys(this.eggSparkles), ...spots])) {
       let sp = this.eggSparkles[id];
       if (!sp) { sp = this.eggSparkles[id] = G.standMarker(); sp.userData.in = 0; this.root.add(sp); }
-      const lit = spots.includes(id);
-      const glint = !lit && glints.includes(id);
-      const on = shown && (lit || glint);
+      const on = shown && spots.includes(id);
       sp.userData.in = Math.max(0, Math.min(1, (sp.userData.in ?? 0) + (on ? 1 : -1) * (still ? 1 : dtMs / 320)));
       sp.visible = shown && sp.userData.in > 0;
       if (!sp.visible) { if (!shown) sp.userData.in = 0; continue; }
-      if (on) sp.userData.glint = glint;
       const at = this.eggSpotPos(id);
-      const ready = !!hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= (id === 'bed' ? 1.1 : 0.65);
+      if (id === 'bed') at.y = this.bedHeight(at); // on the bed's soil, where she steps up
+      const ready = !!hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= this.spotReach(id);
       this.updateStandMarker(sp, at, dtMs, ready, { chimney: id === 'chimney' });
       const k = ease.out(sp.userData.in);
-      const quiet = sp.userData.glint && !ready; // a glint: the star alone, small and twinkling
-      const star = sp.getObjectByName('standStar');
-      const ring = sp.getObjectByName('standCircle');
-      ring.visible = !quiet;
-      sp.getObjectByName('standDisc').visible = !quiet;
-      const twinkle = quiet && !still ? 0.82 + 0.18 * Math.sin(sp.userData.t / 130) : 1;
-      star.scale.multiplyScalar(Math.max(0.01, k) * (quiet ? 0.72 : 1) * twinkle);
-      if (quiet && !still) star.rotateZ(Math.sin(sp.userData.t / 420) * 0.35);
-      ring.scale.multiplyScalar(Math.max(0.01, k));
+      // with a circle at every song the stars are small until she stands in one (two dozen big
+      // stars crowded the farm); the circle is the mark
+      sp.getObjectByName('standStar').scale.multiplyScalar(Math.max(0.01, k) * (ready ? 1 : SPOT_STAR));
+      sp.getObjectByName('standCircle').scale.multiplyScalar(Math.max(0.01, k));
     }
   }
-  // is a spot's star in view now, and as a glint (checks)
-  eggSpotLook(id) {
-    const sp = this.eggSparkles?.[id];
-    if (!sp?.visible) return null;
-    return sp.userData.glint && !sp.getObjectByName('standCircle').visible ? 'glint' : 'star';
+  // the hunt's own things on the ground (main.js: `spots` are the spots with a song left; `out`
+  // false outside the hunt): the weed clump of "Weeds Elite" and the crumpled sketch of "Don't You
+  // Worry"
+  updateSpotProps(spots, out) {
+    if (!this.weedProp) {
+      const w = G.weed(); w.name = 'HuntWeeds';
+      const at = this.eggSpotPos('weeds').add(new THREE.Vector3(0.75, 0, -0.1));
+      w.position.copy(at); w.scale.setScalar(1.25);
+      const w2 = G.weed(); w2.position.set(0.32, 0, 0.18); w2.rotation.y = 1.9; w2.scale.setScalar(0.8); w.add(w2);
+      this.root.add(w); this.weedProp = w;
+      const s = G.crumpledSketch(); s.name = 'HuntSketch';
+      s.position.copy(this.eggSpotPos('sketch').add(new THREE.Vector3(0.42, 0, 0.2)));
+      this.root.add(s); this.sketchProp = s;
+    }
+    const show = out && !this.finaleActive && !this.playHidden;
+    this.weedProp.visible = show && spots.includes('weeds');
+    if (!this.sketchProp.userData.taken) this.sketchProp.visible = show && spots.includes('sketch');
   }
+  // is a spot's circle and star in view now (checks)
+  eggSpotLook(id) { return this.eggSparkles?.[id]?.visible ? 'star' : null; }
   hideMarkers() {
     this.marker.obj.visible = false;
     for (const m of [...Object.values(this.eggSparkles ?? {}), ...Object.values(this.goalMarkers ?? {})]) m.visible = false;
     if (this.nuisance) this.nuisance.bird.visible = false;
-    for (const k of Object.values(this.keepsakes ?? {})) { k.obj.visible = false; k.glint.visible = false; }
+    for (const k of Object.values(this.keepsakes ?? {})) k.obj.visible = false;
+    if (this.weedProp) { this.weedProp.visible = false; this.sketchProp.visible = false; }
+    if (this.airLine) this.airLine.visible = false;
     for (const sp of this.inkWords ?? []) sp.visible = false;
   }
   // a bird flies across the screen over `at` and drops an egg there. -> Promise of the egg (a
@@ -1606,7 +1765,7 @@ export class World {
   }
   buildBird() {
     const bird = G.flyingBird();
-    bird.scale.setScalar(1.5);
+    bird.scale.setScalar(THIEF.size); // v0.22: big enough to see what it is up to (it was 1.5)
     bird.visible = false;
     bird.name = 'NuisanceBird';
     this.root.add(bird);
@@ -1631,7 +1790,7 @@ export class World {
     }
     bird.visible = true;
     const flap = still ? 0 : Math.sin(n.t / 70);
-    let pos; let yaw = bird.rotation.y; let wings = 0.6 * flap;
+    let pos; let yaw = bird.rotation.y; let wings = 0.6 * flap; let pitch = 0;
     if (s.phase === 'warn') {
       // in, then round and round over the target
       const k = Math.min(1, s.t / 700);
@@ -1648,30 +1807,67 @@ export class World {
       pos = circle.lerp(over, ease.inOut(k));
       yaw = Math.atan2(over.x - bird.position.x, over.z - bird.position.z);
     } else if (s.phase === 'sit') {
-      pos = at.clone().add(new THREE.Vector3(0, 0.05 + (still ? 0 : Math.abs(Math.sin(n.t / 180)) * 0.04), 0));
-      wings = still ? 0 : 0.15 * Math.sin(n.t / 400); // folded, a little ruffle
+      // v0.22: on a plant it tugs at the crop, harder and harder, and the plant shakes with it
+      const tug = s.target?.kind === 'node' && !still ? Math.min(1, s.t / BIRDS.sitMs) : 0;
+      const peck = tug ? Math.max(0, Math.sin(n.t / (150 - 50 * tug))) : 0;
+      pos = at.clone().add(new THREE.Vector3(0, 0.05 + (still ? 0 : Math.abs(Math.sin(n.t / 180)) * 0.04) + 0.1 * peck * tug, 0));
+      pitch = 0.5 * peck * tug;
+      wings = still ? 0 : (0.15 + 0.45 * tug * peck) * Math.sin(n.t / (400 - 300 * tug));
       yaw = 0.6 + 0.3 * Math.sin(n.t / 700);
+      const plant = s.target?.kind === 'node' ? this.stations[s.target.id]?.obj : null;
+      if (plant && tug) { n.shaking = plant; n.shake0 ??= plant.rotation.z; plant.rotation.z = n.shake0 + 0.07 * tug * Math.sin(n.t / 60); }
     } else {
-      // off and away, up and to the far side
-      const k = Math.min(1, s.t / 1200);
-      const away = n.leaveFrom.clone().add(new THREE.Vector3(7, 6.5, -6));
-      pos = n.leaveFrom.clone().lerp(away, ease.inOut(k));
+      // off and away. With a crop in its claws (v0.22) it goes up and across the screen, slowly
+      // enough to see what it has; with nothing, up and off to the far side as before
+      const k = Math.min(1, s.t / BIRDS.leaveMs);
+      const off = n.carry ? new THREE.Vector3(...THIEF.away) : new THREE.Vector3(7, 6.5, -6);
+      const away = n.leaveFrom.clone().add(off);
+      const e = n.carry ? k * k * (3 - 2 * k) * 0.55 + 0.45 * k : ease.inOut(Math.min(1, k * 1.8));
+      pos = n.leaveFrom.clone().lerp(away, e);
+      if (n.carry && !still) pos.y += Math.sin(Math.min(1, k * 2.4) * Math.PI) * 0.5; // a heave up with the load
       yaw = Math.atan2(away.x - n.leaveFrom.x, away.z - n.leaveFrom.z);
-      wings = 0.8 * (still ? 0 : Math.sin(n.t / 55));
+      wings = (n.carry ? 0.95 : 0.8) * (still ? 0 : Math.sin(n.t / (n.carry ? 75 : 55)));
+      if (n.carry) n.carry.rotation.z = still ? 0 : 0.25 * Math.sin(n.t / 160); // it swings under it
     }
+    if (s.phase !== 'sit' && n.shaking) { n.shaking.rotation.z = n.shake0; n.shaking = null; n.shake0 = undefined; }
     bird.position.copy(pos);
-    bird.rotation.set(0, yaw, 0);
+    bird.rotation.set(pitch, yaw, 0);
     n.wl.rotation.z = -wings; n.wr.rotation.z = wings;
   }
-  // the crop a bird took rides off in its beak
+  // The crop a bird took hangs in its claws (v0.22, Tiffany: "more obviously steal crops and fly
+  // off with them"): the crop itself, half as big again as on the plant, under its body.
   birdCarry(res) {
     const n = this.nuisance;
     if (!n || !res) return;
     if (n.carry) n.bird.remove(n.carry);
-    n.carry = G.unitMesh(res);
-    n.carry.scale.setScalar(0.55 / n.bird.scale.x);
-    n.carry.position.set(0, -0.08, 0.26);
+    n.carry = new THREE.Group();
+    const crop = G.unitMesh(res);
+    crop.scale.setScalar(THIEF.crop / n.bird.scale.x);
+    crop.position.set(0, -0.15, 0);
+    if (res === 'S') crop.rotation.x = Math.PI / 2; // the sunflower's face to the viewer
+    n.carry.add(crop);
+    n.carry.position.set(0, -0.03, 0.02);
     n.bird.add(n.carry);
+  }
+  // The plant a bird took from (v0.22: "so the crops need to grow back"). Its ripe crop is gone
+  // from it (the ledger: sync hides the units); here it shudders in a puff of dust, and the corn
+  // and the sunflowers sag, then stand up again over the time their crop takes to grow.
+  stripPlant(id) {
+    const st = this.stations[id];
+    if (!st || !NODES[id]) return;
+    const res = NODES[id].res;
+    const top = this.nodeTop(id, new THREE.Vector3());
+    if (top) this.puff(top, { scale: 0.9 });
+    const o = res === 'T' ? this.nodeViews[id]?.plant : st.obj;
+    if (!o || this.reducedMotion()) return;
+    this.wobble(o, { amp: 0.16, ms: 700 });
+    if (res === 'T') return; // the bed's plants keep their size: their fruit is what went
+    const full = (o.userData.fullY ??= o.scale.y);
+    const token = (o.userData.regrow = (o.userData.regrow ?? 0) + 1);
+    const mine = () => o.userData.regrow === token;
+    this.tweens.run(260, (k) => { if (mine()) o.scale.y = full * (1 - 0.3 * ease.out(k)); })
+      .then(() => this.tweens.run(Math.max(500, NODE_RENEW_MS[res] - 500), (k) => { if (mine()) o.scale.y = full * (0.7 + 0.3 * k); }))
+      .then(() => { if (mine()) o.scale.y = full; });
   }
   // a shoo: a little puff where the bird was as it flies off
   birdShoo() { if (this.nuisance?.bird.visible) this.puff(this.nuisance.bird.position.clone(), { scale: 0.5 }); }
@@ -1978,18 +2174,17 @@ export class World {
       const obj = G.keepsake(id);
       const p = this.proj.groundAt(k.u, k.v);
       obj.position.copy(p);
-      obj.scale.setScalar(1.3);
+      obj.scale.setScalar(KEEPSAKE_SIZE);
       obj.visible = false;
       this.root.add(obj);
-      const glint = G.sparkleStar();
-      glint.scale.setScalar(0.9);
-      glint.visible = false;
-      this.root.add(glint);
-      this.keepsakes[id] = { obj, glint, pos: p.clone(), t: (id.length * 977) % 3000, gone: false };
+      this.keepsakes[id] = { obj, pos: p.clone(), t: (id.length * 977) % 3000, gone: false };
     }
   }
   keepsakePos(id) { return this.keepsakes?.[id]?.pos ?? null; }
-  // out: the exploring phase; found: { id: true }; hero: her position
+  // out: the exploring phase; found: { id: true }; hero: her position.
+  // v0.22 (Tiffany: "should not have yellow circles around them, they should just be icons that
+  // look like the item in the photo"): each lies on the grass as the thing itself. No ring, no
+  // yellow glint; when she is near it gives a small hop now and then, so it is seen.
   updateKeepsakes(dtMs, { out = false, found = {}, hero = null } = {}) {
     if (!this.keepsakes) this.buildKeepsakes();
     const show = out && !this.playHidden && !this.finaleActive;
@@ -1997,20 +2192,12 @@ export class World {
     for (const [id, k] of Object.entries(this.keepsakes)) {
       if (k.picking) continue;
       k.obj.visible = show && !found[id];
-      k.glint.visible = false;
-      if (!k.obj.visible || !hero) continue;
+      k.obj.position.y = 0;
+      if (!k.obj.visible || !hero || still) continue;
       k.t += dtMs;
-      const near = Math.hypot(hero.x - k.pos.x, hero.z - k.pos.z) < KEEPSAKE_GLINT_M;
+      const near = Math.hypot(hero.x - k.pos.x, hero.z - k.pos.z) < KEEPSAKE_NEAR_M;
       const cyc = k.t % 2600;
-      if (near && cyc < 600) {
-        const a = Math.sin((cyc / 600) * Math.PI);
-        k.glint.visible = true;
-        k.glint.position.copy(k.pos).setY(0.45);
-        if (this.camera) k.glint.quaternion.copy(this.camera.quaternion);
-        k.glint.scale.setScalar(0.5 + 0.5 * a);
-        k.glint.rotateZ(still ? 0 : cyc / 300);
-        k.glint.children.forEach((c) => { c.material.opacity = a; });
-      }
+      if (near && cyc < 420) k.obj.position.y = Math.sin((cyc / 420) * Math.PI) * 0.12;
     }
   }
   // she picks it up: a hop and a puff, and it is gone
@@ -2018,7 +2205,6 @@ export class World {
     const k = this.keepsakes?.[id];
     if (!k) return;
     k.picking = true;
-    k.glint.visible = false;
     if (!this.reducedMotion()) {
       const s0 = k.obj.scale.x;
       await this.tweens.run(320, (t) => { k.obj.position.y = Math.sin(Math.PI * t) * 0.5; k.obj.scale.setScalar(s0 * (1 + 0.4 * t)); k.obj.rotation.y += 0.25; });
@@ -2028,36 +2214,6 @@ export class World {
     k.obj.position.y = 0;
     k.obj.visible = false;
     k.picking = false;
-  }
-
-  // ---------- v0.17c: "Draw it": the farm as it stands, back in pencil on paper ----------
-  // on: every built part as it is, what is not built yet left out (no blueprint ghosts); main.js
-  // turns the whole frame to ink on paper with the opening's ink front (look.js setInkFront); the ground, the sky and the sun back to paper and ink, the play
-  // elements away; off: everything back as the ledger has it. Presentation only, for one frame.
-  pencilLook(on) {
-    const l = this.lastLedger;
-    if (on) {
-      this.pencil = { colour: { ...(this.finaleColour ?? {}) }, finished: this.finished };
-      this.setPlayHidden(1);
-      this.setFinaleColour({});
-      for (const part of Object.values(this.parts)) {
-        const done = l && this.partDone(part, l);
-        if (part.model) { part.model.root.visible = !!done; part.model.setOpacity(1); }
-        for (const b of part.before) b.root.visible = false;
-      }
-      if (this.benchFootprint) this.benchFootprint.root.visible = false;
-      for (const k of Object.values(this.keepsakes ?? {})) { k.obj.visible = false; k.glint.visible = false; }
-      for (const sp of Object.values(this.eggSparkles ?? {})) sp.visible = false;
-      if (this.nuisance) this.nuisance.bird.visible = false;
-      for (const f of this.fireflies ?? []) f.sp.visible = false;
-      this.marker.obj.visible = false;
-      return;
-    }
-    const p = this.pencil;
-    this.pencil = null;
-    this.setPlayHidden(0);
-    if (p?.finished) this.setFinished(true); else this.setFinaleColour(p?.colour ?? {});
-    if (l) this.applyParts(l);
   }
 
   // ---------- v0.17c: fireflies in the finished farm's evening (game/evening.js) ----------
@@ -2176,34 +2332,157 @@ export class World {
     return this.tweens.wait(delay).then(() => this.tweens.run(ms, (t) => { obj.rotation[axis] = base + amp * Math.sin(t * Math.PI * 5) * (1 - t); }))
       .then(() => { obj.rotation[axis] = base; obj.userData.wobbling = false; });
   }
-  // the farm answers a spot moment (songs.js SPOTS act): the word, and the spot's own reaction
-  spotPoke(spot, word, heroPos) {
-    const at = this.eggSpotPos(spot, new THREE.Vector3());
-    const top = (heroPos ?? at).clone().setY(2.3);
-    this.inkWord(word, top, { h: 0.45 });
+  // The farm answers a spot's moment (songs.js SPOTS `act`): the pencilled word, when the act has
+  // got to its point, and the spot's own reaction to what she does (v0.22: for every spot). All of
+  // it runs on the world's clock; `cancelSpot` (she walked off) calls the rest of it off.
+  spotPoke(spot, act, heroPos) {
+    const ms = act.ms;
+    const token = (this.pokeToken = (this.pokeToken ?? 0) + 1);
+    const live = () => this.pokeToken === token;
+    const after = (k, fn) => this.tweens.wait(ms * k).then(() => { if (live()) fn(); });
+    const her = () => (this.heroPos() ?? heroPos).clone();
+    const say = (k = 0.3, word = act.word, o = {}) => after(k, () => this.inkWord(word, her().setY(2.3), { h: 0.45, ...o }));
     const st = (id) => this.stations[id]?.obj;
     const wob = (objs, o) => objs.filter(Boolean).forEach((x, i) => this.wobble(x, { ...o, delay: (o?.delay ?? 0) + i * 90 }));
     switch (spot) {
-      case 'door': this.strikePart('H5', 0); this.tweens.wait(300).then(() => this.strikePart('H5', 1)); break;
+      case 'door': say(0.1); this.strikePart('H5', 0); this.tweens.wait(300).then(() => { if (live()) this.strikePart('H5', 1); }); break;
       case 'chimney': {
-        const sm = this.smoke;
-        if (sm) for (let i = 0; i < 3; i++) this.puff(sm.top.clone().add(new THREE.Vector3(0, 0.25 * i, 0)), { scale: 1.6 + 0.4 * i, delay: i * 220, seed: i });
+        say(0.05);
+        // at the top, three puffs go up from the chimney (small enough not to hide her)
+        after(0.45, () => { const sm = this.smoke; if (sm) for (let i = 0; i < 3; i++) this.puff(sm.top.clone().add(new THREE.Vector3(0.1, 0.55 + 0.3 * i, -0.15)), { scale: 0.9 + 0.2 * i, delay: i * 220, seed: i }); });
         break;
       }
-      case 'bench': wob([this.parts.D10?.model?.root], { amp: 0.05, ms: 600 }); break;
-      case 'tree': wob([this.objects.D09], { amp: 0.035, ms: 900 }); this.wobble(this.objects.D21, { amp: 0.15, axis: 'x', ms: 900 }); break;
-      case 'tools': wob([this.objects.D14, this.objects.D13], { amp: 0.12, ms: 700 }); break;
-      case 'stones': wob([this.parts.D12?.model?.root], { amp: 0.03, ms: 600 }); break;
-      case 'bed': this.whoKnowsHello(heroPos ?? at); break;
-      case 'sunflowers': wob(['s1', 's2', 's3', 's4'].map(st), { amp: 0.14, ms: 1000 }); break;
-      case 'corn': wob(['c1', 'c2', 'c3', 'c4'].map(st), { amp: 0.1, ms: 900 }); break;
+      case 'bench': say(0.3); after(0.2, () => wob([this.parts.D10?.model?.root], { amp: 0.04, ms: 500 })); break;
+      // she hugs the trunk: the canopy shivers and the sky's birds start up
+      case 'tree': say(0.4); after(0.3, () => { wob([this.objects.D09], { amp: 0.03, ms: 1000 }); this.wobble(this.objects.D21, { amp: 0.15, axis: 'x', ms: 900 }); }); break;
+      case 'tools': say(0.55); this.leanRake(ms, live); break;
+      case 'stones': {
+        // a "Hop!" and a dip of the stone at every landing
+        const route = this.hopRoute();
+        const stones = this.parts.D12?.model?.root?.children ?? [];
+        this.hopTimes(ms).forEach((at, i) => this.tweens.wait(at).then(() => {
+          if (!live()) return;
+          this.inkWord(i % 2 ? 'Hop!' : 'Hop', her().setY(2.1), { h: 0.36, ms: 700, rise: 0.4 });
+          const stone = stones.find((s) => Math.hypot(s.position.x - route[i + 1].x, s.position.z - route[i + 1].z) < 0.2);
+          if (stone && !this.reducedMotion()) { const y0 = stone.position.y; this.tweens.run(260, (k) => { stone.position.y = y0 - 0.03 * Math.sin(Math.PI * k); }).then(() => { stone.position.y = y0; }); }
+          this.puff(route[i + 1].clone().setY(0.05), { scale: 0.35, seed: i });
+        }));
+        break;
+      }
+      case 'bed': say(0.3); after(0.25, () => this.whoKnowsHello(her())); break;
+      case 'sunflowers': say(0.86); wob(['s1', 's2', 's3', 's4'].map(st), { amp: 0.16, ms: ms * 0.8 }); break;
+      // the punchline, and the corn shakes with laughter
+      case 'corn': say(0.56); after(0.56, () => wob(['c1', 'c2', 'c3', 'c4'].map(st), { amp: 0.13, ms: 1000 })); break;
       case 'table': {
-        const t = this.sellSpot(new THREE.Vector3()).setY(1.2);
-        for (let i = 0; i < 4; i++) this.tweens.wait(i * 120).then(() => this.flight('coin', t, t.clone().add(new THREE.Vector3((i - 1.5) * 0.3, 0.3, 0.9)), 420));
+        // out of her pockets: a few small treasures fly up and land round her
+        say(0.55);
+        after(0.5, () => {
+          const from = her().setY(0.95);
+          ['coin', 'T', 'coin', 'C', 'coin'].forEach((res, i) => this.tweens.wait(i * 90).then(() => { if (live()) this.toss(res, from, from.clone().add(new THREE.Vector3((i - 2) * 0.42, -0.9, 0.55 + 0.12 * (i % 2))), 620, 0.9); }));
+        });
         break;
       }
-      default:
+      case 'sun': say(0.3); after(0.3, () => this.sunFlare(1100)); break;
+      case 'glare': say(0.35); after(0.2, () => this.sunFlare(1500)); break;
+      case 'birds': say(0.45); after(0.4, () => { this.wobble(this.objects.D21, { amp: 0.22, axis: 'x', ms: 1100 }); this.inkWord('Tweet!', this.objects.D21.position.clone().add(new THREE.Vector3(0.6, -1.2, 0)), { h: 0.5, ms: 1200 }); }); break;
+      case 'weeds': say(0.5); after(0.42, () => { if (this.weedProp) { wob([this.weedProp], { amp: 0.3, ms: 900 }); this.inkWord('HA HA HO!', this.weedProp.position.clone().setY(1.0), { h: 0.34, ms: 1100 }); } }); break;
+      case 'world': say(0.4); break;
+      // the corn leans after her, and one sunflower turns its head
+      case 'between': say(0.45); after(0.25, () => { wob(['c3', 'c4'].map(st), { amp: 0.12, ms: 1400 }); wob([st('s3')], { amp: -0.1, ms: 1400 }); }); break;
+      case 'paper': say(0.62); break;
+      case 'window': say(0.5); break;
+      case 'path': {
+        // the coins go up from her hands, and come down round her
+        say(0.42);
+        after(0.3, () => {
+          const from = her().setY(2.0);
+          for (let i = 0; i < 6; i++) this.tweens.wait(i * 50).then(() => { if (live()) this.toss('coin', from, her().add(new THREE.Vector3(Math.cos(i * 1.05) * 0.7, 0.05, Math.sin(i * 1.05) * 0.55 + 0.25)), 900, 1.5); });
+        });
+        break;
+      }
+      // the kiss is a pencilled heart that floats off toward the viewer
+      case 'field': after(0.5, () => { const p = her().setY(1.55); if (this.camera) p.add(new THREE.Vector3().subVectors(this.camera.position, p).setY(0).normalize().multiplyScalar(0.5)); this.inkWord(act.word, p, { h: 0.6, ms: 1500, rise: 1.1 }); }); break;
+      case 'sketch': {
+        // the paper comes up off the grass into her hand (hero.js shows it there), then the word
+        say(0.6);
+        after(0.33, () => { if (this.sketchProp) { this.sketchProp.userData.taken = true; this.sketchProp.visible = false; } });
+        after(0.98, () => { if (this.sketchProp) this.sketchProp.userData.taken = false; });
+        break;
+      }
+      case 'pose': say(0.35); break;
+      case 'easel': say(0.8); this.airCircle(her(), ms, live); break;
+      case 'flipflops': {
+        say(0.3, 'Flip!'); say(0.56, 'Flop!');
+        for (const k of [0.3, 0.56, 0.8]) after(k, () => this.puff(her().setY(0.05), { scale: 0.4, seed: Math.round(k * 10) }));
+        break;
+      }
+      default: say(0.3);
     }
+  }
+  // she walked off in the middle of a moment: nothing more of it happens, and what it moved goes back
+  cancelSpot(spot) {
+    this.pokeToken = (this.pokeToken ?? 0) + 1;
+    if (spot === 'tools') { const r = this.tools.rake; if (this.heldTool !== 'rake' && !r.flying) r.obj.quaternion.copy(r.home.quat); }
+    if (spot === 'sketch' && this.sketchProp) this.sketchProp.userData.taken = false;
+    if (this.airLine) this.airLine.visible = false;
+  }
+  // "Lean the rake on the shovel": as she reaches out, the rake tips along the wall until its
+  // handle rests on the shovel's (a clink), stays there a moment, and goes back to its own lean
+  leanRake(ms, live = () => true) {
+    const r = this.tools.rake;
+    if (this.heldTool === 'rake' || r.flying) return;
+    const o = r.obj;
+    const q = new THREE.Quaternion();
+    const along = Math.sign(TOOL_LEAN.along.shovel - TOOL_LEAN.along.rake); // toward the shovel, along the wall
+    const tip = (k) => o.quaternion.copy(r.home.quat).multiply(q.setFromEuler(tmpE.set(along * RAKE_ON_SHOVEL * k, 0, 0)));
+    if (this.reducedMotion()) { tip(1); this.tweens.wait(ms * 0.8).then(() => o.quaternion.copy(r.home.quat)); return; }
+    this.tweens.wait(ms * 0.22)
+      .then(() => this.tweens.run(ms * 0.26, (k) => { if (live()) tip(ease.inOut(k)); }))
+      .then(() => { if (live()) wob2(this, this.tools.shovel.obj); return this.tweens.wait(ms * 0.26); })
+      .then(() => this.tweens.run(ms * 0.2, (k) => { if (live()) tip(1 - ease.inOut(k)); }))
+      .then(() => { if (live() && this.heldTool !== 'rake') o.quaternion.copy(r.home.quat); });
+  }
+  // a small thing thrown up in an arc from `from` to `to` (higher than a unit's flight: `high` m)
+  toss(res, from, to, ms = 700, high = 1) {
+    const m = G.unitMesh(res);
+    m.position.copy(from);
+    this.root.add(m);
+    if (this.reducedMotion()) return this.tweens.wait(REDUCED_FLIGHT_MS).then(() => this.root.remove(m));
+    return this.tweens.run(ms, (k) => {
+      m.position.lerpVectors(from, to, k);
+      m.position.y += Math.sin(Math.PI * k) * high;
+      m.rotation.set(k * 5, k * 7, 0);
+    }).then(() => this.root.remove(m));
+  }
+  // "Draw a big circle in the air": a pencil line follows her hand round, before her, facing the
+  // viewer, and fades when she is done
+  airCircle(at, ms, live = () => true) {
+    const R = 0.62; const N = 72;
+    if (!this.airLine) {
+      const pos = [];
+      for (let i = 0; i <= N; i++) { const a = (i / N) * Math.PI * 2; const r = R * (1 + 0.035 * Math.sin(a * 3 + 0.7)); pos.push(Math.sin(a) * r, Math.cos(a) * r, 0); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      this.airLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: G.PALETTE.ink, transparent: true, depthTest: false }));
+      this.airLine.renderOrder = 9; this.airLine.userData.noOutline = true; this.airLine.userData.noFit = true;
+      this.root.add(this.airLine);
+    }
+    const line = this.airLine;
+    line.position.copy(at).setY(1.62);
+    if (this.camera) { line.quaternion.copy(this.camera.quaternion); line.position.add(new THREE.Vector3().subVectors(this.camera.position, line.position).setY(0).normalize().multiplyScalar(0.45)); }
+    line.visible = true; line.material.opacity = 1;
+    this.tweens.run(ms, (u) => {
+      if (!live()) return;
+      line.geometry.setDrawRange(0, Math.max(2, Math.round(drawnShare(u) * (N + 1))));
+      line.material.opacity = u > 0.86 ? Math.max(0, 1 - (u - 0.86) / 0.14) : 1;
+    }).then(() => { if (live()) line.visible = false; });
+  }
+  // the sun answers her: it swells and its rays reach out for a moment
+  sunFlare(ms = 1200) {
+    const sun = this.objects.D22;
+    if (!sun || this.reducedMotion() || sun.userData.flaring) return;
+    sun.userData.flaring = true;
+    const s0 = sun.scale.x;
+    this.tweens.run(ms, (k) => sun.scale.setScalar(s0 * (1 + 0.1 * Math.sin(Math.PI * k) * (1 + 0.3 * Math.sin(k * 30))))).then(() => { sun.scale.setScalar(s0); sun.userData.flaring = false; });
   }
 
   // ---------- v0.17: the Who-Knows plant says hello (spec §10.5) ----------
@@ -2716,6 +2995,8 @@ export class World {
 // the held tool's grip: how far up the handle her fist is (model metres at the tool's drawing
 // scale) and the handle's lean forward and outward, radians (tuned in the browser)
 export const GRIP = { at: 0.9, forward: 0.16, out: 0.12 };
+// the shovel gives a small shiver as the rake comes to rest on it
+function wob2(world, obj) { world.wobble(obj, { amp: 0.04, ms: 420 }); }
 const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();
 const tmpU = new THREE.Vector3();

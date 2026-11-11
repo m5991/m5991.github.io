@@ -11,8 +11,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { PAL, toon } from './look.js';
 
 export const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
-export function mesh(geo, color, { hatch = 0, ink = true, shadow = true, noLight = 0 } = {}) {
-  const m = new THREE.Mesh(geo, toon(color, { hatch, noLight }));
+export function mesh(geo, color, { hatch = 0, ink = true, shadow = true, noLight = 0, ...look } = {}) {
+  const m = new THREE.Mesh(geo, toon(color, { hatch, noLight, ...look }));
   m.castShadow = shadow; m.receiveShadow = true;
   if (!ink) m.userData.noOutline = true;
   return m;
@@ -146,8 +146,12 @@ export function cottage() {
     return geo;
   };
   const wall = (w, d, x, z) => { const geo = new THREE.BoxGeometry(w, Hw, d); geo.translate(x, P + Hw / 2, z); return wonky(geo); };
+  // v0.22 (Tiffany: "Make house pure white"): the walls are white, not cream. A lit wall is pure
+  // white (no paper in its light band); the wall turned from the sun takes a light shade only
+  // (`shade`), so the house reads white all round and still has its two sides.
+  const WALL = { hatch: 0.6, shade: 0.11, light: 0 };
   for (const geo of [wall(W, WT, 0, D / 2 - WT / 2), wall(W, WT, 0, -D / 2 + WT / 2), wall(WT, D - 2 * WT, W / 2 - WT / 2, 0), wall(WT, D - 2 * WT, -W / 2 + WT / 2, 0)]) {
-    walls.add(mesh(geo, PAL.cream, { hatch: 1 }));
+    walls.add(mesh(geo, PAL.white, WALL));
   }
   // The walls stage includes both triangular gables; the roof stage adds only its slabs.
   const tri = new THREE.Shape();
@@ -155,7 +159,7 @@ export function cottage() {
   for (const z of [D / 2 - WT, -D / 2]) {
     const g = new THREE.ExtrudeGeometry(tri, { depth: WT, bevelEnabled: false });
     g.translate(0, P + Hw, z);
-    walls.add(mesh(wonky(g), PAL.cream, { hatch: 1 }));
+    walls.add(mesh(wonky(g), PAL.white, WALL));
   }
 
   const front = D / 2;

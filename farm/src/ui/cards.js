@@ -6,8 +6,6 @@
 
 import { fmtTime } from './songplayer.js';
 
-// a song still to find: an egg in outline
-const EGG = '<svg viewBox="0 0 24 24"><path d="M12 3c3.600 0 6.500 5.400 6.500 10.200 0 4.300-2.800 7.300-6.500 7.300s-6.500-3-6.500-7.300C5.500 8.400 8.400 3 12 3z" fill="none" stroke="#253347" stroke-width="1.5" stroke-dasharray="2.600 2.200" stroke-linecap="round"/><path d="M10.300 10.200c.2-1.200.9-1.900 1.900-1.900 1.100 0 1.900.7 1.900 1.700 0 1.400-1.800 1.500-1.800 3.100M12.300 15.600v.3" fill="none" stroke="#253347" stroke-width="1.5" stroke-linecap="round"/></svg>';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createCards(dialog, { player = null } = {}) {
@@ -29,27 +27,28 @@ export function createCards(dialog, { player = null } = {}) {
     dialog.scrollTop = 0; // v0.20: a long card (the songbook) opens at its top, not scrolled down to its Close button
   }
 
-  // v0.16: a song found, or one from the songbook: its title, a line, and Listen (in the game),
-  // Download MP3 (both editions) and Open in Suno (the full edition only: `suno` null hides it).
-  // `available` false (no song files in this build) disables Listen and Download and says so.
-  // v0.17b: Listen plays through the game's one song player (`player`, ui/songplayer.js), so the
-  // song keeps playing when the card closes; the song that is loaded shows a seek bar and its time.
-  // v0.20 (audit 4): each song shows one line of its own lyrics, quoted (`lyric`), on its card and
-  // in the songbook; (audit 1) while its discovery clip plays (`clip`, audio/clips.js) the found
-  // card shows "A taste of it…" with a small moving equaliser, gone when the clip ends.
+  // The songs' cards. All sound goes through the game's one song player (`player`,
+  // ui/songplayer.js), so a song keeps playing when its card closes.
+  // v0.20 (audit 4): each song shows one line of its own lyrics, quoted (`lyric`).
+  // v0.22 (Tiffany: "Remove the Listen button. ... The only option should be lovely when you get a
+  // song. You can download at the end under the extras the songs tab"): the found card has no
+  // Listen, no download and no link: the song is already playing, and the card says so with a
+  // small moving equaliser. The songbook's rows have Play (the row's seek bar shows while its song
+  // is loaded), Download MP3 and, where the song has a public page, Open in Suno.
   let unsubs = [];
   // a line of the song's own words; " / " in it is a line break in the song
   const lyricLine = (line) => (line ? `<blockquote class="song-lyric"><span aria-hidden="true">“</span>${esc(line)}<span aria-hidden="true">”</span></blockquote>` : '');
+  const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>';
   function songActions({ src, download, suno, available }) {
     return `<div class="song-actions">
-      <button type="button" class="primary" data-act="listen" ${available ? '' : 'disabled'} aria-pressed="false"><span class="ic" aria-hidden="true">▶</span> <span class="lbl">Listen</span></button>
+      <button type="button" class="primary" data-act="play" ${available ? '' : 'disabled'} aria-pressed="false"><span class="ic" aria-hidden="true">▶</span> <span class="lbl">Play</span></button>
       ${available ? `<a class="button" data-act="download" href="${esc(src)}" download="${esc(download)}"><span aria-hidden="true">⬇</span> Download MP3</a>` : '<button type="button" disabled>⬇ Download MP3</button>'}
       ${suno ? `<a class="button" data-act="suno" href="${esc(suno)}" target="_blank" rel="noopener noreferrer">Open in Suno ↗</a>` : ''}
     </div>${available ? '' : '<p class="small song-missing">The song files are not in this build.</p>'}
     <div class="song-seek" hidden><input type="range" min="0" max="1" step="0.5" value="0" aria-label="Where in the song"><span class="song-time small" aria-live="off"></span></div>`;
   }
-  function wireListen(root, { id, src, title }) {
-    const btn = root.querySelector('[data-act="listen"]');
+  function wirePlay(root, { id, src, title }) {
+    const btn = root.querySelector('[data-act="play"]');
     const seek = root.querySelector('.song-seek');
     const range = seek?.querySelector('input');
     const time = seek?.querySelector('.song-time');
@@ -63,7 +62,7 @@ export function createCards(dialog, { player = null } = {}) {
       const on = mine && st.playing;
       btn.setAttribute('aria-pressed', String(on));
       btn.querySelector('.ic').textContent = on ? '❚❚' : '▶';
-      btn.querySelector('.lbl').textContent = on ? 'Pause' : mine ? 'Play' : 'Listen';
+      btn.querySelector('.lbl').textContent = on ? 'Pause' : 'Play';
       seek.hidden = !mine;
       if (!mine) return;
       if (st.error) { time.textContent = 'This song could not be played.'; return; }
@@ -77,52 +76,44 @@ export function createCards(dialog, { player = null } = {}) {
   return {
     get isOpen() { return dialog.open; },
 
-    // v0.16 a song card: { id, title, songTitle, lyric, text, src, download, suno, available, clip, onClose }
+    // v0.22 a song found: { id, title, songTitle, lyric, text, src, from, available, onClose }.
+    // One button, Lovely. "Now playing" shows while its song plays. `tap` appears only when the
+    // browser refused to start the song with no tap behind it: that button is the tap.
     song(o) {
-      open(`<h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span> A taste of it…</p><p>${esc(o.text)}</p>${songActions(o)}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
-      wireListen(dialog, { id: o.id, src: o.src, title: o.songTitle ?? o.title });
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden>${EQ} Now playing</p><p>${esc(o.text)}</p><div class="song-actions tap" hidden><button type="button" data-act="tap"><span aria-hidden="true">▶</span> Play it</button></div><div class="actions"><button type="button" class="primary" data-close autofocus>Lovely</button></div>`, {}, o.onClose);
       const taste = dialog.querySelector('.song-taste');
-      if (o.clip && taste) unsubs.push(o.clip.subscribe((st) => { taste.hidden = !(st.playing && st.id === o.id); }));
+      const tap = dialog.querySelector('.song-actions.tap');
+      if (!player) return;
+      tap.querySelector('button').addEventListener('click', () => player.play({ id: o.id, src: o.src, title: o.songTitle ?? o.title, from: o.from ?? 0 }));
+      unsubs.push(player.subscribe((st) => {
+        const mine = st.id === o.id;
+        taste.hidden = !(mine && st.playing);
+        tap.hidden = !(mine && st.blocked && !st.playing);
+      }));
     },
-    // v0.16 the songbook: { title, intro, songs: [{ id, title, src, download, suno }], left, available, onClose }
-    // v0.21 (audit 7, the full edition's hunt): `missing` lists the songs still to find, each a
-    // silhouette with a line of its lyrics as the clue: [{ id, number, clue, place, tracked }].
-    // "Where is it?" asks `onWhere(id)` for its place and shows it; "Show me" calls `onShow(id)`
-    // (the caller closes the book and lights its star). `showAll` (true/false; null: no toggle)
-    // with `onShowAll(next)` is the old view, every star at once. Rows are in list order.
+    // the songbook: { title, intro, songs: [{ id, number, title, playTitle, lyric, src, download, suno }], stamp, left, available, onClose }
+    // v0.22: only the songs found, in list order (no row for a song still to find)
     songbook(o) {
-      const missing = o.missing ?? [];
-      const found = o.songs.map((x, i) => ({ n: x.number ?? i + 1, html: `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>` }));
-      const placeHtml = (m) => `<span class="clue-place">${esc(m.place)}</span><button type="button" data-act="show" aria-pressed="${m.tracked ? 'true' : 'false'}">${m.tracked ? '★ Showing' : '★ Show me'}</button>`;
-      const hidden = missing.map((m) => ({ n: m.number, html: `<li class="song-row missing" data-id="${esc(m.id)}"><span class="song-title"><span class="egg" aria-hidden="true">${EGG}</span>${String(m.number).padStart(2, '0')} · <span class="unknown" aria-label="a song still to find">? ? ?</span></span>${m.clue ? `<span class="clue-label">Clue</span>${lyricLine(m.clue)}` : ''}<div class="clue-actions">${m.place ? placeHtml(m) : '<button type="button" data-act="where">Where is it?</button>'}</div></li>` }));
-      const rows = [...found, ...hidden].sort((a, b) => a.n - b.n).map((r) => r.html).join('');
-      const all = o.showAll === true || o.showAll === false ? `<label class="show-all"><input type="checkbox" data-act="all" ${o.showAll ? 'checked' : ''}> Show all stars on the farm</label>` : '';
-      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${all}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
-      dialog.querySelectorAll('.song-row:not(.missing)').forEach((row) => wireListen(row, o.songs.find((x) => x.id === row.dataset.id)));
-      // the clue's next steps: its place, then its star
-      dialog.querySelectorAll('.song-row.missing').forEach((row) => {
-        const id = row.dataset.id;
-        const box = row.querySelector('.clue-actions');
-        const wireShow = () => box.querySelector('[data-act="show"]')?.addEventListener('click', () => o.onShow?.(id));
-        box.querySelector('[data-act="where"]')?.addEventListener('click', () => {
-          const place = o.onWhere?.(id);
-          if (!place) return;
-          box.innerHTML = placeHtml({ place, tracked: false });
-          wireShow();
-          box.querySelector('[data-act="show"]').focus();
-        });
-        wireShow();
-      });
-      dialog.querySelector('[data-act="all"]')?.addEventListener('change', (e) => o.onShowAll?.(e.target.checked));
+      const rows = o.songs.map((x) => `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>`).join('');
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
+      dialog.querySelectorAll('.song-row').forEach((row) => { const x = o.songs.find((y) => y.id === row.dataset.id); wirePlay(row, { id: x.id, src: x.src, title: x.playTitle ?? x.title }); });
     },
-    // v0.17c a keepsake found, or the list of them: { title, text, prints: [{ image, alt, title, year, caption }], left, onClose }
+    // v0.17c a keepsake found, or the list of them: { title, text, prints: [{ image, alt, title, caption }], left, onClose }
+    // v0.22 (Tiffany: "Remove the dates on the keepsakes"): a print shows its title and the words
+    // on it, never its year
     prints(o) {
-      const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy"><figcaption><span class="t">${esc(g.title)}</span>${g.year ? ` <span class="y">${g.year}</span>` : ''}${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption></figure>`).join('');
+      const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy"><figcaption><span class="t">${esc(g.title)}</span>${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption></figure>`).join('');
       open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
     },
-    // v0.17c "Draw it": the picture, and a link that saves it ({ title, text, src, download, onClose })
+    // a picture and a link that saves it ({ title, text, src, alt, download, save, onClose }).
+    // v0.22 "The drawing": Vanessa's own drawing, to download
     picture(o) {
-      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? 'The farm, drawn in pencil')}"></figure><div class="actions"><a class="button primary" href="${esc(o.src)}" download="${esc(o.download)}">⬇ Save the picture</a><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
+      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}"></figure><div class="actions"><a class="button primary" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
+    },
+    // v0.22 the credits, as a quiet card of lines: { title, lines: [{ what, who }], onClose }
+    credits(o) {
+      const rows = o.lines.map((l) => `<div class="credit"><dt>${esc(l.what)}</dt><dd>${esc(l.who)}</dd></div>`).join('');
+      open(`<h2 id="card-title">${esc(o.title)}</h2><dl class="credits-list">${rows}</dl><div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
     },
     close(v = 'close') { if (dialog.open) dialog.close(v); },
 

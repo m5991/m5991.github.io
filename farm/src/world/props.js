@@ -360,10 +360,14 @@ export const DWIGHT_HAIR = { skull: [0.9, 1.14, 0.95], over: [1.08, 1.05, 1.08] 
 // the hairline: how far down from the top of the head (radians) the hair reaches toward azimuth
 // `az` (0 straight ahead, +Z; the sign is the side): a base line high at the brow and low at the
 // nape, the fringe a little lower either side of the part, and the part itself raised
+// v0.22 (Tiffany: "Make the part in the hair a little wider so you can see Dwight's forehead"): the
+// part opens wider and higher (`PART`: its rise and its half-width in radians; v0.18 had 0.2 and
+// 0.12, a notch), so the fringe falls further to each side and his forehead shows between
+export const PART = { rise: 0.34, width: 0.3, curtainAt: 0.62 };
 export function hairlineAngle(az) {
   const base = 1.5 - 0.38 * Math.cos(az);
-  const curtain = 0.05 * Math.exp(-(((Math.abs(az) - 0.45) / 0.3) ** 2));
-  const part = 0.2 * Math.exp(-((az / 0.12) ** 2));
+  const curtain = 0.05 * Math.exp(-(((Math.abs(az) - PART.curtainAt) / 0.3) ** 2));
+  const part = PART.rise * Math.exp(-((az / PART.width) ** 2));
   return base + curtain - part;
 }
 function dwightHair(headR, colour, skin) {
@@ -390,7 +394,7 @@ function dwightHair(headR, colour, skin) {
   const pts = [];
   const from = hairlineAngle(0) - 0.02;
   for (let i = 0; i <= 18; i++) pts.push(onShell(from - (i / 18) * (from + 0.35), 1.012));
-  const w = headR * 0.028; const sp = []; const idx = [];
+  const w = headR * 0.05; const sp = []; const idx = []; // v0.22: a wider part (it was 0.028)
   pts.forEach((q, i) => { const k = w * (1 - 0.5 * (i / 18)); sp.push(q.x - k, q.y, q.z, q.x + k, q.y, q.z); }); // narrowing toward the crown
   for (let i = 0; i < pts.length - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const strip = new THREE.BufferGeometry();
@@ -634,6 +638,20 @@ export function keepsake(kind) {
   return g;
 }
 
+// v0.22 the crumpled sketch of "Don't You Worry" ("why you throwin' all your sketches away?"): a
+// ball of drawing paper on the grass, a little lumpy, with a few pencil strokes on it
+export function crumpledSketch() {
+  const g = new THREE.Group(); g.name = 'CrumpledSketch';
+  const ball = mesh(lumpy(new THREE.IcosahedronGeometry(0.13, 1), 0.035, 9, 4.2), 0xfffaf0, { shade: 0.14 });
+  ball.scale.set(1.1, 0.85, 1);
+  ball.position.y = 0.105;
+  g.add(ball);
+  for (const [x, y, z, ry, rz] of [[0.05, 0.19, 0.06, 0.4, 0.5], [-0.07, 0.15, 0.08, -0.5, -0.3], [0.02, 0.1, 0.125, 0.1, 1.2]]) {
+    g.add(at(mesh(box(0.085, 0.006, 0.006), PAL.ink, { ink: false, shadow: false }), x, y, z, 0, ry, rz));
+  }
+  return g;
+}
+
 // v0.17 the warning arrow (A09): a blunt practice arrow, a wooden shaft with a round felt tip and
 // red-and-cream fletching, 0.62 m, along +Z (the tip at +Z). It never strikes anything: the
 // archer looses it into the empty ground beside the bird.
@@ -797,7 +815,7 @@ export function borderStones(places) {
   const g = new THREE.Group();
   places.forEach(({ pos, seed }) => {
     const r = 0.12 + (seed % 5) * 0.015;
-    const m = new THREE.Mesh(stoneGeometry(r, seed % 6, 1), toon(seed % 3 ? PAL.stone : mix(PAL.stone, PAL.paper, 0.16)));
+    const m = new THREE.Mesh(stoneGeometry(r, seed % 6, 1), toon(seed % 3 ? PAL.ringStone : PAL.ringStoneLight));
     m.scale.set(1.15, 0.85 + (seed % 3) * 0.08, 1);
     m.rotation.set(((seed % 3) - 1) * 0.3, seed * 0.9, ((seed % 4) - 1.5) * 0.18); // tilted, toppled
     m.position.copy(pos).setY(r * 0.32 - (seed % 2) * 0.02); // half-sunk
@@ -831,7 +849,9 @@ export function borderRing(places) {
   const g = new THREE.Group();
   places.forEach(({ pos, seed }) => {
     const r = 0.13 + (seed % 4) * 0.012;
-    const m = new THREE.Mesh(stoneGeometry(r, seed % 6, 1), toon(seed % 3 ? PAL.stone : mix(PAL.stone, PAL.paper, 0.16)));
+    // v0.22 (Tiffany: "Make the stones surrounding the tree and the stepping stones darker in
+    // color"): a deep slate grey, two tones (they were the loose rocks' pale grey)
+    const m = new THREE.Mesh(stoneGeometry(r, seed % 6, 1), toon(seed % 3 ? PAL.ringStone : PAL.ringStoneLight));
     m.scale.set(1.2, 0.95, 1);
     m.rotation.set(0, seed * 0.7, 0);
     m.position.copy(pos).setY(r * 0.42);
@@ -845,7 +865,7 @@ export function borderRing(places) {
 export function steppingStone(i) {
   const geo = stoneGeometry(0.2, 11 + i, 2).clone();
   geo.scale(1.25, 0.3, 1);
-  const m = new THREE.Mesh(geo, toon(i % 2 ? PAL.stone : mix(PAL.stone, PAL.paper, 0.14), { hatch: 1 }));
+  const m = new THREE.Mesh(geo, toon(i % 2 ? PAL.ringStone : PAL.ringStoneLight, { hatch: 1 })); // v0.22: darker, like the ring
   m.position.y = 0.02; m.rotation.y = i * 0.6;
   m.castShadow = true; m.receiveShadow = true;
   const g = new THREE.Group(); g.name = `D12_Stone_${i}`; g.add(m);
@@ -1110,9 +1130,16 @@ export function steppingOutline(i) {
 }
 // D22: a hand-drawn spiral inside an uneven circle, with long irregular rays. `maxLen(a)` (local
 // units) ends each ray at the composition edge (P23-4b).
+// v0.22 (Tiffany: "At the end, have the sun actually illuminating rays and the spiral rotating"):
+// the pen strokes are in three parts that share one ink (`D22_SunInk`, a group: its
+// `userData.ink` is that material): the spiral (`D22_SunSpiral`, which turns), the rim, and each
+// ray on its own (`D22_SunRays`, so each can reach out and draw back). Behind them, for the end:
+// a soft halo and a beam of light along every ray (`D22_SunGlow`), unseen until the sun has its
+// colour (world.js updateSun lights and moves them).
 export function sun(radius, maxLen = () => Infinity) {
   const R = radius; const w = R * 0.045;
-  const geos = [];
+  const ink = inkBasic(1);
+  const stroke = (geos, name) => { const m = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos, false) : geos[0], ink); m.name = name; m.userData.noOutline = true; m.userData.noFit = true; return m; };
   const spiral = [];
   const turns = 3.3; const n = 160;
   for (let k = 0; k <= n; k++) {
@@ -1120,36 +1147,63 @@ export function sun(radius, maxLen = () => Infinity) {
     const rr = R * (0.08 + 0.8 * t) * (1 + 0.04 * Math.sin(a * 2.3));
     spiral.push(new THREE.Vector2(Math.cos(a) * rr, Math.sin(a) * rr));
   }
-  geos.push(strokeGeometry(spiral, w));
   const ring = [];
   for (let k = 0; k < 72; k++) {
     const a = (k / 72) * Math.PI * 2; const rr = R * (1 + 0.035 * Math.sin(a * 3 + 1) + 0.02 * Math.sin(a * 7));
     ring.push(new THREE.Vector2(Math.cos(a) * rr, Math.sin(a) * rr));
   }
-  geos.push(strokeGeometry(ring, w * 1.1, true));
+  const strokes = new THREE.Group(); strokes.name = 'D22_SunInk'; strokes.userData.ink = ink;
+  strokes.add(stroke([strokeGeometry(spiral, w)], 'D22_SunSpiral'), stroke([strokeGeometry(ring, w * 1.1, true)], 'D22_SunRim'));
+  const rays = new THREE.Group(); rays.name = 'D22_SunRays';
+  const glow = new THREE.Group(); glow.name = 'D22_SunGlow'; glow.visible = false;
+  // (depth-tested, never written: the farm in front of the sky covers the light, as it covers the sun)
+  const light = () => new THREE.MeshBasicMaterial({ color: 0xffe46b, transparent: true, opacity: 0, depthWrite: false });
+  // the halo: rings of light fading outward
+  const halo = new THREE.Group(); halo.name = 'D22_SunHalo';
+  const HALO = 14; // thin rings, each a little fainter: a glow with no visible steps
+  for (let i = 0; i < HALO; i++) {
+    const a = i / HALO; const b = (i + 1) / HALO;
+    const m = new THREE.Mesh(new THREE.RingGeometry(R * (0.98 + 1.25 * a), R * (0.98 + 1.25 * b) + R * 0.004, 56), light());
+    m.userData.level = 0.42 * (1 - a) ** 1.7;
+    halo.add(m);
+  }
+  glow.add(halo);
   const r = rng(22);
   for (let k = 0; k < 13; k++) {
     const a = (k / 13) * Math.PI * 2 + (r() - 0.5) * 0.25;
     const r0 = R * (1.2 + r() * 0.15);
     const len = Math.min(R * (2.2 + r() * 1.4), maxLen(a) - r0);
     if (len < R * 0.5) continue;
+    // each ray is drawn along +X from the rim and turned to its angle, so it can stretch along itself
     const pts = [];
     for (let s = 0; s <= 8; s++) {
-      const d = r0 + (len * s) / 8; const bend = Math.sin((s / 8) * Math.PI) * R * 0.05 * (k % 2 ? 1 : -1);
-      pts.push(new THREE.Vector2(Math.cos(a) * d - Math.sin(a) * bend, Math.sin(a) * d + Math.cos(a) * bend));
+      const bend = Math.sin((s / 8) * Math.PI) * R * 0.05 * (k % 2 ? 1 : -1);
+      pts.push(new THREE.Vector2((len * s) / 8, bend));
     }
-    geos.push(strokeGeometry(pts, (s) => w * (1 - 0.55 * s)));
+    const ray = stroke([strokeGeometry(pts, (s) => w * (1 - 0.55 * s))], `D22_SunRay_${k}`);
+    ray.position.set(Math.cos(a) * r0, Math.sin(a) * r0, 0);
+    ray.rotation.z = a;
+    rays.add(ray);
+    // its beam: a long thin wedge of light from the rim outward, widening
+    const wedge = new THREE.Shape();
+    const L = len * 1.06; const w0 = R * 0.05; const w1 = R * 0.17;
+    wedge.moveTo(0, -w0); wedge.lineTo(L, -w1); wedge.lineTo(L * 1.04, 0); wedge.lineTo(L, w1); wedge.lineTo(0, w0); wedge.closePath();
+    const beam = new THREE.Mesh(new THREE.ShapeGeometry(wedge), light());
+    beam.name = `D22_SunBeam_${k}`;
+    beam.position.copy(ray.position); beam.rotation.z = a;
+    glow.add(beam);
   }
+  strokes.add(rays);
+  glow.traverse((o) => { o.userData.noOutline = true; o.userData.noFit = true; o.renderOrder = -6; });
   const g = new THREE.Group(); g.name = 'D22_Sun';
-  const strokes = strokeMesh(geos);
-  strokes.name = 'D22_SunInk';
-  // the finale's fill (P25-2): the disc fills with the flower yellow, paper grain over it; it
+  // the finale's fill (P25-2): the disc fills with the sun's yellow, paper grain over it; it
   // sits just behind the pen strokes and is see-through until then
   const disc = new THREE.Mesh(new THREE.CircleGeometry(R * 1.02, 48), toonMaterialFor(PAL.flower));
   disc.position.z = -R * 0.01;
   disc.name = 'D22_SunDisc'; disc.userData.noOutline = true; disc.userData.noFit = true;
   disc.visible = false;
-  g.add(disc, strokes);
+  glow.position.z = -R * 0.02;
+  g.add(glow, disc, strokes);
   return g;
 }
 // D21: four check-mark birds, each two curved wing strokes

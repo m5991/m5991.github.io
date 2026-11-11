@@ -61,7 +61,7 @@ export function createLedger() {
     activeMs: 0,
     // v0.17 birds (spec §7, §6.6 point 4): `rotation` counts the bird events so far (their kinds
     // take turns), `log` holds the active time of each crop taken (the rolling window's count),
-    // `totalBeforeH4` the crops taken before the home (8 at most; the name keeps the v5 field's),
+    // `totalBeforeH4` the bird's takes before the home (v0.22: 5 plants at most; the name keeps the v5 field's),
     // `stain` a bird's mark on the restored bench, waiting to be cleaned
     theft: { rotation: 0, log: [], totalBeforeH4: 0, stain: false },
   };
@@ -147,6 +147,8 @@ export const saleReady = (l) => tableAvailable(l) && tableCount(l) >= SALE_MIN;
 export const tableValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 export const mainComplete = (l) => isCommitted(l, LAST_STAGE);
 // ---------- v0.17 birds: what can be taken now (spec §7 caps, §6.6 point 4) ----------
+// the most a save's theft record may hold: v0.17's cap of 8, which older saves reached
+export const THEFT_SAVED_MAX = 8;
 // theft is possible from the second crop plot until the home, while the caps allow it
 export const birdsActive = (l) => plotsPlanted(l) >= 2;
 export const takenRecently = (l, now = l.activeMs) => (l.theft?.log ?? []).filter((t) => now - t < BIRDS.windowMs).length;
@@ -570,18 +572,23 @@ function birdTurn(l0) {
   l.theft.rotation += 1;
   return { ok: true, l, events: [{ type: 'birdTurn', rotation: l.theft.rotation }] };
 }
-// a bird takes one crop unit, from a ready plant (`src`) or from the crops on her head (her
-// largest stack, ties to the cheapest crop), within the caps; never anything else
+// a bird takes from a ready plant (`src`) or from the crops on her head (her largest stack, ties
+// to the cheapest crop), within the caps; never anything else.
+// v0.22 (Tiffany: "fly off with them so the crops need to grow back"): from a plant it takes the
+// whole ripe crop (`n` units, what was left on it), and the plant grows it again from nothing;
+// from her head it takes one unit. A visit counts once toward the caps.
 function steal(l0, from, src) {
   if (!theftAllowed(l0)) return fail('capped');
   const l = clone(l0);
   let res;
+  let n = 1;
   if (from === 'node') {
     if (!readyNodes(l0).includes(src)) return fail('notReady');
-    const n = l.nodes[src];
+    const node = l.nodes[src];
     res = NODES[src].res;
-    n.remaining -= 1;
-    if (n.remaining === 0) n.readyAt = l.activeMs + NODE_RENEW_MS[res];
+    n = node.remaining;
+    node.remaining = 0;
+    node.readyAt = l.activeMs + NODE_RENEW_MS[res];
   } else if (from === 'carried') {
     res = carriedTarget(l0);
     if (!res) return fail('noCrops');
@@ -589,7 +596,7 @@ function steal(l0, from, src) {
   } else return fail('unknownTarget');
   l.theft.log = [...l.theft.log.filter((t) => l.activeMs - t < BIRDS.windowMs), l.activeMs].slice(-BIRDS.totalMax);
   l.theft.totalBeforeH4 += 1;
-  return { ok: true, l, events: [{ type: 'stolen', res, from, ...(src ? { src } : {}), total: l.theft.totalBeforeH4 }] };
+  return { ok: true, l, events: [{ type: 'stolen', res, n, from, ...(src ? { src } : {}), total: l.theft.totalBeforeH4 }] };
 }
 // a bird on the restored bench leaves a stain (A22 item 8: from G2 on, Q25-1); cleaned in 1 s
 function stain(l0) {
@@ -713,8 +720,9 @@ export function validateLedger(l) {
   }
   if (!(l.tool === null || TOOLS.includes(l.tool))) e('tool');
   const th = l.theft;
-  if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || th.log.length > BIRDS.totalMax || !th.log.every((t) => isInt(t))
-    || !isInt(th.totalBeforeH4, 0, BIRDS.totalMax) || typeof th.stain !== 'boolean') e('theft');
+  // (v0.22 lowered the cap to 5 plants; a save from v0.17-v0.21 may hold up to its 8 units)
+  if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || th.log.length > THEFT_SAVED_MAX || !th.log.every((t) => isInt(t))
+    || !isInt(th.totalBeforeH4, 0, THEFT_SAVED_MAX) || typeof th.stain !== 'boolean') e('theft');
   else if (th.stain && !l.stages?.G2?.committed) e('a stain on a bench that is not restored');
   return errors;
 }

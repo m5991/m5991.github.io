@@ -83,7 +83,7 @@ export function messageCards(m) {
 
 // What the credits show, on the song's clock (seconds). -> { duration, cards: [{ kind, start, end, ... }] }
 // kinds: 'title', 'gift' (side 'left' | 'right'), 'prints' (the gifts that did not fit), 'message', 'closing'
-// `photos` false (the kids edition): no picture at all
+// `photos` false: no picture at all (v0.20's kids edition; v0.22 has one game, with the photos)
 export function planCredits(c, durationS, { player = true, photos = true } = {}) {
   const show = (x) => photos && !(player && x.placeholder);
   // by year, then file order; an undated gift takes the year of the one before it in the file,
@@ -138,4 +138,22 @@ export function creditsAt(plan, lyrics, t) {
   const line = i >= 0 && t < lines[i].end ? lines[i] : null;
   const next = lines[i + 1] && lines[i + 1].t - t < 6 ? lines[i + 1] : null;
   return { card, line, next, done: t >= plan.duration };
+}
+
+// v0.22 the Credits card in Extras ("Under credits is where you find the slideshow. Call it
+// slideshow": the slideshow is its own entry now, and this is the plain list of who and what the
+// game is made from). `c`: the content file, for the song's and the picture book's names.
+export function creditsLines(c = null) {
+  const book = String(c?.closing?.title ?? '').replace(/\.$/, '');
+  return [
+    { what: 'The Farm', who: 'A game made for Vanessa, from her drawing' },
+    { what: 'The drawing', who: 'Vanessa' },
+    { what: 'The songs', who: 'Made with Suno, and gathered by Tiffany' },
+    { what: 'The slideshow', who: `Tiffany’s photos of the drawing over the years, to the song “${c?.song?.title ?? 'The House'}”` },
+    ...(book ? [{ what: 'The story at its end', who: `From the picture book “${book}”` }] : []),
+    { what: 'The title’s handwriting', who: 'Nothing You Could Do, by Kimberly Geswein (SIL Open Font License)' },
+    { what: 'Vanessa’s movement', who: 'From the KayKit Adventurers pack, by Kay Lousberg (CC0)' },
+    { what: 'Sounds', who: 'Made for this game' },
+    { what: 'Built with', who: 'three.js and cannon-es (MIT)' },
+  ];
 }

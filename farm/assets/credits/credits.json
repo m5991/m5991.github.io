@@ -2,7 +2,7 @@
   "version": 1,
   "song": {
     "eggId": "E12",
-    "title": "House",
+    "title": "The House",
     "audio": "assets/songs/E12.mp3",
     "lyrics": "assets/credits/the-house.lyrics.json"
   },

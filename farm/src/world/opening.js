@@ -52,11 +52,11 @@ export class Opening {
     const h = this.hero;
     h.halt();
     h.yaw = 0; h.yawTarget = 0; h.view.rotation.y = 0; // facing out of the page, as drawn
-    h.showFinalePose(true); // the drawing's hands-on-hips pose, nothing on her head
+    h.showFinalePose(true); // the drawing's pose, nothing on her head
     w.showHeldTool(false);
     this.rig.frameK = 1; // v0.21 (audit 9): an upright screen's page shows the drawing's middle, larger
     this.paper.show('waiting');
-    this.paper.needsCapture = true;
+    this.paper.needsCapture = !this.paper.paint?.(); // v0.22: the page shows the drawing itself
     this.onStart();
     this.apply(OPENING_START);
   }
