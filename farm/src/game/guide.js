@@ -41,10 +41,15 @@
 //   around the DIY location").
 // - a yard sale is held when every table is full, so the line fills the tables and then sells;
 //   her crops go onto the table that has room.
+// v0.28 (the captain: "you carry fruit in your head and then you can put them on the box or the
+// tables, when you do the yard sale it automatically grabs fruit from the box"): her head holds
+// twelve crops and takes no more, so the line sends her to the tables once her head is full; a
+// sale is due once the tables and the crate together fill every table (Yard Sale takes the rest
+// from the crate), and the line says when the crate makes up the sale.
 import { BASE_STAGE, BASE_STAGES, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, STAGES, STICK_SLOTS } from './data.js';
 import {
-  available, cropsCarried, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable, plotWeeds,
-  regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableRoom, toolComes, undug,
+  available, cropsCarried, firstStage, headRoom, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable,
+  plotWeeds, regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableFull, tableRoom, toolComes, undug,
 } from './ledger.js';
 
 export const WOOD_PILES = Object.keys(PILES).filter((k) => PILES[k].res === 'W'); // the starter logs by the path
@@ -92,16 +97,16 @@ const mustFetch = (l, tool, come = false) => !come && l.tool !== tool && !toolCo
 // what is out on the tables, and what is out plus on her head, in coins
 const outValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 // a sale is the next thing to do: every table is full (v0.23; v0.13-v0.22 sold once six were out)
+// (v0.28: or the crate holds what they still lack: Yard Sale fills them from it)
 const sellNow = (l) => saleReady(l);
 export { outValue };
-// the planted crops she can pick: all of them (v0.25: a harvest is never refused; past the one
-// table's worth her head holds, a crop goes into the crate by the tables, which fill from it.
-// v0.13-v0.24: only the crops her head still had room for)
-const pickable = (l) => planted(l);
-// her crops go onto the tables now: what she carries fills them, pays for the build, or nothing
-// more she can pick is ready
+// the planted crops she can pick: all of them while her head has room (v0.28: twelve crops; v0.25-
+// v0.27 took every harvest, past six into the crate; v0.13-v0.24: room for twelve of each crop)
+const pickable = (l) => (headRoom(l) > 0 ? planted(l) : []);
+// her crops go onto the tables now: what she carries fills them, pays for the build, her head is
+// full (v0.28), or nothing more she can pick is ready
 const setOutNow = (l, short, cropReady) => cropsCarried(l) > 0 && tableAvailable(l) && tableRoom(l) > 0
-  && (cropsCarried(l) >= tableRoom(l) || !cropReady);
+  && (cropsCarried(l) >= tableRoom(l) || headRoom(l) === 0 || !cropReady);
 // the button a stage's bottom line becomes once she has everything
 export const actionVerb = (id) => (STAGES[id].hire ? 'Hire' : STAGES[id].crop && !STAGES[id].W ? 'Plant' : 'DIY');
 
@@ -150,7 +155,10 @@ export function bestHarvest(l, nodes = pickable(l)) {
 // coins for a stage: a full table sells with Yard Sale; crops on her head go onto the table;
 // otherwise harvest (or wait for the crops to grow)
 function coinsGoal(l, label, short) {
-  if (sellNow(l)) return { text: `${label} · ${short} more coins: the tables are full, go to the back of the table and tap Yard Sale`, target: 'table', sale: true };
+  if (sellNow(l)) {
+    const why = tableFull(l) ? 'the tables are full' : 'with the crops in the crate there is enough for every table';
+    return { text: `${label} · ${short} more coins: ${why}, go to the back of the table and tap Yard Sale`, target: 'table', sale: true };
+  }
   const nodes = pickable(l);
   const cropReady = anyReady(l, nodes);
   // to the table once what she carries fills it, or nothing more is ready to pick
@@ -310,7 +318,7 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   // a full table sells now; crops on her head go onto the table once they fill it (or nothing
   // more is ready to harvest)
   if (short.coins > 0 && sellNow(l)) return lined(coinsGoal(l, label, short.coins), 'coins');
-  if (short.coins > 0 && tableAvailable(l) && cropsCarried(l) > 0 && tableRoom(l) > 0 && cropsCarried(l) >= tableRoom(l)) {
+  if (short.coins > 0 && tableAvailable(l) && cropsCarried(l) > 0 && tableRoom(l) > 0 && (cropsCarried(l) >= tableRoom(l) || headRoom(l) === 0)) {
     return lined(coinsGoal(l, label, short.coins), 'coins');
   }
   // her crops grow while she gathers the wood and stone

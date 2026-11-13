@@ -31,6 +31,10 @@
 //   the open grass, or on a patch that has not opened yet: ledger.js weedJob) are nobody's job:
 //   anything else in reach comes first, the rake is not kept in hand for one, nor fetched for one.
 // - the DIY button works wherever she is within reach of the next build's own site (`atSite`).
+// v0.28 (the captain: "the same as the materials place, you carry fruit in your head and then you
+// can put them on the box or the tables"): coming within CRATE_REACH_M of the crop crate with crops
+// on her head puts them all into it, moving or not, after the table she stands at has taken what it
+// holds (`atCrate`, the ledger's `stow`). With twelve crops on her head a plant is not worked.
 import { CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
   available, canTake, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
@@ -42,6 +46,10 @@ export const STILL_SPEED_MS = 0.05; // m/s: the stillness clock runs only below 
 export const HIGHLIGHT_RANGE_M = 3.5; // the ground ring marks the nearest collectible this close
 export const YARD_REACH_M = 1.2; // P27-1: within about 1.2 m of the pile her load drops
 export const KEEP_TOOL_M = 3.5; // v0.23: a tool stays in her hand between two jobs this close
+// v0.28: within this of the crop crate's edge her crops go into it. Shorter than the table's reach
+// (TABLE_REACH_M), so setting crops out at the last table does not also empty her head into the
+// crate beside it: she walks up to the crate for that.
+export const CRATE_REACH_M = 0.6;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 // the tool comes to her hand at the job: taken once (v0.13, P29-7), or any tool with Help me
@@ -104,7 +112,8 @@ export function isWorkEligible(l, t, opts = {}) {
   if (t.kind === 'tools') return !!opts.want && opts.want !== l.tool;
   if (SOURCE_KINDS.has(t.kind)) {
     if (t.kind === 'node' && !nodeEstablished(l, t.id)) return false;
-    // (v0.25: a crop is always taken: past what her head holds it goes into the crate)
+    // (v0.28: a crop only while her head has room, twelve crops at most; v0.25-v0.27 took it always,
+    // into the crate past her head's six)
     return available(l, t.id) > 0 && canTake(l, sourceResource(t.id));
   }
   return false;
@@ -202,6 +211,10 @@ export const hasCrops = (l) => CROPS.some((c) => l.carried[c] > 0);
 export function atTable(hero, targets) {
   return targets.some((t) => t.kind === 'table' && inReach(hero, t, TABLE_REACH_M));
 }
+// v0.28: close enough to the crop crate for her crops to go into it
+export function atCrate(hero, targets) {
+  return targets.some((t) => t.kind === 'crate' && inReach(hero, t, CRATE_REACH_M));
+}
 // v0.23: she is at the table her crops go onto now (the first one with room; a target without a
 // `table` index is the only table there is)
 export function atFillTable(l, hero, targets) {
@@ -263,6 +276,13 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atFillTable(l, ctx.hero, ctx.targets)) {
         const res = commit({ t: 'stock', max: fillRoom(l) });
         events.push({ type: 'stock', result: res });
+        l = getLedger();
+      }
+      // v0.28: the crop crate: walking past it puts every crop on her head into it, moving or not
+      // (also while a sale is shown: the tables fill from it once the buyers have gone)
+      if (hasCrops(l) && tableAvailable(l) && atCrate(ctx.hero, ctx.targets)) {
+        const res = commit({ t: 'stow' });
+        events.push({ type: 'stow', result: res });
         l = getLedger();
       }
       if (isMoving(ctx)) {

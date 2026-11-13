@@ -91,6 +91,10 @@
 // the finale is one shot on every screen, the whole farm (world/framing.js WHOLE_FARM), and the
 // picture slides into the room the end card leaves; on the bench in the sunset Dwight says his
 // line, "(of the)" in much smaller letters (game/data.js DWIGHT_THANKS).
+// v0.28 (the captain: "I find the box counterintuitive ... the same as the materials place"): she
+// carries twelve crops on her head and picks nothing past that; walking past the crop crate empties
+// her head into it, the crops flying from her stack as wood and stone fly onto the pile; Yard Sale
+// fills the tables from the crate first, the crops flying over, and then the buyers come.
 import * as THREE from 'three';
 import { PERF } from './core/perf.js';
 import { createWakeLock } from './core/wake-lock.js';
@@ -99,8 +103,8 @@ import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
 import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, DWIGHT_THANKS, dwightLine, HAMMERED, HEAD_CROPS, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, lineText, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, available, canTake, crateCount, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, restockReady, saleReady, saleWish,
-  tableCap, tables, toolIdle,
+  apply, autoTxs, available, canTake, crateCount, cropsCarried, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, restockReady, saleReady, saleWish,
+  tableCap, tableFull, tables, toolIdle,
 } from './game/ledger.js';
 import { createBirds } from './game/birds.js';
 import { createCredits } from './ui/credits.js';
@@ -730,8 +734,8 @@ async function boot() {
   const rakingGrass = () => data.ledger.tool === 'rake' && !!ix.working && idleWeed(data.ledger, ix.working);
   function settleLedger() {
     for (let guard = 0, next = autoTxs(data.ledger); next.length && guard < 20; next = autoTxs(data.ledger), guard++) {
-      // (v0.25: the tables fill from the crate once the buyers have gone: `saleShowing`)
-      const tx = next.find((t) => !(t.t === 'returnTool' && rakingGrass()) && !(t.t === 'restock' && saleShowing));
+      // (v0.28: the crate is no follow-up any more; the tables fill from it as a sale starts and after it)
+      const tx = next.find((t) => !(t.t === 'returnTool' && rakingGrass()));
       if (!tx || !commit(tx).ok) break;
     }
   }
@@ -765,37 +769,44 @@ async function boot() {
           notes.once('full-mat', `${cap(RESOURCE_NAMES[e.res])} full: Vanessa carries ${CAPACITY} at most. Walk past the pile by the house to drop it.`, 3200);
           break;
         case 'headFull':
-          // v0.25: her head holds one table's worth of crops; told once, the first time it is full
-          hud.announce(`${HEAD_CROPS} crops on her head: the rest goes into the crate`);
-          notes.once('crate', `Vanessa carries ${HEAD_CROPS} crops. What she picks now goes into the crate by the yard-sale tables, and the tables fill up from it.`, 5200);
+          // v0.25: her head is full of crops; told once, the first time (v0.28: twelve, and the next
+          // pick waits until she has set them out or left them in the crate)
+          hud.announce(`${HEAD_CROPS} crops on her head: set them out, or leave them in the crate`);
+          notes.once('crate', CRATE_NOTE, 5200);
           break;
-        case 'crated': {
-          // v0.25: past what her head holds, the crop flies from its plant to the crate by the tables
-          const from = stationPos(e.src).setY(0.5);
-          const to = world.crateTopWorld();
-          const ms = Math.round(Math.min(900, 380 + from.distanceTo(to) * 45));
-          world.expect('crate', e.res);
-          world.pulse(e.src);
-          const landing = world.flight(e.res, from, to, ms).then(() => { world.landed('crate', e.res); sfx.cue('pop'); });
-          crateLanding = Promise.all([crateLanding, landing]);
-          hud.announce(`${cap(RESOURCE_UNIT[e.res])} into the crate: ${e.crate}`);
+        case 'stowed': {
+          // v0.28: her crops come off the stack into the crate, one every 60 ms, as wood and stone
+          // go onto the pile by the house
+          let i = 0;
+          const before = crateCount(l) - (e.n.C + e.n.S + e.n.T);
+          const landings = [];
+          for (const c of ['C', 'S', 'T']) {
+            for (let k = 0; k < e.n[c]; k++, i++) {
+              world.expect('crate', c);
+              landings.push(hero.stack.send(c, world.crateSlotWorld(before + i), l.carried, i * 60).then(() => { world.landed('crate', c); if (k % 2 === 0) sfx.cue('pop'); }));
+            }
+          }
+          crateLanding = Promise.all([crateLanding, ...landings]);
+          const n = crateCount(l);
+          hud.announce(`Into the crate: ${i}. The crate holds ${n}${saleReady(l) && !tableFull(l) ? ': enough for a yard sale' : ''}`);
           break;
         }
         case 'restocked': {
           // v0.25: the tables fill up again from the crate, one crop every 70 ms, once whatever was
           // on its way into the crate has landed there
+          // (v0.28: after a sale, and as one starts: Yard Sale fills the tables first, doYardSale)
+          if (e.sale) break; // (the sale filled the tables itself: its goods are shown with the sale)
           const before = l.table.C + l.table.S + l.table.T - (e.n.C + e.n.S + e.n.T);
           const order = [];
           for (const c of ['T', 'S', 'C']) for (let k = 0; k < e.n[c]; k++) order.push(c);
           order.forEach((c) => world.expect('table', c));
           const total = order.length;
-          crateLanding.then(() => {
-            order.forEach((c, i) => {
-              world.tweens.wait(i * 70).then(() => world.flight(c, world.crateTopWorld(), world.tableSlotWorld(c, before + i), 300)).then(() => { world.landed('table', c); if (i % 2 === 0) sfx.cue('sell'); });
-            });
-          });
+          restockLanding = crateLanding.then(() => Promise.all(order.map((c, i) => world.tweens.wait(i * 70)
+            .then(() => world.flight(c, world.crateTopWorld(), world.tableSlotWorld(c, before + i), 300))
+            .then(() => { world.landed('table', c); if (i % 2 === 0) sfx.cue('sell'); }))));
           const n = l.table.C + l.table.S + l.table.T;
-          hud.announce(n >= tableCap(l) ? `${total} from the crate: every table is full, time for a yard sale` : `${total} from the crate onto the table${tables(l) > 1 ? 's' : ''}: ${n} of ${tableCap(l)}`);
+          if (!saleStarting) hud.announce(n >= tableCap(l) ? `${total} from the crate: every table is full, time for a yard sale` : `${total} from the crate onto the table${tables(l) > 1 ? 's' : ''}: ${n} of ${tableCap(l)}`);
+          else hud.announce(`Yard sale! ${total} from the crate onto the tables`);
           tellWish();
           break;
         }
@@ -863,6 +874,7 @@ async function boot() {
           const order = [];
           for (const c of ['C', 'S', 'T']) for (let k = 0; k < e.items[c]; k++) order.push(c);
           saleShowing = true;
+          const seq = saleSeq;
           world.yardSale(order, {
             sale: e.sale,
             tables: e.tables,
@@ -873,7 +885,14 @@ async function boot() {
             onCoins: (res, from) => {
               world.flight('coin', from.clone().setY(from.y + 0.2), hero.position.clone().setY(1.2), 380).then(() => { sfx.cue('coin'); hud.bump('coins'); });
             },
-          }).then(() => { saleShowing = false; settleLedger(); }); // (v0.25: now the tables fill up from the crate)
+          }).then(() => {
+            if (seq !== saleSeq) return; // (a load or a new farm since)
+            saleShowing = false;
+            // v0.25: now the tables fill up again from the crate (v0.28: asked for here, the crate is
+            // no follow-up of every change any more)
+            if (restockReady(data.ledger)) commit({ t: 'restock' });
+            settleLedger();
+          });
           if (!data.session.firstSaleSeen) {
             data.session.firstSaleSeen = true;
             persist();
@@ -1108,6 +1127,11 @@ async function boot() {
   }
   let saleShowing = false;
   let crateLanding = Promise.resolve(); // v0.25: the crops still flying into the crate (a restock waits for them)
+  let restockLanding = Promise.resolve(); // v0.28: the crops flying from the crate onto the tables
+  let saleStarting = false; // v0.28: Yard Sale was pressed and the tables are filling from the crate
+  let saleSeq = 0; // v0.28: counts the farms loaded: a sale's show that outlives its farm does nothing
+  // v0.28: the note the first time her head is full of crops
+  const CRATE_NOTE = `Vanessa carries ${HEAD_CROPS} crops. Walk past a yard-sale table to set them out, or past the crate beside the tables to leave them there: Yard Sale takes from the crate too.`;
   let finaleDue = false; // the home is built and its finale has not played yet (it follows the DIY)
   // v0.15: she sells from behind the tables, their north side (interaction.js atSellingSide)
   function atTheTable() {
@@ -1121,6 +1145,24 @@ async function boot() {
       const near = ctxTargets.some((x) => x.kind === 'table' && inReach(hp, x, SALE_REACH_M));
       hud.toast(near ? 'Yard Sale: go round to the back of the tables.' : 'Yard Sale: go to the back of the tables.', 2200);
       return;
+    }
+    // v0.28 (the captain: "when you do the yard sale it automatically grabs fruit from the box"):
+    // what the tables still lack comes from the crate first, the crops flying over to them, and the
+    // buyers come once they are out. Nothing else can be sold or set out meanwhile (`saleShowing`).
+    if (!tableFull(data.ledger)) {
+      const seq = saleSeq;
+      saleStarting = true;
+      const r = commit({ t: 'restock' });
+      saleStarting = false;
+      if (r.ok) {
+        saleShowing = true;
+        restockLanding.then(() => world.tweens.wait(220)).then(() => {
+          if (seq !== saleSeq) return;
+          saleShowing = false;
+          if (saleReady(data.ledger)) commit({ t: 'yardSale' });
+        });
+        return;
+      }
     }
     commit({ t: 'yardSale' });
   }
@@ -1179,8 +1221,8 @@ async function boot() {
     const building = hammering.active || !!roofClimb;
     const evs = building || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
-    // (v0.25: a table has room and the crate holds crops, e.g. after a sale's show was cut short)
-    if (!saleShowing && restockReady(data.ledger)) settleLedger();
+    // (v0.25-v0.27 filled a table with room from the crate here, every frame; v0.28: only as a sale
+    // starts and after it)
     // (v0.24: she walked off from a weed nobody asked for before raking it: the rake goes back)
     if (data.ledger.tool !== null && !ix.working && toolIdle(data.ledger)) settleLedger();
     const working = hunt.moment ? null : ix.working;
@@ -1360,7 +1402,7 @@ async function boot() {
       if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}…`;
       else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed… it grows straight back' : 'Clearing weeds…';
       else if (w.kind === 'dig') text = 'Digging…';
-      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}${crateCount(data.ledger) && ['C', 'S', 'T'].includes(sourceResource(w.id)) ? ` · crate ${crateCount(data.ledger)}` : ''}`;
+      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}${['C', 'S', 'T'].includes(sourceResource(w.id)) && cropsCarried(data.ledger) > data.ledger.carried[sourceResource(w.id)] ? ` · ${cropsCarried(data.ledger)} of ${HEAD_CROPS} crops` : ''}`;
     } else if (roofClimb && !hammering.active) {
       text = 'Up onto the roof…';
     } else if (hammering.active) {
@@ -1388,7 +1430,7 @@ async function boot() {
       }
       // v0.25: the crop crate, inspected
       const crate = !text && ctxTargets.find((x) => x.kind === 'crate' && inReach(heroXZ, x, 0.9));
-      if (crate) { const n = crateCount(data.ledger); text = n ? `Crate · ${n} crop${n === 1 ? '' : 's'}. The tables fill up from it.` : 'Crate · empty. What her head cannot take goes in here.'; }
+      if (crate) { const n = crateCount(data.ledger); text = n ? `Crate · ${n} crop${n === 1 ? '' : 's'}. Yard Sale takes from it.` : 'Crate · empty. Walk past it with crops to leave them here.'; }
       // v0.17: beside the raised bed's scribble, its name (§10.5: never a botanical one)
       const wk = !text && world.whoKnowsPos(tmpS);
       if (wk && Math.hypot(wk.x - heroXZ.x, wk.z - heroXZ.z) < 0.9) text = 'Who-Knows plant';
@@ -1397,7 +1439,8 @@ async function boot() {
         if (text) break;
         const res = sourceResource(n.id);
         if (n.hold) { text = 'A stick is coming down from the tree'; break; }
-        if (available(data.ledger, n.id) > 0 && !canTake(data.ledger, res)) { text = `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
+        // (v0.28: crops fill her head together, twelve of them: the crate by the tables takes them)
+        if (available(data.ledger, n.id) > 0 && !canTake(data.ledger, res)) { text = ['C', 'S', 'T'].includes(res) ? `Her head is full: ${HEAD_CROPS} crops. Leave them in the crate by the tables, or set them out.` : `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
         // v0.20 (audit 2): a spot that is not planted yet is not "Growing" (guide.js spotStatus)
         if (available(data.ledger, n.id) === 0 && n.kind === 'node') { text = spotStatus(data.ledger, n.id) ?? ''; if (text) break; }
       }
@@ -1521,6 +1564,9 @@ async function boot() {
     world.endSale();
     saleShowing = false;
     crateLanding = Promise.resolve();
+    restockLanding = Promise.resolve();
+    saleStarting = false;
+    saleSeq++; // (v0.28: a sale still being shown belongs to the farm before)
     world.clearEggs();
     Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null });
     songs.stop(); // a new farm, or another save: no song of the last one plays on

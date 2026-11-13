@@ -317,6 +317,10 @@ export function migratePreV024(d0) {
 // keeps the dearest on her head and nothing is lost (the tables fill up from the crate as the farm
 // loads, where they have room). Returns a new payload; one that already has the v0.25 shape is
 // returned as is.
+// v0.28: her head holds twelve crops (HEAD_CROPS), so a farm from before v0.25 keeps the dearest
+// twelve on her head and the rest goes into the crate; a v0.25-v0.27 farm (six at most on her head,
+// and whatever its crate holds) loads as it is. Nothing fills the tables as it loads any more: the
+// crate's crops wait there, and count toward the next sale.
 export function isPreV025(d) {
   const l = d?.ledger;
   return !!l && typeof l === 'object' && !('crate' in l);

@@ -2,7 +2,7 @@
 // unplaytested). The ledger reads only this table, so later tuning edits data, ledger tests
 // and saves together (spec §6.4 "Update recipes, ledger, saves and tests together").
 
-export const CAPACITY = 12; // per carried resource, independently (A08-retained); v0.25: wood and stone (her crops: HEAD_CROPS)
+export const CAPACITY = 12; // per carried resource, independently (A08-retained); v0.25: wood and stone (her crops: HEAD_CROPS, twelve together since v0.28)
 export const MATERIALS = ['W', 'R'];
 export const CROPS = ['C', 'S', 'T'];
 export const RESOURCES = [...MATERIALS, ...CROPS];
@@ -65,7 +65,8 @@ export const BASE_STAGES = Object.values(BASE_STAGE);
 // v0.11 (captain: "resources accumilate next to the house"): the material pile by the house's
 // side wall. Walking past it with wood or stone on her head drops them there, one unit every
 // once, all of it (one saved step; the units fly off her stack DROP_MS apart); building takes
-// from her head first, then from the pile. Crops are never dropped (they are sold at the crate).
+// from her head first, then from the pile. Crops are never dropped here (v0.28: they go onto the
+// yard-sale tables, or into the crop crate beside them, the same way: `HEAD_CROPS`).
 // The pile has no cap: CAPACITY limits only what she carries in one trip.
 export const YARD_MATERIALS = ['W', 'R'];
 export const DROP_MS = 60;
@@ -255,13 +256,20 @@ export const STONE_REQUIRED = ROUTE.reduce((n, id) => n + STAGES[id].R, 0);
 export const TABLE_CAP = 6; // one table holds six
 // v0.25 (the captain's v0.24 playtest: "you start having so many crops in your head and there is no
 // way to give them away unless you sell"; and "we are also not able to accumulate infinite fruit"):
-// she carries one table's worth of crops on her head at most, all crops together (HEAD_CROPS; it was
-// CAPACITY, twelve of each). What she harvests beyond that goes into the crate beside the yard-sale
-// tables (`crate` in the ledger), which has no limit, and the tables fill up again from the crate by
-// themselves whenever one has room (ledger.js `restock`), the dearest crop first. A yard sale still
-// needs every standing table full. So nothing piles up on her head, a harvest is never refused, and
-// nothing is wasted.
-export const HEAD_CROPS = TABLE_CAP;
+// she carried one table's worth of crops (six, all crops together), and what she picked beyond
+// that flew into the crate beside the yard-sale tables, which filled the tables by itself.
+// v0.28 (the captain, after playing v0.27: "I find the box counterintuitive / you add fruit only
+// when you have full head, what if we change the behaviour to the same as the materials place, you
+// carry fruit in your head and then you can put them on the box or the tables, when you do the
+// yard sale it automatically grabs fruit from the box"; he took twelve): her head holds twelve
+// crops, all crops together, like twelve wood or twelve stone, and with a full head a pick is
+// refused. Everything she picks goes onto her head; walking past a table sets crops out on it, and
+// walking past the crate (`crate` in the ledger, no limit) empties her head into it, the way the
+// pile by the house takes wood and stone (ledger.js `stow`). A yard sale can be held once the
+// tables and the crate together fill every standing table, and starting it fills the tables from
+// the crate first (`saleReady`, `yardSale`); after the sale, once the buyers have gone, the tables
+// fill again from the crate (`restock`). Nothing is wasted: a crop only ever moves toward a sale.
+export const HEAD_CROPS = CAPACITY;
 export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her crops go onto it
 // v0.13 (captain's v0.12 playtest: "as your house is growing more people come and more tables
 // appear (the only minimum is 6 produce items always), but the maximum keeps increasing"; answer 3

@@ -919,6 +919,8 @@ export class World {
   // past the last one standing (so it is beside them whether one, two or three stand, and hops
   // along as a table is set up), with the crops in it heaped in sight (carry.js crateSlot) and a
   // count beside it (main.js). A station of its own kind: nothing is worked at it.
+  // (v0.28: she leaves her crops in it by walking past, as at the pile by the house; Yard Sale takes
+  // from it)
   buildCrate() {
     const obj = G.cropCrate();
     obj.name = 'crate:crate';
@@ -945,6 +947,12 @@ export class World {
   // the top of the crate's heap: where a crop flies to, and where one leaves it for a table
   crateTopWorld(out = new THREE.Vector3()) {
     return out.copy(this.stations.crate.pos).setY(0.5 + Math.min(0.26, 0.022 * (this.crateShown ?? 0)));
+  }
+  // v0.28: where the i-th crop in the crate lies in its heap (past what is drawn, on the heap's top):
+  // where a crop from her head flies to
+  crateSlotWorld(i, out = new THREE.Vector3()) {
+    this.stations.crate.obj.updateWorldMatrix(true, false);
+    return this.piles.crate.slotWorld('C', 0, Math.min(i, CRATE_SHOWN - 1), out);
   }
   // v0.15: where she holds a sale from: behind (north of) her first table, the buyers' far side
   sellSpot(out = new THREE.Vector3()) { return out.copy(this.stations.table.pos).add(new THREE.Vector3(0, 0, -SELL_BEHIND_M)); }

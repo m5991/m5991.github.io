@@ -55,7 +55,8 @@ export const ALL_CUES_PER_100MS = 6; // global cap on new effects in any 100 ms
 export function ledgerCue(e) {
   switch (e.type) {
     case 'picked': return 'tick';
-    case 'crated': return 'tick'; // v0.25: a crop picked past her head's six (it pops as it lands in the crate)
+    // (v0.25-v0.27: 'crated', a crop picked past her head's six; v0.28 has none: her crops pop as
+    // they land in the crate, main.js 'stowed')
     case 'full': return 'full';
     case 'weedCleared': return 'weed';
     case 'dug': return 'weed'; // the same earthy tug as a weed coming up
