@@ -19,7 +19,7 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
-import { actionPose, pocketPose, stepUpHeight } from './moments.js';
+import { actionPose, finalePose, stepUpHeight, toolPose } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
@@ -117,7 +117,10 @@ export class Hero {
   }
 
   // after the physics step: view follows body, bounds recovery, facing, animation and face
-  update(dtMs, { working, faceTo }) {
+  // v0.23: `tool` ('rake' | 'shovel' | null) is the tool she is working with now and `stroke`
+  // (0..1) how far the work unit is: she rakes or digs (moments.js toolPose), and `toolStroke` says
+  // where the tool's foot is on the ground before her (world.js gripWorld puts the tool there)
+  update(dtMs, { working, faceTo, tool = null, stroke = 0 }) {
     this.restorePose();
     const p = this.body.position;
     const recovered = this.world.clampToBounds(p);
@@ -140,7 +143,9 @@ export class Hero {
     const g = gait(prev, { speed: this.mover.speed, target: Math.min(1, this.input.length()) * this.speed, moving: this.moving });
     this.gait = g.kind;
     if (this.celebrateMs > 0) this.celebrateMs = g.kind === 'still' && !working ? this.celebrateMs - dtMs : 0;
-    const action = g.kind === 'still' ? (working ? 'gather' : this.celebrateMs > 0 ? 'celebrate' : 'idle') : g.kind;
+    const toolWork = g.kind === 'still' && working && tool ? toolPose(tool, stroke, this.reducedMotion()) : null;
+    // (with a tool she stands in her idle stance and the work's own pose is laid over it)
+    const action = g.kind === 'still' ? (toolWork ? 'idle' : working ? 'gather' : this.celebrateMs > 0 ? 'celebrate' : 'idle') : g.kind;
     const swap = (prev === 'walk' && g.kind === 'run') || (prev === 'run' && g.kind === 'walk');
     this.anim.play(action, swap ? 0.2 : 0.15, g.rate, swap ? this.anim.phase() : null);
     this.anim.update(dtMs / 1000);
@@ -151,6 +156,11 @@ export class Hero {
     this.stack.update(dtMs, { vx: this.body.velocity.x, vz: this.body.velocity.z, yaw: this.yaw, reducedMotion: this.reducedMotion() });
     this.updateFace(dtMs, working);
     this.updateMoment(dtMs);
+    this.toolStroke = null;
+    if (toolWork && !this.moment) {
+      for (const [name, angles] of Object.entries(toolWork.bones)) this.poseBone(name, ...angles);
+      this.toolStroke = { kind: tool, reach: toolWork.reach, side: toolWork.side, lift: toolWork.lift + (this.groundY ?? 0), k: toolWork.k, stroke: toolWork.stroke };
+    }
     if (!this.moment && this.stepMs < 500 && !this.reducedMotion()) {
       const k = Math.sin(this.stepMs / 500 * Math.PI);
       this.poseBone('Hip_L', -0.65 * k); this.poseBone('Knee_L', 0.9 * k);
@@ -170,9 +180,9 @@ export class Hero {
   // v0.17c a spot's moment; v0.22: one for every song spot (moments.js). `seat` and `yaw`: the
   // bench; `route`: the chimney climb (there and back) or the stepping stones (one way: she ends
   // on the last one); `to`: the act's own place a step away (the tree's trunk, the window).
-  startMoment(kind, { ms, seat, route, yaw, to } = {}) {
+  startMoment(kind, { ms, seat, route, yaw, to, up, down } = {}) {
     this.restorePose();
-    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to };
+    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to, up, down };
     this.celebrateMs = 0;
     if (kind === 'clean' && !this.cloth) {
       this.cloth = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.16), new THREE.MeshLambertMaterial({ color: 0xfff4d6 }));
@@ -215,20 +225,21 @@ export class Hero {
     if (this.moving) { this.cancelMoment(); return; }
     m.t = Math.min(m.ms, m.t + dtMs);
     const still = this.reducedMotion();
-    const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5 });
+    const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5, up: m.up, down: m.down });
     for (const [name, angles] of Object.entries(q.bones)) this.poseBone(name, ...angles);
     this.momentSmile = q.smile;
     if (m.kind === 'bench' && m.seat) {
       const at = m.seat.clone(); at.y -= 0.86;
       this.position.copy(m.from).lerp(at, q.blend);
       this.view.rotation.y = m.yaw ?? this.yaw;
-    } else if (m.kind === 'chimney' && m.route) {
+    } else if ((m.kind === 'chimney' || m.kind === 'roof') && m.route) {
       const points = [m.from, ...m.route.slice(1)];
       const at = q.travel * (points.length - 1);
       const i = Math.min(points.length - 2, Math.floor(at));
       this.position.copy(points[i]).lerp(points[i + 1], at - i);
       const d = points[i + 1].clone().sub(points[i]);
       this.view.rotation.y = Math.atan2(d.x, d.z);
+      this.yaw = this.view.rotation.y; this.yawTarget = this.yaw;
     } else if (m.kind === 'hop' && m.route?.length > 1) {
       // from stone to stone along the line; she ends on the last one
       const at = q.travel * (m.route.length - 1);
@@ -305,7 +316,8 @@ export class Hero {
       h.morphTargetInfluences[h.morphTargetDictionary.smile] = on ? 1 : 0.15;
     }
     if (on) {
-      for (const [name, angles] of Object.entries(pocketPose(1))) this.poseBone(name, ...angles);
+      // (v0.23: and her head lifted to the viewer: "looking up towards the people and smiling")
+      for (const [name, angles] of Object.entries(finalePose(1))) this.poseBone(name, ...angles);
       this.view.rotation.z = 0;
       this.view.updateMatrixWorld(true);
     }

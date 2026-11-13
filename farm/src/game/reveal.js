@@ -134,7 +134,9 @@ export const FINALE = {
 // v0.22 (Tiffany: "Make the colors brighter especially the grass sky and sun at the end"): a fresh
 // spring green, a clear sky blue and a bright yellow sun with orange strokes (v0.21: a sage
 // 0x97a886, a grey-blue 0xb4c4d7 and an ochre 0xe6b83e). `sunGlow` is the light of its rays.
-export const FINALE_COLOURS = { grass: 0x86c754, grassStroke: 0x559a34, sky: 0x8fd4f8, sun: 0xffd932, sunInk: 0xf2960a, sprout: 0x559a34, sunGlow: 0xffe46b };
+// v0.23 (Tiffany: "sun be brighter in the final graphic"): a lighter, brighter yellow disc and
+// light (v0.22: 0xffd932 and 0xffe46b)
+export const FINALE_COLOURS = { grass: 0x86c754, grassStroke: 0x559a34, sky: 0x8fd4f8, sun: 0xffe53d, sunInk: 0xf2960a, sprout: 0x559a34, sunGlow: 0xfff08a };
 
 const ramp = ([a, b], t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
 const smooth = (x) => x * x * (3 - 2 * x);

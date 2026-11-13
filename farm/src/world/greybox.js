@@ -239,12 +239,20 @@ export function marker() {
 
 // A standing place, distinct from the resource's work-progress ring. Its centre is the
 // exact point used by the action. Warm gold stays legible over paper and coloured grass.
-export function standMarker() {
+// v0.23 (Tiffany: "Actions should be in a different color than songs and collecting crops. Maybe
+// red for actions?"): `colour` is the circle's: the flower yellow of the guide and of a song (the
+// egg's circle), or the action's red (ACTION_RED); the star keeps its yellow. `star: false` leaves
+// the star out (the egg lies in its circle and needs none).
+export const ACTION_RED = 0xe0392b;
+export function standMarker(colour = PAL.flower, { star: withStar = true } = {}) {
   const g = group('StandHere');
-  const mat = (opacity) => new THREE.MeshBasicMaterial({ color: PAL.flower, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+  g.userData.colour = colour;
+  const mat = (opacity) => new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
   const ring = named(at(new THREE.Mesh(new THREE.RingGeometry(0.46, 0.55, 64), mat(0.9)), 0, 0.045, 0, -Math.PI / 2), 'standCircle');
   const disc = named(at(new THREE.Mesh(new THREE.CircleGeometry(0.46, 48), mat(0.14)), 0, 0.04, 0, -Math.PI / 2), 'standDisc');
   const star = P.sparkleStar(); star.name = 'standStar'; star.position.y = 0.8; star.scale.setScalar(1.5);
+  if (!withStar) star.visible = false;
+  if (colour !== PAL.flower) star.children[0].material.color.set(colour);
   const sparks = group('standSparks');
   for (let i = 0; i < 6; i++) {
     const a = i * Math.PI / 3;

@@ -517,10 +517,16 @@ export function paperBackdrop() {
     uniforms: {
       uPaper: { value: new THREE.Color(PAL.paper) }, uDpr: SHARED.uDpr,
       uSkyCol: { value: new THREE.Color(PAL.paper) }, uSky: { value: 0 }, uHorizon: { value: 0.5 },
+      // v0.23 (Tiffany: "make the sky around the sun lighter like its lighting up the sky"): the
+      // sun's place on screen, how much it shines (0..1), how far its light reaches (in screen
+      // heights) and the colour the sky takes beside it (world.js updateSky)
+      uSun: { value: new THREE.Vector2(0.8, 0.8) }, uSunGlow: { value: 0 }, uSunReach: { value: 0.42 }, uAspect: { value: 1 },
+      uSunLit: { value: new THREE.Color(0xf4fbff) },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.9999, 1.0); }',
     fragmentShader: /* glsl */`
       uniform vec3 uPaper; uniform float uDpr; uniform vec3 uSkyCol; uniform float uSky; uniform float uHorizon; varying vec2 vUv;
+      uniform vec2 uSun; uniform float uSunGlow; uniform float uSunReach; uniform float uAspect; uniform vec3 uSunLit;
       ${NOISE_GLSL}
       void main(){
         vec2 fc = gl_FragCoord.xy / uDpr;
@@ -529,7 +535,10 @@ export function paperBackdrop() {
         float front = uHorizon - 0.02 + uSky * (1.12 - uHorizon);
         float edge = front + (st_noise(vec2(fc.x * 0.02, 3.0)) - 0.5) * 0.03;
         float sk = (1.0 - smoothstep(edge - 0.05, edge, vUv.y)) * step(0.0001, uSky);
-        vec3 col = mix(uPaper, uSkyCol, sk) * (1.0 - (g * 0.06 + fibre * 0.025));
+        // the sky is lighter round the sun, as if lit by it: brightest beside it, gone by uSunReach
+        float sd = length(vec2((vUv.x - uSun.x) * uAspect, vUv.y - uSun.y)) / uSunReach;
+        float lit = uSunGlow * sk * (0.78 * exp(-sd * sd * 2.2) + 0.2 * exp(-sd * sd * 0.5));
+        vec3 col = mix(mix(uPaper, uSkyCol, sk), uSunLit, clamp(lit, 0.0, 1.0)) * (1.0 - (g * 0.06 + fibre * 0.025));
         col *= 1.0 - 0.05 * pow(length(vUv - 0.5) * 1.3, 2.0);
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>

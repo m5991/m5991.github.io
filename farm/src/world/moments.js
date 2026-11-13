@@ -30,6 +30,7 @@ export const ACTIONS = {
   bench: 'sits down on the bench, knees bent, and rests',
   clean: 'bends over the bench and wipes it with a cloth',
   chimney: 'climbs the wall and the roof to the chimney, and comes back down',
+  roof: 'climbs the wall onto the roof, builds the chimney there, and comes back down',
   door: 'raises her fist and knocks on the door',
   dance: 'sways with her arms up, bounces and twirls',
   wave: 'looks up and waves her raised arm',
@@ -65,6 +66,72 @@ export function pocketPose(k = 1) {
     Ponytail1_M: [0, 0, -1.2 * k], Ponytail2_M: [0, 0, 0.45 * k], Ponytail3_M: [0, 0, 0.35 * k],
   };
 }
+// v0.23 (Tiffany: "At the end show the farmer looking up towards the people and smiling"): the
+// final scene's pose is the drawing's, with her head lifted to the viewer: the camera looks down on
+// her, so her face is raised to it (LOOK_UP radians at the neck and the head, a little at the chest)
+// and she smiles. k 0..1.
+export const LOOK_UP = { head: 0.42, neck: 0.16, chest: 0.07 };
+export function finalePose(k = 1) {
+  return { ...pocketPose(k), Head_M: [-LOOK_UP.head * k], Neck_M: [-LOOK_UP.neck * k], Chest_M: [-LOOK_UP.chest * k] };
+}
+
+// v0.23 (Tiffany: "When she is shoveling or raking make an animation of her doing it, not just
+// holding the tool"): the work with a tool, as a pose over her stance and the path of the tool's
+// foot on the ground before her. `u` is how far the work unit is (0..1: one weed, one spot);
+// TOOL_STROKES strokes fit in it.
+//   rake:   she reaches out with both arms and draws the rake's head back to her feet, bowing into
+//           each pull;
+//   shovel: she sets the blade, drives it into the earth with her foot on it, levers back and
+//           lifts the earth out to her side.
+// -> { bones, reach (m: the tool's foot ahead of her), side (m to her right), lift (m: its height;
+//      below 0 the blade is in the ground), k (0..1 through this stroke), stroke (which one) }
+export const TOOL_WORK = {
+  rake: 'reaches out and draws the rake back through the weeds, bowing into each pull',
+  shovel: 'drives the shovel into the earth with her foot, levers back and lifts the earth out',
+};
+export const TOOL_STROKES = { rake: 2, shovel: 2 };
+export function toolPose(kind, u, reduced = false) {
+  const n = TOOL_STROKES[kind] ?? 1;
+  const x = clamp01(u) * n;
+  const stroke = Math.min(n - 1, Math.floor(x));
+  const k = reduced ? 0.5 : x - stroke;
+  const bones = {};
+  if (kind === 'rake') {
+    // out over the first third, then the long pull home
+    const out = k < 0.34 ? smooth(k / 0.34) : 1 - smooth((k - 0.34) / 0.66);
+    bones.Spine1_M = [0.34 + 0.2 * out];
+    // her hands at her waist as the rake comes home, out before her chest at the reach
+    bones.Shoulder_R = [-0.45 - 0.55 * out, 0.3, -0.12]; bones.Elbow_R = [-0.8 + 0.55 * out];
+    bones.Shoulder_L = [-0.35 - 0.55 * out, -0.42, 0.14]; bones.Elbow_L = [-0.95 + 0.55 * out];
+    bones.Hip_L = [-0.32]; bones.Knee_L = [0.42]; bones.Hip_R = [0.12];
+    bones.Head_M = [0.2];
+    return { bones, reach: 0.62 + 0.55 * out, side: 0.06, lift: 0.02, k, stroke, out };
+  }
+  // the shovel: set (0-0.18), drive in (0.18-0.42), lever back (0.42-0.62), lift out and tip (0.62-1)
+  const drive = smooth((k - 0.18) / 0.24) * (1 - smooth((k - 0.42) / 0.2));
+  const sunk = smooth((k - 0.18) / 0.24) * (1 - smooth((k - 0.56) / 0.14));
+  const lift = smooth((k - 0.58) / 0.2) * (1 - smooth((k - 0.86) / 0.14));
+  bones.Spine1_M = [0.3 + 0.28 * drive - 0.16 * lift];
+  bones.Shoulder_R = [-0.5 - 0.25 * drive - 0.45 * lift, 0.25, -0.1 - 0.35 * lift]; bones.Elbow_R = [-0.75 + 0.35 * drive - 0.25 * lift];
+  bones.Shoulder_L = [-0.4 - 0.3 * drive - 0.35 * lift, -0.4, 0.12]; bones.Elbow_L = [-0.95 + 0.4 * drive];
+  // her right foot comes up onto the blade and pushes it down
+  const foot = smooth(k / 0.16) * (1 - smooth((k - 0.2) / 0.2));
+  bones.Hip_R = [-0.8 * foot - 0.15 * drive]; bones.Knee_R = [1.1 * foot + 0.2 * drive];
+  bones.Hip_L = [-0.1 * drive]; bones.Knee_L = [0.25 * drive];
+  bones.Head_M = [0.22];
+  return { bones, reach: 0.52 - 0.1 * lift, side: 0.05 + 0.32 * lift, lift: 0.1 - 0.24 * sunk + 0.36 * lift, k, stroke, drive, lifted: lift };
+}
+
+// v0.23 (Tiffany: "When she builds the chimney have her clime onto the roof first"): the climb for
+// the chimney's DIY. u 0..1 of the whole (up, the build, down); `up` and `down` are the shares of
+// it she climbs. -> travel 0..1 along the route (the wall, the roof, the chimney), `climb` 0..1 how
+// much of the climbing pose shows, and its swing.
+export function roofClimb(u, { up = 0.3, down = 0.2 } = {}) {
+  const t = clamp01(u);
+  const travel = t < up ? smooth(t / up) : t > 1 - down ? 1 - smooth((t - (1 - down)) / down) : 1;
+  const moving = t < up ? Math.sin((t / up) * Math.PI) : t > 1 - down ? Math.sin(((t - (1 - down)) / down) * Math.PI) : 0;
+  return { travel, climb: Math.min(1, moving * 1.6), onRoof: t >= up && t <= 1 - down };
+}
 
 // the hops along a route of `stones` places: [start, end] of each hop as fractions of the act
 // (a short rest on every stone, a last beat on the far one)
@@ -85,7 +152,8 @@ export function hopAt(u, stones) {
   return { i: spans.length - 1, k: 1, air: 0 };
 }
 
-export function actionPose(kind, u, reduced = false, { stones = 5 } = {}) {
+export function actionPose(kind, u, reduced = false, opts = {}) {
+  const { stones = 5 } = opts;
   const blend = smooth(u / 0.18) * smooth((1 - u) / 0.18);
   const wave = reduced ? 0 : Math.sin(u * Math.PI * 12);
   const beat = reduced ? 0 : Math.sin(u * Math.PI * 6); // three slow swings over the act
@@ -103,6 +171,16 @@ export function actionPose(kind, u, reduced = false, { stones = 5 } = {}) {
     for (const [side, sign] of [['L', 1], ['R', -1]]) {
       bones[`Shoulder_${side}`] = [(-2.1 + sign * wave * 0.35) * blend];
       bones[`Elbow_${side}`] = [-0.45 * blend]; bones[`Hip_${side}`] = [(-0.55 + sign * wave * 0.45) * blend]; bones[`Knee_${side}`] = [(0.8 - sign * wave * 0.4) * blend];
+    }
+  } else if (kind === 'roof') {
+    // v0.23: the chimney's DIY: up the wall and the roof, the hammering there (her arms are the
+    // hammer's then), and down again
+    const c = roofClimb(u, { up: opts.up, down: opts.down });
+    travel = c.travel;
+    const sw = reduced ? 0 : Math.sin(u * Math.PI * 26);
+    for (const [side, sign] of [['L', 1], ['R', -1]]) {
+      bones[`Shoulder_${side}`] = [(-2.1 + sign * sw * 0.35) * c.climb];
+      bones[`Elbow_${side}`] = [-0.45 * c.climb]; bones[`Hip_${side}`] = [(-0.55 + sign * sw * 0.45) * c.climb]; bones[`Knee_${side}`] = [(0.8 - sign * sw * 0.4) * c.climb];
     }
   } else if (kind === 'door') {
     bones.Shoulder_R = [-1.3 * blend]; bones.Elbow_R = [(-0.9 + wave * 0.25) * blend];

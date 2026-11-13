@@ -131,5 +131,15 @@ export const STATIONS = [
   { id: 'table6', kind: 'table', u: 78.0, v: 60.5, r: 0.5, label: 'yard-sale table', table: 5 },
 ];
 
+// v0.23 (Tiffany: "In the end, keep ... weeds growing random places in the yard occasionally"): the
+// ten places on the open grass where a weed can come up on the finished farm (game/data.js
+// YARD_WEED_SLOTS; the ledger picks the next by a seeded hash, three at most at a time). Each is
+// clear of the path, the ring, the tables, the plots, the song spots and the keepsakes.
+// (Placed in metres on the ground, where the drawing's scale changes fast toward the viewer.)
+export const YARD_WEED_PLACES = {
+  wy1: [30.7, 61.5], wy2: [20.3, 51.3], wy3: [31.5, 56.4], wy4: [70.4, 62.6], wy5: [43.4, 67],
+  wy6: [31.2, 95], wy7: [97.9, 76], wy8: [4.3, 65.3], wy9: [86.6, 51.3], wy10: [6.4, 56.4],
+};
+
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
 export const BOUNDS = { uMin: 1, uMax: 99, vMin: 30, vMax: 99 };

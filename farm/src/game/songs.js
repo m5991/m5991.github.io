@@ -32,6 +32,29 @@
 // The archive's other recordings stay below (`SONGS`, so an older save's discoveries still read)
 // but are out of play: no star, no card, no count.
 //
+// v0.23 (Tiffany's notes "Farm changes #2", 2026-11-12):
+// - "Have the lyrics of the song determine the position of the circles if it relates to one of the
+//   parts of the drawing in content": each song's spot was checked against its words (the archive's
+//   report; the two added songs as heard). Twenty already stood at the part their words are about, or
+//   are about no part of the drawing at all (the drawing itself, her sketches) and keep their open
+//   ground. Four move: "Pockets" from the yard-sale table (which is not in the drawing) to the
+//   vegetables of the raised bed ("Beet seeds in my pocket"); "Put it on Paper" to the path beside
+//   the bench ("On a bench in the yard ... Rests on her bench in the shade"); "Luckiest Man Alive"
+//   from the middle of the field to beside the farmer's place ("She draws pictures of me / Standing
+//   next to her ... We're both farmers"); "Vanessa in her flip flops" from the open grass left of
+//   the house to the end of the corn rows ("Dancing down the garden rows / Walking through the corn
+//   where the green runs high").
+// - "Actions should be in a different color than songs and collecting crops. Maybe red for
+//   actions?": a spot's circle is the action's, and red; the egg the bird brings lies in the song's
+//   circle, yellow; the ring round a crop or a stick is the tools' blue, as it was.
+// - "have just a few at a time ... replacing each other as she collects them": only the first
+//   SPOTS_AT_ONCE spots with a song left show, in her list's order (`visibleSpots`); a found song
+//   makes room for the next.
+// - "No arrows pointing at icons or songs": none, not even to the last song (`lastSpot` is kept
+//   for the goal line's words only).
+// - "Even before she collects the songs, allow all of them to appear and be downloaded under the
+//   extras page": the songbook lists all 24 from the start (main.js).
+//
 // E## is the playlist's track ##, identified by its recording id (the Suno song id). `title` is
 // the recording's own title in the archive, kept only to tell the files apart. E34 and E35 are the
 // two recordings added on 2026-11-11.
@@ -105,7 +128,7 @@ const LIST = [
   ['Let the Birds Debate', 'E15', 'birds', 0.6],
   ['I gave it to the world', 'E01', 'world', 52.7],
   ['Cornstalk and Sunflower', 'E14', 'between', 73.5],
-  ['Pockets', 'E16', 'table', 0],
+  ['Pockets', 'E16', 'pockets', 0],
   ['Tu Kaafi Zyaada Yellow Hai', 'E18', 'glare', 59.2],
   ['Put it on Paper', 'E19', 'paper', 37.5],
   ['Home Sweet Home', 'E20', 'window', 80.1],
@@ -145,17 +168,21 @@ export const SPOTS = {
   birds: { label: 'the corner under the birds', act: act('Whistle to the birds', 'whistle', 'Tweet? Tweet!', 2400) },
   world: { label: 'the front of the farm', uv: [52.2, 95.5], act: act('Show your drawing to the world', 'show', 'Look, world!', 2800) },
   between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh…', 2800) },
-  table: { label: 'the yard-sale table', act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
+  // v0.23: "Beet seeds in my pocket": the vegetables' end of the raised bed (the table it stood at is not in the drawing)
+  pockets: { label: 'the vegetables in the raised bed', uv: [78.4, 82.9], act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
   glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Shade your eyes from the sun', 'shade', 'Oye, Sun!', 2600) },
-  paper: { label: 'the grass with the best view', uv: [30.6, 88.7], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
+  // v0.23: "On a bench in the yard ... Rests on her bench in the shade": the path beside the bench
+  paper: { label: 'the path beside the bench', uv: [32.4, 71.7], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
   window: { label: 'the window by the door', act: act('Peek in the window', 'peek', 'Home sweet home!', 2600) },
   path: { label: 'the middle of the path', uv: [40, 60], act: act('Toss your coins in the air', 'toss', 'Rich!', 2400) },
-  field: { label: 'the middle of the field', uv: [50, 70.7], act: act('Blow a kiss', 'kiss', '♥', 2400) },
+  // v0.23: "She draws pictures of me / Standing next to her ... We're both farmers": beside the farmer's place in the drawing
+  field: { label: 'the grass beside the farmer’s place', uv: [49.2, 74.3], act: act('Blow a kiss', 'kiss', '♥', 2400) },
   sketch: { label: 'the crumpled sketch in the corner', uv: [10.1, 93.1], act: act('Pick up the crumpled sketch', 'pickup', 'Keep it!', 2600) },
   bed: { label: 'the Who-Knows plant in the raised bed', act: act('Say hello to the Who-Knows plant', 'hello', '?♪', 2400) },
   pose: { label: 'Vanessa’s place in the drawing', act: act('Strike your pose', 'pose', 'Vanessa!', 2600) },
   easel: { label: 'the corner past the sunflowers', uv: [94.1, 83.9], act: act('Draw a big circle in the air', 'draw', 'Dream big!', 2800) },
-  flipflops: { label: 'the open grass left of the house', uv: [11.8, 51.3], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
+  // v0.23: "Dancing down the garden rows ... Walking through the corn where the green runs high": the end of the corn rows
+  flipflops: { label: 'the end of the corn rows', uv: [51, 50], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
 };
 // what to do at a spot before its egg comes
 export const spotAct = (spot) => SPOTS[spot]?.act ?? null;
@@ -219,8 +246,21 @@ export const foundCount = (discoveries = {}) => SONG_LIST.filter((id) => discove
 export const foundSongs = (discoveries = {}) => SONG_LIST.filter((id) => discoveries?.[id]);
 // the song still waiting at a spot (in list order, should a spot ever hold two)
 export const eggsAt = (spot, discoveries = {}) => SONG_LIST.filter((id) => songSpot(id) === spot && !discoveries?.[id]);
-// the spots that still hold a song: each shows its yellow circle and its star
+// the spots that still hold a song
 export const spotsWithEggs = (discoveries = {}) => Object.keys(SPOTS).filter((s) => eggsAt(s, discoveries).length > 0);
+// v0.23 (Tiffany: "have just a few at a time up here, replacing each other as she collects them, so
+// it doesn't look as crowded"): the spots on show now: the first SPOTS_AT_ONCE that still hold a
+// song, in her list's order. Each shows its red circle (the action); the others wait their turn.
+export const SPOTS_AT_ONCE = 3;
+export function visibleSpots(discoveries = {}, n = SPOTS_AT_ONCE) {
+  const out = [];
+  for (const id of SONG_LIST) {
+    const spot = songSpot(id);
+    if (!discoveries?.[id] && spot && !out.includes(spot)) out.push(spot);
+    if (out.length >= n) break;
+  }
+  return out;
+}
 
 // The next egg a bird brings: the song of the spot she is at (`spot`, or null). Nothing before
 // the hunt opens.
@@ -247,7 +287,8 @@ export function huntGoal({ discoveries = {}, egg = null } = {}) {
   const all = SONG_LIST.length;
   if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
   if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
-  if (egg === 'landed') return { text: 'An egg has landed: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg' } };
-  if (left.length === 1) return { text: `One song left: follow the arrow to ${SPOTS[songSpot(left[0])].label}.`, line: { icon: 'note', label: 'One song left', tail: 'follow the arrow' } };
-  return { text: 'A song waits at every yellow circle on the farm: walk to one and do what it says, and a bird brings an egg.', line: { icon: 'note', label: 'Walk to a yellow circle' } };
+  if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
+  if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
+  if (left.length === 1) return { text: `One song left: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'One song left', tail: 'at the red circle' } };
+  return { text: 'Walk to a red circle on the farm and do what it says: a bird brings its song as an egg, in a yellow circle.', line: { icon: 'note', label: 'Walk to a red circle' } };
 }

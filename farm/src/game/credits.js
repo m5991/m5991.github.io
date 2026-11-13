@@ -140,20 +140,7 @@ export function creditsAt(plan, lyrics, t) {
   return { card, line, next, done: t >= plan.duration };
 }
 
-// v0.22 the Credits card in Extras ("Under credits is where you find the slideshow. Call it
-// slideshow": the slideshow is its own entry now, and this is the plain list of who and what the
-// game is made from). `c`: the content file, for the song's and the picture book's names.
-export function creditsLines(c = null) {
-  const book = String(c?.closing?.title ?? '').replace(/\.$/, '');
-  return [
-    { what: 'The Farm', who: 'A game made for Vanessa, from her drawing' },
-    { what: 'The drawing', who: 'Vanessa' },
-    { what: 'The songs', who: 'Made with Suno, and gathered by Tiffany' },
-    { what: 'The slideshow', who: `Tiffany’s photos of the drawing over the years, to the song “${c?.song?.title ?? 'The House'}”` },
-    ...(book ? [{ what: 'The story at its end', who: `From the picture book “${book}”` }] : []),
-    { what: 'The title’s handwriting', who: 'Nothing You Could Do, by Kimberly Geswein (SIL Open Font License)' },
-    { what: 'Vanessa’s movement', who: 'From the KayKit Adventurers pack, by Kay Lousberg (CC0)' },
-    { what: 'Sounds', who: 'Made for this game' },
-    { what: 'Built with', who: 'three.js and cannon-es (MIT)' },
-  ];
-}
+// (v0.22 had a Credits card in Extras, the plain list of who and what the game is made from.
+// v0.23, Tiffany: "Get rid of the credits tab": it is gone. What the game is made from, and the
+// licences of the font and the motion pack, are in README.md, assets/fonts/OFL.txt and
+// assets/models/SOURCES.md.)

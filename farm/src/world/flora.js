@@ -228,17 +228,22 @@ function sunflowerGeometry(variant) {
     const pts = [s1, s1.clone().addScaledVector(d, len * 0.45).addScaledVector(UP, len * 0.05), s1.clone().addScaledVector(d, len).addScaledVector(UP, -len * 0.35)];
     parts.push(paint(blade(pts, { width: oval(0.075 - k * 0.004, 0.65), across: acrossAz(az), thick: 0.16, cup: 0.3, segs: 6, radial: 4 }), k % 2 ? FLORA.leafLight : PAL.leaf));
   }
+  // v0.23: the head is its own mesh on the stem's top (`head`), so a bird can fly off with it and
+  // it can grow back (world.js stripPlant); together they are the plant v0.22 drew as one
   const head = sunflowerHeadGeometry(0.27).clone();
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.28 + (r() - 0.5) * 0.15, (r() - 0.5) * 0.5, (r() - 0.5) * 0.2));
-  head.applyQuaternion(q); head.translate(top.x, top.y + 0.02, top.z + 0.03);
-  parts.push(head);
-  const out = bake(parts);
+  head.applyQuaternion(q);
+  const out = { body: bake(parts), head, at: V(top.x, top.y + 0.02, top.z + 0.03) };
   sunCache.set(variant, out);
   return out;
 }
 export function sunflower(variant = 0) {
   const g = new THREE.Group(); g.name = 'D16_Sunflower';
-  g.add(vmesh(sunflowerGeometry(variant % 4)));
+  const geo = sunflowerGeometry(variant % 4);
+  g.add(vmesh(geo.body));
+  const head = vmesh(geo.head); head.name = 'head';
+  head.position.copy(geo.at);
+  g.add(head);
   return g;
 }
 

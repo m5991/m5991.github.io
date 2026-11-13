@@ -22,6 +22,12 @@ export const KEEPSAKES = {
 export const KEEPSAKE_IDS = Object.keys(KEEPSAKES);
 export const KEEPSAKE_REACH_M = 0.9; // walking this close picks one up
 export const KEEPSAKE_NEAR_M = 4; // within this, it gives a small hop now and then (no glint: v0.22)
+// v0.23 (Tiffany: "Have all the keepsakes icons not circles ... Have the icons bouncing a bit so she
+// sees them"; "have just a few at a time ... replacing each other as she collects them"): the
+// keepsakes on the grass now: the first KEEPSAKES_AT_ONCE still to find, in their order; each
+// bounces gently all the time (world.js), wherever she is. No arrow points at one.
+export const KEEPSAKES_AT_ONCE = 2;
+export const visibleKeepsakes = (saved = {}, n = KEEPSAKES_AT_ONCE) => KEEPSAKE_IDS.filter((id) => !saved?.[id]).slice(0, n);
 
 // they are out on the farm in the exploring phase only
 export const keepsakesOut = (mainDone) => !!mainDone;

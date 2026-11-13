@@ -59,14 +59,23 @@
 // place once the farm is finished; the slideshow is offered at the end, never started by itself;
 // every song spot's act is something Vanessa is seen doing (world/moments.js); a bird that takes
 // from a plant flies off with its crop and the plant grows it again; the opening is her drawing.
+// v0.23 (Tiffany's notes "Farm changes #2", 2026-11-12, and the design audit's 8, 12, 13 and 14):
+// at DIY time the goal line says DIY and the place, one arrow leads there and its circle is the
+// only one; the builds come in her order, one at a time; a tool is in Vanessa's hand only for its
+// own job, and she is seen raking and digging; a yard sale is held when every table is full, and
+// her crops go onto the table that has room; no sound button on the screen (it is in Pause and in
+// Extras) and the sound starts with the game; in the end the actions are red circles, the songs
+// yellow ones, the keepsakes bounce, a few show at a time and no arrow points at them; weeds come
+// up on the grass and birds visit, harming nothing; Dwight walks out of the picture before the
+// final image and sits on the bench afterwards; Extras lists every song, and has no Credits.
 import * as THREE from 'three';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HOUSE_STAGES, LAST_STAGE, NODES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady,
+  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady, saleWish,
   tableCap, tables,
 } from './game/ledger.js';
 import { createBirds } from './game/birds.js';
@@ -74,13 +83,16 @@ import { createCredits } from './ui/credits.js';
 import { createSongPlayer, fmtTime } from './ui/songplayer.js';
 import { createBeat, lowEnergy } from './audio/beat.js';
 import { eveningAt, sinceFinish } from './game/evening.js';
-import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft } from './game/keepsakes.js';
-import { creditsLines } from './game/credits.js';
+import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft, visibleKeepsakes } from './game/keepsakes.js';
+import { bubblePlace } from './ui/bubble.js';
+import { createRace, fmtRace, raceClock } from './game/race.js';
+import { drawPostcard, postcardStats, sharePostcard, statsItems, statsLine } from './ui/postcard.js';
 import { createDiyHint } from './game/hints.js';
-import { buildBar, PATCH_NAME, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
-import { eggPhase, found, foundCount, foundSongs, huntGoal, lastSpot, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, spotsWithEggs, sunoLink } from './game/songs.js';
+import { buildBar, PATCH_NAME, PLACE_LABEL, SHORT_LABEL, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
+import { eggPhase, found, foundCount, foundSongs, huntGoal, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink, visibleSpots } from './game/songs.js';
 import { createNotes, onePill, quietCoach } from './ui/voices.js';
 import { Hammering } from './world/build.js';
+import { wishWords } from './world/world.js';
 import { createBurst } from './ui/burst.js';
 import { applyTheme } from './ui/theme.js';
 import * as G from './world/greybox.js';
@@ -236,7 +248,8 @@ async function boot() {
   // (v0.22: not in the moment between the home's last hammer blow and its finale: `finaleDue`)
   const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !finaleDue && !opening.active && rig.mode !== 'whole';
   function spotHere(heroXZ) {
-    for (const id of spotsWithEggs(data.discoveries)) {
+    // (v0.23: only the few spots on show have their action)
+    for (const id of visibleSpots(data.discoveries)) {
       world.eggSpotPos(id, tmpH);
       if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= world.spotReach(id)) return id;
     }
@@ -244,12 +257,15 @@ async function boot() {
   }
   const tmpH = new THREE.Vector3();
   function updateHunt(dt, heroXZ) {
-    if (!inHunt()) { world.updateEggSpots([], dt); world.updateSpotProps([], false); return; }
-    world.updateSpotProps(spotsWithEggs(data.discoveries), true); // the weeds and the crumpled sketch lie at their spots
-    // v0.22 (Tiffany: "The circles should be the actions that you perform to get the Easter egg
-    // song"): every spot with a song left shows its yellow circle and its star, from anywhere
+    if (!inHunt()) { world.updateEggSpots([], dt); world.updateSpotProps([], false); world.updateEggCircle(null, dt); return; }
+    // v0.23 (Tiffany: "have just a few at a time ... replacing each other as she collects them"):
+    // the first few spots that still hold a song, each with its red circle (the action); the
+    // song itself, the egg on the grass, lies in a yellow one
+    const showing = visibleSpots(data.discoveries);
+    world.updateSpotProps(showing, true); // the weeds and the crumpled sketch lie at their spots
     const waiting = hunt.busy || hunt.egg || hunt.moment;
-    world.updateEggSpots(waiting ? [] : spotsWithEggs(data.discoveries), dt);
+    world.updateEggSpots(waiting ? [] : showing, dt);
+    world.updateEggCircle(hunt.egg, dt);
     if (hunt.egg) {
       if (Math.hypot(hunt.egg.position.x - heroXZ.x, hunt.egg.position.z - heroXZ.z) <= HUNT.pickM) pickEgg();
       return;
@@ -273,7 +289,7 @@ async function boot() {
     }
     const spot = spotHere(heroXZ);
     const act = spot && spotAct(spot);
-    if (act && $('context').hidden) hud.setContext(act.verb, () => startMoment(spot));
+    if (act && $('context').hidden) hud.setContext(act.verb, () => startMoment(spot), 'act');
   }
   // ---------- v0.17c: the keepsakes hidden on the finished farm (game/keepsakes.js) ----------
   let creditsContent = null;
@@ -281,9 +297,11 @@ async function boot() {
   function updateKeepsakes(dt, heroXZ) {
     const out = inHunt();
     data.keepsakes ??= {};
-    world.updateKeepsakes(dt, { out, found: data.keepsakes, hero: heroXZ });
+    // v0.23: a few at a time, each bouncing where it lies
+    const shown = visibleKeepsakes(data.keepsakes);
+    world.updateKeepsakes(dt, { out, found: data.keepsakes, shown });
     if (!out || cards.isOpen || hunt.moment) return;
-    for (const id of keepsakesLeft(data.keepsakes)) {
+    for (const id of shown) {
       const p = world.keepsakePos(id);
       if (p && Math.hypot(p.x - heroXZ.x, p.z - heroXZ.z) <= KEEPSAKE_REACH_M) { findKeepsake(id); break; }
     }
@@ -305,7 +323,7 @@ async function boot() {
       title: `Found: ${KEEPSAKES[id].label}`,
       text: `One of Vanessa's gift jokes, hidden on the farm. ${keepsakeLine(data.keepsakes)}.`,
       prints: keepsakePrints(id, c),
-      left: n < KEEPSAKE_IDS.length ? 'The others are hidden around the farm.' : 'That was the last one. Extras → Keepsakes shows them all.',
+      left: n < KEEPSAKE_IDS.length ? 'Another one is out on the farm now.' : 'That was the last one. Extras → Keepsakes shows them all.',
       onClose: () => loop.resume('card'),
     });
   }
@@ -316,7 +334,7 @@ async function boot() {
     const left = keepsakesLeft(data.keepsakes);
     cards.prints({
       title: `Keepsakes · ${found.length} of ${KEEPSAKE_IDS.length}`,
-      text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes are hidden on the finished farm. Each one you find is kept here.',
+      text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes lie about the finished farm, a couple at a time. Each one you find is kept here.',
       prints: found.flatMap((id) => keepsakePrints(id, c)),
       left: left.length && foundCount(data.discoveries) >= songsFor().length ? `Hints: ${left.map((id) => KEEPSAKES[id].hint).join(' ')}` : left.length ? `${left.length} still hidden.` : '',
       cancel: 'Close',
@@ -329,8 +347,18 @@ async function boot() {
   // and show a downloadable image of the actual drawing') ----------
   // Vanessa's own drawing, the picture the whole farm is made from, with a link that saves it.
   // (v0.17c's Draw it rendered the farm in pencil; this is the drawing itself.)
-  const DRAWING = { src: 'assets/reference/drawing.jpg', download: 'The Farm, the drawing.jpg' };
+  // v0.23 (design audit 12, "a postcard to share"): under the drawing, a strip of this farm's
+  // numbers (the time it was finished in, the yard sales, the birds Dwight scared off, the songs
+  // and the keepsakes found), and Share, which sends the drawing with that strip as one picture
+  // through the phone's share sheet (or saves it where there is none). ui/postcard.js.
+  const DRAWING = { src: 'assets/reference/drawing.jpg', download: 'The Farm, the drawing.jpg', postcard: 'The Farm postcard.png' };
+  const farmStats = () => postcardStats({
+    ledger: data.ledger, session: data.session,
+    songsFound: foundCount(data.discoveries), songsTotal: songsFor().length,
+    keepsakesFound: foundKeepsakes(data.keepsakes ?? {}).length, keepsakesTotal: KEEPSAKE_IDS.length,
+  });
   function showDrawing() {
+    const stats = farmStats();
     cards.picture({
       title: 'The drawing',
       text: 'Vanessa’s drawing: the farm, just as she drew it.',
@@ -338,6 +366,14 @@ async function boot() {
       alt: 'Vanessa’s farm drawing in pen: a house with a smoking chimney, birds, the sun, a corn field, a tree and a bench in a ring of stones, a winding path, a farmer in overalls, sunflowers and a raised bed.',
       download: DRAWING.download,
       save: 'Download the drawing',
+      stats: statsItems(stats),
+      statsText: statsLine(stats),
+      share: 'Share',
+      onShare: async (img, say) => {
+        const canvas = drawPostcard(document.createElement('canvas'), img, stats);
+        const how = await sharePostcard(canvas, { name: DRAWING.postcard, title: 'The Farm', text: statsLine(stats) });
+        say(how === 'saved' ? 'Saved as a picture.' : how === 'shared' ? 'Shared.' : '');
+      },
     });
   }
   $('btn-drawing').onclick = showDrawing;
@@ -451,25 +487,25 @@ async function boot() {
       onClose: () => { loop.resume('card'); },
     });
   }
-  // v0.22 the songbook (Tiffany: "The keepsakes and the songs should appear little by little as you
-  // collect instead of all at once at the beginning"; "You can download at the end under the extras
-  // the songs tab"): only the songs found, in her order, each with Play, Download MP3 and its Suno
-  // page. No outline of a song still to find, no clue, no "Show all". `fromPlay`: opened from the
-  // HUD's songs counter, so the world waits behind it.
+  // The songbook. v0.23 (Tiffany: "Even before she collects the songs, allow all of them to appear
+  // and be downloaded under the extras page"): all 24, in her order, each with Play, Download MP3
+  // and its Suno page, whether it has been found on the farm or not; a found one carries a small
+  // mark. (v0.22 listed only the songs found.) `fromPlay`: opened from the HUD's songs counter,
+  // so the world waits behind it.
   async function openSongbook({ fromPlay = false } = {}) {
     const available = await songFilesHere();
     if (fromPlay) { if (cards.isOpen || loop.paused) return; input.release(); hero.halt(); loop.pause('card'); }
     const mine = foundSongs(data.discoveries);
-    const all = songsFor().length;
+    const list = songsFor();
+    const all = list.length;
     const intro = mine.length === all ? 'Every song, found. Play one here, or download it to keep.'
-      : mine.length ? 'The songs you have found so far. Play one here, or download it to keep.'
-        : 'No song yet. Walk to a yellow circle on the farm and do what it says: a bird brings its song.';
+      : `All ${all} songs are here to play and to download. The ones with a mark you have found on the farm.`;
     cards.songbook({
-      title: `Songs · ${mine.length} of ${all}`,
+      title: `Songs · ${mine.length} of ${all} found`,
       intro,
-      songs: mine.map((id) => ({ id, number: songNumber(id), title: `${String(songNumber(id)).padStart(2, '0')} · ${songTitle(id)}`, playTitle: songTitle(id), lyric: songLyric(id), src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id) })),
+      songs: list.map((id) => ({ id, number: songNumber(id), title: `${String(songNumber(id)).padStart(2, '0')} · ${songTitle(id)}`, playTitle: songTitle(id), lyric: songLyric(id), src: mp3Path(id), download: mp3Name(id), suno: sunoLink(id), found: !!data.discoveries?.[id] })),
       stamp: mine.length === all ? `All ${all} songs found` : '',
-      left: mine.length && mine.length < all ? `${all - mine.length} more wait at the yellow circles on the farm.` : '',
+      left: '',
       available,
       ...(fromPlay ? { onClose: () => loop.resume('card') } : {}),
     });
@@ -485,15 +521,27 @@ async function boot() {
     speech.until = performance.now() + ms;
     hud.announce(`The archer: ${line}`);
   }
+  // v0.23 (Tiffany: "If Dwight has a speech bubble don't let it block the birds, and make it have
+  // the pointy part pointing towards him"): the bubble stands beside his head with a pointed tail
+  // whose tip is at his head, on whichever side keeps it off the birds (the flock in the sky and
+  // the bird he has just sent off): ui/bubble.js decides, here it is measured and placed.
+  const toScreen = (v) => ({ x: ((v.x + 1) / 2) * view.w, y: ((1 - v.y) / 2) * view.h, front: v.z < 1 });
   function placeSpeech() {
     if (speech.el.hidden) return;
     if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active) { speech.el.hidden = true; return; }
-    world.archerHead(tmpP, speech.id).project(rig.camera);
-    const x = ((tmpP.x + 1) / 2) * view.w; const y = ((1 - tmpP.y) / 2) * view.h;
-    const w = speech.el.offsetWidth || 260;
-    const cx = Math.max(16 + w / 2, Math.min(view.w - 16 - w / 2, x));
-    speech.el.style.transform = `translate(${(cx - w / 2).toFixed(1)}px, ${(Math.max((live.playTop || live.hudBottom) + speech.el.offsetHeight + 14, y) - speech.el.offsetHeight - 10).toFixed(1)}px)`;
-    speech.el.style.setProperty('--tail', `${Math.max(14, Math.min(w - 14, x - (cx - w / 2))).toFixed(0)}px`);
+    const head = toScreen(world.archerHead(tmpP, speech.id).project(rig.camera));
+    const avoid = [];
+    const flock = world.objects.D21;
+    if (flock) { const f = toScreen(tmpP.copy(flock.position).project(rig.camera)); if (f.front) avoid.push({ x: f.x, y: f.y, r: Math.max(70, view.w * 0.09) }); }
+    const bp = world.birdPos(tmpP);
+    if (bp) { const b = toScreen(bp.project(rig.camera)); if (b.front) avoid.push({ x: b.x, y: b.y, r: 46 }); }
+    // (nor Vanessa herself)
+    { const v = toScreen(tmpP.copy(hero.position).setY(hero.position.y + 1).project(rig.camera)); if (v.front) avoid.push({ x: v.x, y: v.y, r: 44 }); }
+    const w = speech.el.offsetWidth || 260; const h = speech.el.offsetHeight || 70;
+    const at = bubblePlace(head, { w, h }, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop || view.h }, avoid);
+    speech.el.style.transform = `translate(${at.left.toFixed(1)}px, ${at.top.toFixed(1)}px)`;
+    speech.el.dataset.tail = at.side;
+    speech.el.style.setProperty('--tail', `${at.tail.toFixed(0)}px`);
   }
 
   // ---------- v0.17: the birds (spec §7; game/birds.js decides, the ledger takes) ----------
@@ -518,7 +566,7 @@ async function boot() {
   // the point the bird goes for this frame: the top of the plant, the bench seat, over her head
   function birdTarget(t) {
     if (!t) return null;
-    if (t.kind === 'node') return world.nodeTop(t.id, birdAt);
+    if (t.kind === 'node' || t.kind === 'visit') return world.nodeTop(t.id, birdAt);
     if (t.kind === 'perch') return world.benchSeat(birdAt);
     return hero.stack.count ? hero.stack.topWorld(birdAt) : birdAt.copy(hero.position).setY(1.9);
   }
@@ -528,7 +576,8 @@ async function boot() {
       switch (act.a) {
         case 'turn': commit({ t: 'birdTurn' }); break;
         // v0.20 (audit 3): a bird at a plant Dwight guards is his: no warning to act on, only its chirp
-        case 'warn': if (!act.guarded) { hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); } sfx.cue('chirp'); break;
+        // (v0.23: nor for a bird that only visits the finished farm: it takes nothing)
+        case 'warn': if (!act.guarded && !act.harmless) { hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); } sfx.cue('chirp'); break;
         case 'land': sfx.cue('chirp'); break;
         case 'draw': world.archerDraw(act.archer, act.at, BIRDS.drawMs); break;
         case 'shoot':
@@ -659,6 +708,14 @@ async function boot() {
         case 'weedCleared':
           hud.announce('Weeds cleared');
           break;
+        case 'yardWeedSprouted':
+          // v0.23: the finished farm's weeds: told once, as news; nothing depends on them
+          notes.once('yardweed', 'A weed has come up on the grass. Rake it if you like: nothing harms the crops now.', 4200);
+          hud.announce('A weed has come up on the grass');
+          break;
+        case 'ready':
+          world.regrowCrop(e.src); // a crop a bird took is back on its plant (v0.23)
+          break;
         case 'cropChosen':
           // her first crop, for good: it themes every card and menu (P27-7)
           applyTheme(e.crop);
@@ -696,8 +753,10 @@ async function boot() {
           }
           const n = l.table.C + l.table.S + l.table.T;
           const cap6 = tableCap(l);
-          hud.announce(n >= 6 ? `${n} out${Number.isFinite(cap6) ? ` of ${cap6}` : ''}: time for a yard sale` : `On the table: ${n} of 6`);
+          hud.announce(n >= cap6 ? `${n} out: every table is full, time for a yard sale` : `On the table${tables(l) > 1 ? 's' : ''}: ${n} of ${cap6}`);
           // (v0.21: no note here: the Yard Sale button comes up with the hand on it)
+          // v0.23 (audit 13): a neighbour's wish for this sale is news, told once as she begins to set out
+          tellWish();
           break;
         }
         case 'yardSale': {
@@ -709,6 +768,9 @@ async function boot() {
           world.yardSale(order, {
             sale: e.sale,
             tables: e.tables,
+            wish: e.wish ?? null,
+            // the tip: one more coin, from the buyer whose wish was on the tables
+            onTip: (from) => { world.flight('coin', from, hero.position.clone().setY(1.2), 420).then(() => { sfx.cue('coin'); hud.bump('coins'); }); },
             onSign: () => sfx.cue('confirm'),
             onCoins: (res, from) => {
               world.flight('coin', from.clone().setY(from.y + 0.2), hero.position.clone().setY(1.2), 380).then(() => { sfx.cue('coin'); hud.bump('coins'); });
@@ -797,33 +859,58 @@ async function boot() {
         case 'committed': {
           const s = STAGES[e.stage];
           // v0.20: the finished farm's day starts now (game/evening.js); kept in the save
-          if (e.stage === LAST_STAGE) { data.session.finishedAt = data.ledger.activeMs; persist(); finaleDue = true; }
+          // v0.23: the farm is finished when every stage is built (the chimney, on a new farm)
+          const finishing = mainComplete(data.ledger);
+          if (finishing) { data.session.finishedAt = data.ledger.activeMs; persist(); finaleDue = true; }
           const first = BASE_STAGE[data.ledger.crop] === e.stage;
           const hammered = HAMMERED.includes(e.stage) && !!world.stations[e.stage];
-          if (hammered) startBuilding(e.stage);
+          // v0.23 (Tiffany: "When she builds the chimney have her clime onto the roof first")
+          const climbs = hammered && e.stage === 'H4' && !reducedMotion();
+          if (hammered) startBuilding(e.stage, { climbs });
           else hero.celebrate(1200);
           hud.announce(HAMMERED.includes(e.stage) ? `DIY time! Vanessa builds the ${s.label}.` : `${cap(s.label)} saved`);
+          // v0.23 (design audit 8, "a beat after each build"): the goal line holds a pencilled
+          // "✓ Walls!" before it names the next need
+          // (while she hammers the line names what she is building; the beat comes as it stands)
+          holdGoal({ text: `${cap(s.label)}: done!`, line: { icon: 'check', label: `${SHORT_LABEL[e.stage] ?? cap(s.label)}!`, done: true } }, BEAT_MS,
+            hammered ? { goal: { text: `DIY time! Vanessa builds the ${s.label}.`, line: { icon: 'hammer', label: 'DIY time!', tail: PLACE_LABEL[e.stage] ?? cap(s.label) } }, ms: (climbs ? ROOF.upMs : Hammering.leadMs(reducedMotion())) + s.workMs } : null);
           // the part goes together once she has hopped to it (v0.12)
-          const lead = hammered ? Hammering.leadMs(reducedMotion()) : 0;
+          const lead = hammered ? (climbs ? ROOF.upMs : Hammering.leadMs(reducedMotion())) : 0;
           if (lead) world.holdReveal(e.stage, data.ledger);
           // v0.13 (P29-5): a house stage brings one more yard-sale table, set up as its DIY ends
-          // (v0.16: every house stage, six with the home)
-          const moreTables = HOUSE_STAGES.includes(e.stage) && tables(data.ledger) > (world.tablesShown ?? 1);
+          // (v0.23: the bench brings the second and the walls the third: data.js TABLE_STAGES)
+          const moreTables = TABLE_STAGES.includes(e.stage) && tables(data.ledger) > Math.max(1, world.tablesShown ?? 1);
           if (moreTables) world.tableHold = true;
-          world.tweens.wait(lead).then(() => world.reveal(e.stage, s.workMs, data.ledger)).then(() => {
+          world.tweens.wait(lead).then(() => world.reveal(e.stage, s.workMs, data.ledger)).then(async () => {
             sfx.cue('complete');
             // (v0.21: the news is the table; the digging is the goal line's)
             if (s.crop && first) hud.toast('The yard-sale table is set up by the path.', 3800);
-            if (s.hire) archerSays(ARCHER_LINES[0], 7000, e.stage); // v0.16: he arrives at his post and says his line
+            if (s.hire) { world.archerReset(e.stage); archerSays(ARCHER_LINES[0], 7000, e.stage); } // v0.16: he arrives at his post and says his line
             if (moreTables) {
               world.tableHold = false;
               world.sync(data.ledger, true); // the new table pops up in dust
               sfx.cue('thud');
               const n = tables(data.ledger);
-              const nth = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n];
-              if (e.stage !== LAST_STAGE) hud.toast(n === 4 ? 'The big yard sale! A fourth table, and room for everything you bring.' : `More neighbours are coming: a ${nth} yard-sale table.`, 4200);
+              const nth = ['', 'first', 'second', 'third'][n] ?? 'new';
+              if (!finishing) hud.toast(`More neighbours are coming: a ${nth} yard-sale table. Fill ${n === 2 ? 'both' : `all ${n}`} for a yard sale: the next builds cost more.`, 5200);
             }
-            if (e.stage === LAST_STAGE) finale.start(); // the home (v0.15: H5) is saved; last, the drawing gets its colour (P25-2)
+            // v0.23 (audit 8): each house stage has its small ink moment (world.js houseMoment);
+            // at the walls she waves through where the window will be
+            if (HOUSE_STAGES.includes(e.stage) && session.playing && !finale.active) {
+              if (e.stage === 'H2' && !hero.moving && !hammering.active) {
+                const st = world.spotStage('window', hero.position);
+                hero.yawTarget = world.spotFacing('window', hero.position, rig.camera) ?? hero.yaw;
+                hero.startMoment('hello', { ms: 1900, ...st });
+              }
+              const moment = world.houseMoment(e.stage);
+              if (finishing) await Promise.race([moment, world.tweens.wait(2600)]); // the heart, then the finale
+            }
+            if (finishing) {
+              // she is down from the roof before the drawing takes its colour
+              for (let waited = 0; roofClimb && waited < ROOF.downMs + 400; waited += 100) await world.tweens.wait(100);
+              finishRace();
+              finale.start(); // the last build is saved; last, the drawing gets its colour (P25-2)
+            }
           });
           break;
         }
@@ -840,18 +927,58 @@ async function boot() {
   // her pocket and she strikes it in a big comic way while it goes together in ink (dust, ticks
   // and swoosh lines at each blow, the part jolting), the burst pops up at the first strike, and
   // moving away stops her.
-  function startBuilding(stage) {
+  // v0.23 (Tiffany: "When she builds the chimney have her clime onto the roof first"): for the
+  // chimney she goes round to the house's left wall, climbs it and the roof (ROOF.upMs), hammers
+  // the chimney up from there, and climbs down again (`climbs`; hero.js moment 'roof'). Walking
+  // off calls her down at once; the build is saved either way.
+  const ROOF = { upMs: 1700, downMs: 1100 };
+  const BEAT_MS = 1500; // audit 8: how long the goal line holds "✓ Walls!" after the build
+  let roofClimb = null; // { stage } while she is on her way up, on the roof, or coming down
+  function startBuilding(stage, { climbs = false } = {}) {
     if (hammering.active) hammering.stop();
     ix.reset();
     world.showHeldTool(false);
+    const ms = STAGES[stage].workMs;
+    if (climbs) {
+      const total = ROOF.upMs + ms + ROOF.downMs;
+      const mine = (roofClimb = { stage });
+      hero.halt();
+      hero.startMoment('roof', { ms: total, route: world.roofRoute(), up: ROOF.upMs / total, down: ROOF.downMs / total });
+      world.tweens.wait(ROOF.upMs).then(() => {
+        if (roofClimb !== mine || hero.moment?.kind !== 'roof') return;
+        hammering.start(stage, ms, null); // no hop: she is on the roof
+        hammering.faceTo = world.chimneyPoint();
+      });
+      world.tweens.wait(total + 50).then(() => { if (roofClimb === mine) roofClimb = null; });
+      return;
+    }
     const at = world.buildPoint(stage);
-    hammering.start(stage, STAGES[stage].workMs, { x: at.x, z: at.z });
+    hammering.start(stage, ms, { x: at.x, z: at.z });
     hammering.faceTo = at;
     hero.yawTarget = Math.atan2(at.x - hero.body.position.x, at.z - hero.body.position.z);
+  }
+  // audit 8: the goal line's beat after a build ("✓ Walls!"), held for `ms` of play
+  let goalBeat = null; // { goal, ms, then? }: `then` follows when `ms` of play has passed
+  function holdGoal(goal, ms, first = null) { goalBeat = first ? { ...first, then: { goal, ms } } : { goal, ms }; }
+  // audit 13: a neighbour's wish for the sale that is next, told once
+  let wishTold = -1;
+  function tellWish() {
+    const w = saleWish(data.ledger);
+    if (!w || wishTold === data.ledger.sales) return;
+    wishTold = data.ledger.sales;
+    hud.toast(`A neighbour asks for the next yard sale: “${wishWords(w)}”`, 4600);
   }
   hammering.onLand = (p) => { sfx.cue('thud'); world.puff(new THREE.Vector3(p.x, 0, p.z), { scale: 1.1 }); };
   hammering.onStrike = (i) => {
     sfx.cue('tock');
+    if (roofClimb) { // on the roof: the ticks and the dust are at the chimney itself
+      if (i === 0) { tmpP.copy(hero.position).project(rig.camera); burst.show(tmpP.x < 0 ? -1 : 1); }
+      const top = world.chimneyPoint(tmpS);
+      world.puff(top.clone(), { scale: 0.7 + 0.2 * i, seed: i });
+      const hit = top.clone().project(rig.camera);
+      burst.tick({ x: ((hit.x + 1) / 2) * view.w, y: ((1 - hit.y) / 2) * view.h }, reducedMotion());
+      return;
+    }
     if (i === 0) {
       // beside her, on the side away from the screen's centre
       tmpP.copy(hero.position).project(rig.camera);
@@ -874,7 +1001,7 @@ async function boot() {
   function diyAway(bar) {
     diyHint.nudge();
     const where = STAGES[bar.stage]?.label && HOUSE_STAGES.includes(bar.stage) ? 'the house' : `the ${bar.label}`;
-    hud.toast(`${cap(bar.label)}: all here. Go to ${where}`, 3000);
+    hud.toast(`${PLACE_LABEL[bar.stage] ?? cap(bar.label)}: all here. Follow the arrow to ${where}`, 3000);
   }
   function doDiy(stage) {
     const r = commit({ t: 'build', stage });
@@ -893,7 +1020,7 @@ async function boot() {
     if (!atTheTable()) {
       const hp = { x: hero.body.position.x, z: hero.body.position.z };
       const near = ctxTargets.some((x) => x.kind === 'table' && inReach(hp, x, SALE_REACH_M));
-      hud.toast(near ? 'Yard Sale: go round to the back of the table.' : 'Yard Sale: go to the back of the table.', 2200);
+      hud.toast(near ? 'Yard Sale: go round to the back of the tables.' : 'Yard Sale: go to the back of the tables.', 2200);
       return;
     }
     commit({ t: 'yardSale' });
@@ -937,32 +1064,54 @@ async function boot() {
     goal = goalFor(data.ledger, heroXZ);
     toolCtx = { want: wantedTool(data.ledger, goal, heroXZ, ctxTargets), toolsComeToMe: data.settings.helpMeFinish }; // Help me finish brings every tool (P29-7)
     // (v0.22: nor during a song spot's moment: she is doing that, not gathering what lies near)
-    const evs = hammering.active || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
+    // (v0.23: nor while she climbs to the chimney, or down from it)
+    if (roofClimb && (hero.moving || hero.moment?.kind !== 'roof')) { roofClimb = null; if (hero.moment?.kind === 'roof') hero.cancelMoment(); }
+    const building = hammering.active || !!roofClimb;
+    const evs = building || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
     const working = hunt.moment ? null : ix.working;
     if (hammering.active && hero.moving) hammering.stop(); // moving away never undoes the build
     const faceTo = working ? working : hammering.active ? hammering.faceTo : null;
-    hero.update(dt, { working: !!working || hammering.active, faceTo });
+    // v0.23 (Tiffany: "When she is shoveling or raking make an animation of her doing it"): with
+    // the rake at a weed or the shovel at a spot she works with it, stroke by stroke
+    const doing = working ? ix.workDoing : null;
+    const toolWork = doing === 'clearWeed' && data.ledger.tool === 'rake' ? 'rake' : doing === 'dig' && data.ledger.tool === 'shovel' ? 'shovel' : null;
+    hero.update(dt, { working: !!working || hammering.active, faceTo, tool: toolWork, stroke: ix.workProgress });
     hammering.update(dt); // after her pose, so the hammer sits in her fist
     if (!debugCarried) hero.setCounts(data.ledger.carried);
+    world.toolStroke = hero.toolStroke;
+    // a little earth, or a few leaves, as each stroke bites
+    const bite = hero.toolStroke ? `${hero.toolStroke.kind}${ix.working?.id}${hero.toolStroke.stroke}${hero.toolStroke.k > (hero.toolStroke.kind === 'rake' ? 0.34 : 0.4) ? 'b' : 'a'}` : null;
+    if (bite && bite !== lastBite && bite.endsWith('b') && world.toolFoot && !reducedMotion()) world.puff(world.toolFoot.clone().setY(0.08), { scale: hero.toolStroke.kind === 'rake' ? 0.3 : 0.42, seed: hero.toolStroke.stroke });
+    lastBite = bite;
     world.updateHeldTool();
     world.updatePiles(dt, reducedMotion());
     world.updateRegrowth(data.ledger, dt);
     tweens.update(dt);
     // the ground ring: nearest collectible, solid in reach, filling while she works
-    highlight = hammering.active || hunt.moment ? null : pickHighlight(data.ledger, heroXZ, ctxTargets, ix.state.selectedId, HIGHLIGHT_RANGE_M, toolCtx);
+    highlight = building || hunt.moment ? null : pickHighlight(data.ledger, heroXZ, ctxTargets, ix.state.selectedId, HIGHLIGHT_RANGE_M, toolCtx);
     const still = !isMoving({ moving: hero.moving, speed: hero.groundSpeed });
     const mode = working ? 'work' : highlight?.inReach ? (still ? 'settle' : 'reach') : 'near';
-    world.updateMarker(dt, highlight && { target: highlight.target, mode, progress: ix.workProgress }, reducedMotion());
+    // v0.18: no circle for a routine gathering step she has done before (tutorial.js guideTargets)
+    // v0.23 (Tiffany: "When it is DIY time make the only highlighted circle be around the DIY
+    // location"; "Clean the bench should never be highlighted at DIY time"): at DIY time the goal's
+    // one target is the build, and nothing else is marked: not the bench's stain, not the ring round
+    // a crop or a stick near her (unless she is working there: that is its progress)
+    diyTime = !!goal.diy && !building;
+    const markers = diyTime ? [goal.diy] : guideTargets(data.ledger, goal);
+    const visibleMarkers = building || eggPhase(data.ledger) ? [] : markers;
+    // (the bench's stain asks for an action, Clean the bench: its circle is the actions' red one)
+    const stainShown = data.ledger.theft.stain && !cleaning && !diyTime && !building;
+    if (stainShown) visibleMarkers.push('G2');
+    // v0.23 ("Don't have a blue circle on top of a yellow circle unless there is a reason to"): the
+    // blue ring keeps off a place that already has a circle (the guide's yellow one, an action's
+    // red one, the egg's); while she works there it is her progress, which is the reason
+    let ring = highlight;
+    if (ring && !working && (diyTime || circleNear(ring.target, visibleMarkers))) ring = null;
+    world.updateMarker(dt, ring && { target: ring.target, mode, progress: ix.workProgress }, reducedMotion());
     updateContext(heroXZ, dt);
     updateCoachState(dt, heroXZ, working);
-    // v0.18: no circle for a routine gathering step she has done before (tutorial.js guideTargets)
-    const markers = guideTargets(data.ledger, goal);
-    const bar = buildBar(data.ledger, atSite(heroXZ, ctxTargets)?.id);
-    if (bar?.ready && !markers.includes(bar.stage)) markers.push(bar.stage);
-    const visibleMarkers = hammering.active || eggPhase(data.ledger) ? [] : markers;
-    if (data.ledger.theft.stain && !cleaning) visibleMarkers.push('G2');
-    world.updateGoalMarkers(visibleMarkers, dt);
+    world.updateGoalMarkers(visibleMarkers, dt, stainShown ? ['G2'] : []);
     updateHunt(dt, heroXZ);
     updateKeepsakes(dt, heroXZ);
     updateBirds(dt, heroXZ);
@@ -973,18 +1122,34 @@ async function boot() {
     const nextKeep = keepsakesLeft(data.keepsakes ?? {})[0];
     // v0.21 (audit 5): one line, icon-first; in the hunt the counter row is the songs found of all
     // (and the keepsakes, once one is found), so the line does not count them again
-    const hunting = eggPhase(data.ledger);
+    const hunting = eggPhase(data.ledger) && !finaleDue; // (v0.23: not while the last build is still going up)
     hud.setHunt(hunting ? { found: foundCount(data.discoveries), total: songsFor().length, keepsakes: foundKeepsakes(data.keepsakes ?? {}).length, keepsakesTotal: KEEPSAKE_IDS.length } : null, HUNT_TAPS);
-    hud.setGoal(!hunting ? goal
+    // (v0.23, audit 8: after a build the line holds its "✓ Walls!" for a beat)
+    if (goalBeat) { goalBeat.ms -= dt; if (goalBeat.ms <= 0) goalBeat = goalBeat.then ?? null; }
+    hud.setRace(data.session.race ? fmtRace(raceClock(data.ledger, data.session)) : null, mainComplete(data.ledger));
+    hud.setGoal(goalBeat ? goalBeat.goal : !hunting ? goal
       : allSongs && nextKeep ? { text: `${keepsakeLine(data.keepsakes)}. ${KEEPSAKES[nextKeep].hint}`, line: { icon: 'gift', label: KEEPSAKES[nextKeep].hint, wrap: true } }
         : allSongs ? { text: `Every song and every keepsake found.`, line: { icon: 'check', label: 'Everything found' } }
-          : huntGoal({ discoveries: data.discoveries, egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : null }));
+          : huntGoal({ discoveries: data.discoveries, egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : hunt.moment ? 'moment' : null }));
     // one pill: the coach's "how" while it teaches, else the status (ui/voices.js)
     const pill = onePill(coachState?.prompt ?? null, statusWant);
     if (coachState) coachState.prompt = pill.coach;
     if (pill.status !== lastProgress) { hud.setProgress(pill.status); lastProgress = pill.status; }
   }
   const HUNT_TAPS = { onSongs: () => openSongbook({ fromPlay: true }), onKeepsakes: () => openKeepsakes({ fromPlay: true }) };
+  let diyTime = false; // she has everything for the next build (the goal line says DIY)
+  let lastBite = null; // the tool stroke last seen (a puff as each one bites)
+  // is a circle already on the ground at this target: one of the guide's (`ids`), an action's
+  // spot in the end, or the egg's
+  const CIRCLE_NEAR_M = 1.0;
+  function circleNear(t, ids) {
+    const near = (p) => !!p && Math.hypot(p.x - t.x, p.z - t.z) <= CIRCLE_NEAR_M;
+    for (const id of ids) if (id === t.id || near(world.standPoint(id, tmpS))) return true;
+    if (!inHunt()) return false;
+    if (hunt.egg && near(hunt.egg.position)) return true;
+    if (hunt.busy || hunt.egg || hunt.moment) return false;
+    return visibleSpots(data.discoveries).some((sp) => near(world.eggSpotPos(sp, tmpS)));
+  }
   let statusWant = null; // what the status pill would say (updateContext)
 
   // the goal line; when it names stone, the rock nearest Vanessa that still has some (§3 P25-6)
@@ -1026,13 +1191,15 @@ async function boot() {
     if (step?.phase && tut.phase && step.phase !== tut.phase) sfx.cue('cue');
     tut.phase = step?.phase ?? null;
     // the hand points at the button to press: DIY at the first build, Yard Sale at the first sale
-    const point = step?.phase === 'build' && hud.diyShown ? 'diy' : step?.phase === 'sale' && hud.saleShown ? 'sale' : null;
+    // (v0.23, Tiffany: "Don't have the arrow point at DIY": no hand on the DIY button; the goal
+    // line says DIY and the arrow leads to the place)
+    const point = step?.phase === 'sale' && hud.saleShown ? 'sale' : null;
     const here = highlight?.inReach ? kindOf(highlight.target.id, l) : null;
     coachState = {
       step,
       point,
       // (v0.21: not what the goal line or a pointed-at button already says)
-      prompt: quietCoach(coachPrompt({ step, learned: learned(l), mode: input.mode, here, tool: toolCtx.want, working: !!working, lingering: tut.lingerHold > 0, point })),
+      prompt: quietCoach(coachPrompt({ step, learned: learned(l), mode: input.mode, here, tool: toolCtx.want, working: !!working, lingering: tut.lingerHold > 0, point, atSite: hud.diyHere })),
     };
   }
 
@@ -1047,14 +1214,16 @@ async function boot() {
     const bar = finale.active || opening.active ? null : buildBar(data.ledger, site?.id ?? null);
     diyState = diyHint.update(dt, bar && !hammering.active ? bar : null);
     hud.setBuild(bar, bar?.ready ? (bar.here ? () => doDiy(bar.stage) : () => diyAway(bar)) : null);
-    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale, atTheTable()); // v0.14: yellow at the tables
+    // v0.14: yellow at the tables. v0.23 (Tiffany: "when she fills them the yard sale button is
+    // highlighted"): yellow from the moment every table is full, wherever she stands
+    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale, true);
     // at the tools: the explicit way to take the one the next job needs (P25-4)
     const tools = ctxTargets.find((x) => x.kind === 'tools');
     if (tools && toolCtx.want && inReach(heroXZ, tools)) {
       const tool = toolCtx.want;
       hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
     } else if (data.ledger.theft.stain && !cleaning && Math.hypot(benchSpot().x - heroXZ.x, benchSpot().z - heroXZ.z) < 1.9) {
-      hud.setContext('Clean the bench', () => { hero.halt(); cleaning = { ms: 0 }; hero.startMoment('clean', { ms: BIRDS.cleanMs, seat: world.benchSeat() }); }); // the cloth swipes while she stands still
+      hud.setContext('Clean the bench', () => { hero.halt(); cleaning = { ms: 0 }; hero.startMoment('clean', { ms: BIRDS.cleanMs, seat: world.benchSeat() }); }, 'act'); // the cloth swipes while she stands still
     } else hud.setContext(null, null);
     // nonmodal status: what Vanessa is doing or why the nearby source is idle
     let text = '';
@@ -1062,9 +1231,11 @@ async function boot() {
     if (w) {
       const doing = ix.workDoing;
       if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}…`;
-      else if (w.kind === 'weed') text = 'Clearing weeds…';
+      else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed…' : 'Clearing weeds…';
       else if (w.kind === 'dig') text = 'Digging…';
       else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}`;
+    } else if (roofClimb && !hammering.active) {
+      text = 'Up onto the roof…';
     } else if (hammering.active) {
       text = `DIY time! Building the ${STAGES[hammering.stage].label}…`;
     } else if (cleaning) {
@@ -1087,7 +1258,8 @@ async function boot() {
         const of = Number.isFinite(capN) ? ` of ${capN}` : ' out';
         // (v0.21: what is out, while it is not yet a sale; once six are out the Yard Sale button
         // is up and says the rest, so the pill stays quiet unless more would still fit)
-        text = saleShowing ? 'Yard sale!' : n >= capN ? '' : n >= 6 ? `Yard-sale tables · ${n}${of}` : `Yard-sale table · ${n} of 6 out`;
+        // (v0.23: a sale is held when every table is full, so the count is against all of them)
+        text = saleShowing ? 'Yard sale!' : n >= capN ? '' : `Yard-sale table${tables(data.ledger) > 1 ? 's' : ''} · ${n}${of}`;
       }
       // v0.17: beside the raised bed's scribble, its name (§10.5: never a botanical one)
       const wk = !text && world.whoKnowsPos(tmpS);
@@ -1171,7 +1343,15 @@ async function boot() {
       if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), overlay })) {
         paper.place(view.w, view.h);
         opening.prepare();
-      } else paper.hide();
+      } else {
+        paper.hide();
+        // v0.23 ("Sound automatically starts with the game"): asked for at once, with no gesture;
+        // where the browser will not have that, the first touch starts it, with no prompt in
+        // between. (A device's first launch rests on the opening's page, whose first tap starts
+        // the theme and the opening together, as before: the opening runs on the theme's clock.)
+        audio.autostart();
+        loadSfx();
+      }
       if (overlay) enterWhole(true);
     };
     const n = saveNotice(r, saves.sessionOnly);
@@ -1197,6 +1377,10 @@ async function boot() {
     world.resetTools(data.ledger.tool);
     world.sync(data.ledger);
     world.setFinished(mainComplete(data.ledger)); // the coloured end state derives from the home (P25-2)
+    // v0.23: on a finished farm Dwight is on the bench; otherwise at his post
+    world.archerReset();
+    if (mainComplete(data.ledger)) world.archerToBench('A1', { instant: true });
+    roofClimb = null; goalBeat = null; wishTold = -1; lastBite = null;
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
     diyHint.reset();
@@ -1216,6 +1400,7 @@ async function boot() {
     notes.reset();
     hud.reset();
     hud.setHunt(null);
+    hud.setRace(null);
     hud.render(data.ledger);
     applyHelpParams(); // ?help= and ?birds= (the accessibility settings; saved with the farm)
     hud.setGoal(nextGoal(data.ledger, { toolsCome: data.settings.helpMeFinish }));
@@ -1232,6 +1417,13 @@ async function boot() {
   // that list. Cannot access extras until the end when you are just exploring."
   // The end: the home is built and its finale has played (the farm is coloured, she is exploring).
   const extrasEl = $('extras');
+  // v0.23 (audit 14): the race's best time, kept on the device apart from the farm save
+  const race = createRace(safeStorage());
+  let lastRace = null; // { ms, best, isBest, previous } of the race just finished (the finish card shows it)
+  function finishRace() {
+    if (!data.session.race || !Number.isFinite(data.session.finishedAt)) return;
+    lastRace = race.finish(data.session.finishedAt);
+  }
   const atTheEnd = () => mainComplete(data.ledger) && !finale.active && !finaleDue;
   const menuButton = () => (atTheEnd() ? $('btn-extras') : $('btn-pause'));
   function showMenuButton() {
@@ -1257,7 +1449,7 @@ async function boot() {
   function openExtras() {
     if (!atTheEnd() || !extrasEl.hidden) return;
     holdWorld();
-    $('btn-songs').textContent = `Songs (${foundCount(data.discoveries)}/${songsFor().length})`;
+    $('btn-songs').textContent = `Songs (${foundCount(data.discoveries)}/${songsFor().length} found)`;
     $('btn-keepsakes').textContent = `Keepsakes (${foundKeepsakes(data.keepsakes ?? {}).length}/${KEEPSAKE_IDS.length})`;
     extrasEl.hidden = false;
     extrasEl.scrollTop = 0;
@@ -1266,10 +1458,7 @@ async function boot() {
   function closeExtras() { extrasEl.hidden = true; releaseWorld(); $('btn-extras').focus({ preventScroll: true }); }
   $('btn-extras').onclick = openExtras;
   $('btn-extras-back').onclick = closeExtras;
-  $('btn-credits').onclick = async () => {
-    const c = await loadCreditsContent();
-    cards.credits({ title: 'Credits', lines: creditsLines(c) });
-  };
+  // (v0.23, Tiffany: "Get rid of the credits tab": Extras has no Credits)
   function enterWhole(withOverlay) {
     pauseEl.hidden = true;
     if (withOverlay) {
@@ -1336,6 +1525,10 @@ async function boot() {
       document.body.classList.add('finale');
       $('btn-skip').hidden = false;
       $('btn-skip').focus();
+      // v0.23 (Tiffany: "If Dwight doesn't already walk off the screen before the final image
+      // appears, have him do that. Not just disappear."): he walks out of the picture
+      world.archerLeave();
+      burst.hide(); // no "DIY time!" or ink tick is left over the picture
       hud.announce('The house is finished. The drawing takes its colour.');
     },
     onEnd: () => {
@@ -1344,6 +1537,9 @@ async function boot() {
       finaleDue = false;
       showMenuButton(); // Extras now stands where Pause stood
       loop.resume('finale'); // the camera eases back to Vanessa (renderStep)
+      // v0.23 (Tiffany: "In the end let Dwight go sit down on the bench"): he walks back in and sits
+      // (the first time the slideshow's offer comes first: he walks in when she goes on, keepExploring)
+      if (data.session.creditsSeen) world.archerToBench('A1');
       // v0.22: the first time, the slideshow is offered (watch it, or keep playing); it never
       // starts by itself, and it is always in Extras
       if (mainComplete(data.ledger) && !data.session.creditsSeen) { showCompleted(); return; }
@@ -1424,9 +1620,13 @@ async function boot() {
     holdBackdrop(true);
     loop.pause('done');
     const all = songsFor().length;
-    $('completed-note').textContent = `The house is a home, and the whole drawing is in colour. Would you like to see the slideshow of the drawing over the years? It is in Extras any time. And ${all} songs wait at the yellow circles on the farm.`;
+    $('completed-note').textContent = `The house is a home, and the whole drawing is in colour. Would you like to see the slideshow of the drawing over the years? It is in Extras any time. And ${all} songs wait on the farm, a few red circles at a time.`;
     // v0.20 (audit 3): what Dwight did about the birds
     const shooed = data.session.dwightDeterred ?? 0;
+    // v0.23 (audit 14): a race's time, and the best one kept on this device
+    const raced = lastRace && data.session.race ? `Race: ${fmtRace(lastRace.ms)}${lastRace.isBest ? (lastRace.previous ? ` · a new best (it was ${fmtRace(lastRace.previous)})` : ' · your first time: the one to beat') : ` · best ${fmtRace(lastRace.best)}`}` : '';
+    $('completed-race').hidden = !raced;
+    $('completed-race').textContent = raced;
     $('completed-tally').hidden = !shooed;
     $('completed-tally').textContent = `Birds deterred by Dwight: ${shooed}`;
     if (!data.session.creditsSeen) { data.session.creditsSeen = true; persist(); }
@@ -1435,11 +1635,12 @@ async function boot() {
   }
   // the hunt's rules, told once a session as it opens (after that the goal line carries it)
   function huntNews() {
-    notes.once('hunt', 'The egg hunt: a song waits at every yellow circle. Walk to one and do what it says, and a bird brings you its song.', 6000);
+    notes.once('hunt', 'Exploring: walk to a red circle and do what it says, and a bird brings a song in a yellow circle. A few show at a time.', 6500);
   }
   function keepExploring() {
     completedEl.hidden = true;
     holdBackdrop(false);
+    world.archerToBench('A1'); // v0.23: Dwight comes back into the picture and sits on the bench (he is there already on a later visit)
     loop.resume('done');
     rig.snap = true;
     showMenuButton();
@@ -1496,7 +1697,7 @@ async function boot() {
   paper.onStart(tapOpening);
   $('opening-start').onclick = () => opening.begin(); // Enter or Space on the focused Start control
   window.addEventListener('keydown', (e) => {
-    if (!opening.active || e.repeat || cards.isOpen || e.key === 'Escape' || e.target.closest?.('#opening-sound')) return;
+    if (!opening.active || e.repeat || cards.isOpen || e.key === 'Escape') return;
     if (opening.phase === 'waiting' && ![' ', 'Enter'].includes(e.key)) return;
     e.preventDefault();
     tapOpening();
@@ -1517,11 +1718,16 @@ async function boot() {
   }
   // New farm: the first thing in Extras, behind its confirmation
   $('btn-reset').onclick = () => {
+    // v0.23 (audit 14): a new farm can be a race: a clock on the way to the finished farm
+    const fresh = (race) => { extrasEl.hidden = true; releaseWorld(); const d = saves.reset(data.settings); d.session.race = race; lastRace = null; start(d); };
     cards.message({
       title: 'Start a new farm?',
       text: `This erases the farm: every build, ${data.ledger.purse} coins, the songs and the keepsakes found. The sound settings are kept.`,
       confirm: 'Start a new farm', cancel: 'Keep this farm',
-      onConfirm: () => { extrasEl.hidden = true; releaseWorld(); start(saves.reset(data.settings)); },
+      onConfirm: () => fresh(false),
+      extra: 'Start a new farm as a race',
+      extraNote: `A race shows a clock until the farm is finished${race.best ? `. Best time on this device: ${fmtRace(race.best)}` : ', and keeps your best time on this device'}.`,
+      onExtra: () => fresh(true),
     });
   };
   document.addEventListener('visibilitychange', () => {
@@ -1541,22 +1747,27 @@ async function boot() {
     storage: safeStorage(),
     onChange: showAudio,
   });
-  const soundBtn = $('btn-sound');
+  // v0.23 (Tiffany: "Don't have a button on the screen that controls volume. Only in the drop down
+  // list. Sound automatically starts with the game"): no Sound button on the HUD or on the opening's
+  // page. Sound on or off is a switch in the two lists there are: Pause, and Extras (with the two
+  // volumes). The sound starts by itself (audio.autostart, called as the game starts: launch).
+  const soundSwitches = [$('btn-sound-pause'), $('btn-sound-extras')];
   const promptBtn = $('audio-prompt');
   const PROMPTS = { enable: 'Tap to enable audio', resume: 'Tap to resume audio' };
   function showAudio() {
     const s = audio.settings;
-    soundBtn.setAttribute('aria-pressed', String(s.soundEnabled));
-    soundBtn.title = audio.state === 'unsupported' ? 'Audio is unavailable in this browser' : s.soundEnabled ? 'Sound on: tap to mute all' : 'Sound off: tap to turn on';
-    $('opening-sound').setAttribute('aria-pressed', String(s.soundEnabled));
+    for (const b of soundSwitches) {
+      b.setAttribute('aria-pressed', String(s.soundEnabled));
+      b.querySelector('.state').textContent = audio.state === 'unsupported' ? 'unavailable' : s.soundEnabled ? 'on' : 'off';
+      b.disabled = audio.state === 'unsupported';
+    }
     $('vol-music').value = String(Math.round(s.musicVolume * 100));
     $('vol-effects').value = String(Math.round(s.effectsVolume * 100));
     const p = audio.prompt;
     promptBtn.hidden = !p;
     if (p) promptBtn.textContent = PROMPTS[p];
   }
-  soundBtn.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); };
-  $('opening-sound').onclick = () => audio.toggleSound(); // the page's corner toggle (P26-1)
+  for (const b of soundSwitches) b.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); };
   $('vol-music').oninput = (e) => audio.setMusicVolume(Number(e.target.value) / 100);
   $('vol-effects').oninput = (e) => audio.setEffectsVolume(Number(e.target.value) / 100);
   $('vol-effects').onchange = () => sfx.cue('tick'); // hear the new level on release
@@ -1572,7 +1783,8 @@ async function boot() {
     for (const f of sfxFiles()) audio.loadEffect(f, `${SFX_PATH}${f}.mp3`);
   };
   // (v0.22: and blesses the song player's one element, so a found song may start with no tap)
-  for (const t of ['pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(t, () => { audio.gesture(); loadSfx(); songs.unlock(); }, true);
+  // (v0.23: `pointerdown` too, so the very first touch of the stick starts the sound)
+  for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(t, () => { audio.gesture(); loadSfx(); songs.unlock(); }, true);
   audio.prefetch();
   showAudio();
 
@@ -1602,7 +1814,8 @@ async function boot() {
   const fadePts = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
   function fadePoints() {
     const p = hero.position;
-    const pts = [fadePts[0].set(p.x, p.y + 0.3, p.z), fadePts[1].set(p.x, p.y + 0.9, p.z), fadePts[2].set(p.x, p.y + 1.5, p.z)];
+    // (v0.23: on the roof she is in plain sight above the house: nothing fades for her there)
+    const pts = hero.moment?.kind === 'roof' ? [] : [fadePts[0].set(p.x, p.y + 0.3, p.z), fadePts[1].set(p.x, p.y + 0.9, p.z), fadePts[2].set(p.x, p.y + 1.5, p.z)];
     if (highlight) pts.push(fadePts[3].set(highlight.target.x, 0.15, highlight.target.z));
     const st = coachState?.step && world.stations[coachState.step.target];
     if (st) pts.push(fadePts[4].copy(st.pos).setY(0.3));
@@ -1675,18 +1888,14 @@ async function boot() {
     if (hammering.active) { coach.hideAll(); coach.sparkle(null); return; } // nothing over the build
     const { step, prompt, point } = coachState;
     // one arrow at the goal's target; at the crop choice, three, one per patch in its colour
-    const aims = step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : (step?.target ?? goal.target) ? [{ id: step?.target ?? goal.target }] : [];
+    // v0.23 (Tiffany: "When it says DIY only have one arrow ... at that time only an arrow to the
+    // DIY", from the moment she has everything: "have the arrow take her to the location
+    // initially"; v0.13 waited 10 s and added a sparkle): at DIY time the one arrow is the build's
+    const aims = diyTime ? [{ id: goal.diy }]
+      : step?.choice ? step.choice.map((c) => ({ id: c.target, colour: c.colour })) : (step?.target ?? goal.target) ? [{ id: step?.target ?? goal.target }] : [];
     // v0.18: and no arrow for a routine gathering step she has done before (the goal line still says it)
     for (let i = aims.length - 1; i >= 0; i--) if (routineGather(data.ledger, aims[i].id)) aims.splice(i, 1);
-    // v0.13 DIY hint: 10 s after she has everything (or at once when DIY is pressed away), the
-    // arrow leads to the part, which sparkles
-    const hintAt = diyState.point && world.stations[diyState.stage] ? diyState.stage : null;
-    if (hintAt && !aims.some((a) => a.id === hintAt)) aims.push({ id: hintAt });
-    if (hintAt) {
-      world.buildPoint(hintAt, tmpP).setY(Math.max(0.5, tmpP.y + 0.2)).project(rig.camera);
-      const sx = ((tmpP.x + 1) / 2) * view.w; const sy = ((1 - tmpP.y) / 2) * view.h;
-      coach.sparkle(tmpP.z < 1 && sx > 0 && sx < view.w && sy > (live.playTop || live.hudBottom) && sy < live.ctlTop ? { x: sx + 34, y: sy - 4 } : null); // beside the arrow's tip
-    } else coach.sparkle(null);
+    coach.sparkle(null);
     const arrows = [];
     for (const aim of aims) {
       const st = world.stations[aim.id];
@@ -1702,26 +1911,15 @@ async function boot() {
       const a = arrowPlacement(pt, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop });
       arrows.push(aim.colour ? { ...a, colour: aim.colour } : a);
     }
-    // v0.16 the hunt: an arrow to the egg on the grass, or to the nearest sparkle
-    if (inHunt() && !point) {
-      const hp = hero.body.position;
-      let to = hunt.egg ? hunt.egg.position : null;
-      // (v0.22: every circle shows, so no arrow leads to them; the last song alone gets one)
-      if (!to && !hunt.busy && !hunt.moment) {
-        const last = lastSpot(data.discoveries);
-        if (last) to = world.eggSpotPos(last, new THREE.Vector3());
-      }
-      if (to && Math.hypot(to.x - hp.x, to.z - hp.z) > (hunt.egg ? HUNT.pickM : HUNT.spotM)) {
-        tmpP.set(to.x, hunt.egg ? 0.55 : 1.55, to.z).project(rig.camera);
-        const pt = { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h, front: tmpP.z < 1 };
-        arrows.push(arrowPlacement(pt, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop }));
-      }
-    }
+    // (v0.23, Tiffany: "No arrows pointing at icons or songs": no arrow in the end, not to an
+    // action's circle, not to the egg, not to a keepsake; v0.16-v0.22 led to the egg and to the
+    // last song)
+    if (goalBeat || (eggPhase(data.ledger) && !finaleDue)) arrows.length = 0;
     coach.arrows(arrows);
     coach.tip(prompt);
     placeStackBadge();
     coach.demo(step?.phase === 'move' && input.mode !== 'keyboard' && !input.stickActive); // not while she is already dragging
-    coach.pointAt(point === 'diy' ? $('btn-diy') : point === 'sale' ? $('btn-sale') : null);
+    coach.pointAt(point === 'sale' ? $('btn-sale') : null);
   }
 
   const wakeLock = createWakeLock();
@@ -1755,7 +1953,7 @@ async function boot() {
     world.updateSky(rig.camera);
     if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints()); updateStackCap(performance.now()); }
     updateCoach();
-    if (burst.active || hammering.active) {
+    if (burst.active || burst.ticking || hammering.active) {
       tmpP.copy(hero.position).setY(1.75).project(rig.camera);
       burst.update(burstHeld ? 0 : dt, { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h }, { w: view.w, top: live.hudBottom, bottom: live.ctlTop || view.h }, reducedMotion());
     }
@@ -1885,7 +2083,7 @@ async function boot() {
         return done;
       },
       finale, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
-      hunt, openSongbook, notes, songCard, archerSays, birds, doWave, credits, showCompleted, keepExploring, songs, pickEgg, startMoment, findKeepsake, openKeepsakes, showDrawing, openExtras, closeExtras, closePause, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
+      hunt, openSongbook, notes, songCard, archerSays, race, holdGoal, get diyTime() { return diyTime; }, get roofClimb() { return roofClimb; }, get goal() { return goal; }, placeSpeech, birds, doWave, credits, showCompleted, keepExploring, songs, pickEgg, startMoment, findKeepsake, openKeepsakes, showDrawing, openExtras, closeExtras, closePause, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
       holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),
     };

@@ -53,6 +53,8 @@ export const GOAL_ICONS = {
   note: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5V5.5l9-2v11" fill="none" ${INK} stroke-width="1.8"/><ellipse cx="7" cy="17.6" rx="2.9" ry="2.3" fill="#253347" ${INK}/><ellipse cx="16" cy="14.6" rx="2.9" ry="2.3" fill="#253347" ${INK}/></svg>`,
   glint: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c.5 3.8 1.3 6.6 2 8 1.6.6 4.3 1.2 7.5 1.5-3.2.5-5.9 1.1-7.5 1.7-.7 1.6-1.4 4.4-2 7.8-.6-3.4-1.3-6.2-2-7.8-1.6-.6-4.3-1.2-7.5-1.7 3.2-.3 5.9-.9 7.5-1.5.7-1.400 1.500-4.200 2-8z" fill="#e6b83e" ${INK}/></svg>`,
   egg: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.600 0 6.500 5.400 6.500 10.200 0 4.300-2.800 7.300-6.500 7.300s-6.500-3-6.500-7.300C5.500 8.400 8.400 3 12 3z" fill="#fff7e5" ${INK}/><path d="M5.900 11.200l2.600 1.900 2.300-2.200 2.500 2.300 2.300-2.100 2.500 1.900" fill="none" stroke="#c8463b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  // v0.23: the DIY line's hammer
+  hammer: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.2 8.4L5 19.4c-.6.8-.4 1.800.3 2.300.8.500 1.800.300 2.300-.500l8-11.100" fill="#b3804f" ${INK}/><path d="M9.800 5.200l6-2.700c.7-.3 1.500 0 1.900.600l2.700 4.300c.4.700.200 1.500-.400 1.900l-2.400 1.500-1.300-2-3.700 2.300z" fill="#8f96a0" ${INK}/></svg>`,
   gift: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10.500" rx="1.500" fill="#c8463b" ${INK}/><rect x="3" y="6.500" width="18" height="4" rx="1" fill="#d9a93a" ${INK}/><path d="M12 6.500v14M12 6.500c-2-3.800-6-3.200-4.500-.6M12 6.500c2-3.800 6-3.200 4.500-.6" fill="none" ${INK}/></svg>`,
 };
 const NAMES = { W: 'Wood', R: 'Stone', coins: 'Coins', C: 'Corn', S: 'Sunflowers', T: 'Tomatoes', songs: 'Songs', keepsakes: 'Keepsakes' };
@@ -85,8 +87,9 @@ export function goalHtml(line) {
   if (!line) return '';
   const ico = line.icon && GOAL_ICONS[line.icon] ? `<span class="g-ico">${GOAL_ICONS[line.icon]}</span>` : '';
   const needs = (line.needs ?? []).map(([k, n]) => `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>`).join('');
-  const tail = line.tail ? `<span class="g-tail">${esc(line.tail)}</span>` : '';
-  return `${ico}<span class="g-label">${esc(line.label)}</span>${needs}${tail}`;
+  // v0.23: at DIY time the label is the word itself, set as a tag ("DIY"), and the place follows
+  const tail = line.tail ? `<span class="g-tail${line.hot ? ' place' : ''}">${esc(line.tail)}</span>` : '';
+  return `${ico}<span class="g-label${line.hot ? ' tag' : ''}">${esc(line.label)}</span>${needs}${tail}`;
 }
 // the same line in plain words (tests, logs): "Walls · wood 6, stone 4, coins 10"
 export function goalPlain(line) {
@@ -243,6 +246,10 @@ export function createHud(root = document) {
       goal.innerHTML = line ? `<span class="g-line" aria-hidden="true">${goalHtml(line)}</span><span class="sr-only">${esc(text)}</span>` : '';
       goal.title = text;
       goal.classList.toggle('wrap', !!line?.wrap);
+      // v0.23 (Tiffany: "Just have the [tasks line] say DIY so that it's noticeable"): the line
+      // itself is lit while it says DIY; and after a build it holds a pencilled "✓ Walls!" (audit 8)
+      goal.classList.toggle('hot', !!line?.hot);
+      goal.classList.toggle('done', !!line?.done);
       if (step !== goalStep && goalStep !== null && line) { goal.classList.remove('nod'); void goal.offsetWidth; goal.classList.add('nod'); }
       goalStep = step;
     },
@@ -260,11 +267,25 @@ export function createHud(root = document) {
     // a new farm: no counter has appeared yet
     reset() { seen.clear(); hunt = null; huntKey = ''; goalStep = null; for (const k of [...HUD_ORDER, ...HUNT_COUNTERS]) cells[k].hidden = true; },
     get countersUp() { return [...HUD_ORDER, ...HUNT_COUNTERS].filter((k) => !cells[k].hidden); },
-    setContext(label, handler) {
+    // `kind` 'act' (v0.23): an action to do at a place (a red circle's, the bench's), in the
+    // actions' red; anything else is the plain button
+    setContext(label, handler, kind = null) {
       contextHandler = handler;
       if (!label) { context.hidden = true; return; }
       if (context.textContent !== label) context.textContent = label;
+      context.classList.toggle('act', kind === 'act');
       context.hidden = false;
+    },
+    // v0.23 (audit 14): the race clock beside the menu button ("4:12"), or null for none; `done`
+    // holds it still at the finish
+    setRace(text, done = false) {
+      const el = $('race-clock');
+      if (!el) return;
+      el.parentElement?.classList?.toggle('racing', !!text); // the goal line makes room for it
+      if (!text) { el.hidden = true; return; }
+      if (el.textContent !== text) el.textContent = text;
+      el.classList.toggle('done', !!done);
+      el.hidden = false;
     },
     triggerContext() { if (!context.hidden) contextHandler?.(); },
     // v0.12: the build line. bar: null, or { label, short, ready, here, verb, text } (guide.js

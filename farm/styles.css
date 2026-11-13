@@ -488,6 +488,65 @@ dl.credits-list dd { margin: 0; }
 .keepsake-print.drawing { transform: none; }
 .keepsake-print.drawing img { max-height: 56vh; }
 
+/* ---------- v0.23: Tiffany's notes "Farm changes #2" and the design audit's 8, 12, 13, 14 ---------- */
+/* no Sound button on the HUD: the goal line takes its place's room, and a race's clock, when there
+   is one, stands there */
+#goal { grid-column: 1 / 3; }
+#hud.racing #goal { grid-column: 1; }
+#race-clock { grid-column: 2; grid-row: 2; display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 2px; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 10px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
+#race-clock[hidden] { display: none; }
+#race-clock.done { background: var(--flower, #f6c61a); }
+@media (max-height: 599px) and (orientation: landscape) {
+  #goal { grid-column: 2 / 4; }
+  #hud.racing #goal { grid-column: 2; }
+  #race-clock { grid-column: 3; grid-row: 1; }
+}
+/* "Just have the [tasks line] say DIY so that it's noticeable": at DIY time the line is lit in the
+   flower yellow with a heavier rule, DIY set as a tag and the place beside it, and it breathes */
+#goal.hot { background: var(--flower, #f6c61a); border-width: 2.5px; padding: 5px 9px; box-shadow: 0 3px 0 var(--ink); font-size: 16px; animation: goal-hot 1.5s ease-in-out infinite; }
+#goal.hot .g-label.tag { flex: none; min-width: 0; padding: 2px 9px 3px; background: var(--ink); color: var(--paper); border-radius: 8px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 19px; letter-spacing: 0.02em; }
+#goal.hot .g-tail.place { color: var(--ink); font-weight: 700; }
+#goal.hot .g-tail.place::before { content: ""; }
+@keyframes goal-hot { 50% { box-shadow: 0 3px 0 var(--ink), 0 0 0 5px rgba(246, 198, 26, 0.45); } }
+/* audit 8: the beat after a build: "✓ Walls!" in the title's pencil hand */
+#goal.done .g-label { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 19px; }
+@media (prefers-reduced-motion: reduce) { #goal.hot { animation: none; } }
+/* "Actions should be in a different color than songs and collecting crops. Maybe red for actions?":
+   an action's button is the red of its circle on the ground */
+#context.act { background: #d33a2c; border-color: var(--ink); color: #fffdf7; box-shadow: 0 4px 0 var(--ink); }
+/* "Instead of a button that says back to the farm, just have a black X in the top left" */
+.x-close, .screen button.x-close { position: fixed; left: var(--edge); top: var(--edge-t); width: 52px; height: 52px; min-width: 52px; min-height: 52px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--paper); color: #111; border: 2.5px solid #111; border-radius: 50%; box-shadow: 0 3px 0 rgba(17, 17, 17, 0.5); z-index: 2; }
+.x-close svg { width: 26px; height: 26px; display: block; }
+.x-close:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(17, 17, 17, 0.5); }
+body.whole #btn-back.x-close { display: flex; }
+#extras { padding-top: calc(var(--edge-t) + 64px); }
+/* the Sound switch in Pause and in Extras */
+.sound-switch { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.sound-switch .state { font-weight: 700; }
+.sound-switch[aria-pressed="false"] { background: #ece4d0; }
+#pause .sound-switch { margin-top: 10px; min-height: 48px; width: min(220px, 100%); font-size: 16px; }
+#sound-settings .sound-switch { width: 100%; min-height: 46px; margin: 2px 0 6px; font-size: 16px; }
+/* Dwight's speech bubble: a pointed tail on the side that faces him, its tip at his head */
+#speech { transform: none; animation: note-fade 0.18s linear; }
+#speech::after { display: none; }
+#speech::before, #speech::after { content: ""; position: absolute; width: 0; height: 0; border: solid transparent; transform: none; background: none; }
+#speech[data-tail="bottom"]::before { display: block; left: calc(var(--tail, 50%) - 12px); bottom: -22px; border-width: 22px 12px 0 12px; border-top-color: var(--ink); }
+#speech[data-tail="bottom"]::after { display: block; left: calc(var(--tail, 50%) - 9px); bottom: -17px; border-width: 18px 9px 0 9px; border-top-color: var(--paper); }
+#speech[data-tail="top"]::before { display: block; left: calc(var(--tail, 50%) - 12px); top: -22px; border-width: 0 12px 22px 12px; border-bottom-color: var(--ink); }
+#speech[data-tail="top"]::after { display: block; left: calc(var(--tail, 50%) - 9px); top: -17px; border-width: 0 9px 18px 9px; border-bottom-color: var(--paper); }
+#speech[data-tail="left"]::before { display: block; top: calc(var(--tail, 50%) - 12px); left: -22px; border-width: 12px 22px 12px 0; border-right-color: var(--ink); }
+#speech[data-tail="left"]::after { display: block; top: calc(var(--tail, 50%) - 9px); left: -17px; border-width: 9px 18px 9px 0; border-right-color: var(--paper); }
+#speech[data-tail="right"]::before { display: block; top: calc(var(--tail, 50%) - 12px); right: -22px; border-width: 12px 0 12px 22px; border-left-color: var(--ink); }
+#speech[data-tail="right"]::after { display: block; top: calc(var(--tail, 50%) - 9px); right: -17px; border-width: 9px 0 9px 18px; border-left-color: var(--paper); }
+/* audit 12: the postcard's strip of numbers under the drawing */
+.stats-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 10px 0 4px; padding: 8px 4px; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); text-align: center; }
+.stats-strip div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stats-strip dd { margin: 0; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stats-strip dt { font-size: 11.5px; line-height: 1.15; opacity: 0.8; }
+.share-said:empty { display: none; }
+/* the songbook lists every song; a found one carries a small mark */
+.song-found { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 6px; border-radius: 50%; background: var(--flower, #f6c61a); border: 1.5px solid var(--ink); font-size: 12px; font-weight: 700; vertical-align: 1px; }
+
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
    with no attribute nothing below applies. Cards, the pause screen and the save notice get a

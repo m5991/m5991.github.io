@@ -44,9 +44,11 @@ export function createBurst(root = document) {
   let side = 1;
   return {
     get active() { return t >= 0; },
+    // v0.23: a strike's ink ticks are still on show (they are cleared by `update`)
+    get ticking() { return tickMs > 0; },
     // the first strike: pop it up; `towards` +1 puts it on her right, -1 on her left
     show(towards = 1) { t = 0; side = towards; el.classList.toggle('left', side < 0); },
-    hide() { t = -1; el.classList.remove('on'); ticks.classList.remove('on'); },
+    hide() { t = -1; tickMs = 0; el.classList.remove('on'); ticks.classList.remove('on'); },
     // a strike's contact at screen point p (CSS px)
     tick(p, reduced = false) {
       if (reduced || !p) return;

@@ -357,15 +357,21 @@ export function buyer(look) {
 // falling either side of it across the forehead in an inverted V, short over the ears, down to the
 // nape. A scalp-coloured centre part runs from the hairline back over the crown.
 export const DWIGHT_HAIR = { skull: [0.9, 1.14, 0.95], over: [1.08, 1.05, 1.08] };
+export const PART_STRIP = 0.064; // the scalp strip's half-width, in head radii (v0.22: 0.05)
 // the hairline: how far down from the top of the head (radians) the hair reaches toward azimuth
 // `az` (0 straight ahead, +Z; the sign is the side): a base line high at the brow and low at the
 // nape, the fringe a little lower either side of the part, and the part itself raised
 // v0.22 (Tiffany: "Make the part in the hair a little wider so you can see Dwight's forehead"): the
 // part opens wider and higher (`PART`: its rise and its half-width in radians; v0.18 had 0.2 and
 // 0.12, a notch), so the fringe falls further to each side and his forehead shows between
-export const PART = { rise: 0.34, width: 0.3, curtainAt: 0.62 };
+// v0.23 (Tiffany: "Show a little bit more of Dwight's forehead. hair part should be a little
+// wider"): the part a little wider and higher again (v0.22: rise 0.34, width 0.3), and the hairline
+// a touch higher across his brow (HAIRLINE_FRONT; the temples, the ears and the nape as before), so
+// more of his forehead shows under the fringe as well as between it
+export const PART = { rise: 0.4, width: 0.37, curtainAt: 0.66 };
+export const HAIRLINE_FRONT = 0.07; // how much higher the hairline is at the brow than v0.22's, fading to none at the temples
 export function hairlineAngle(az) {
-  const base = 1.5 - 0.38 * Math.cos(az);
+  const base = 1.5 - 0.38 * Math.cos(az) - HAIRLINE_FRONT * Math.max(0, Math.cos(az)) ** 3;
   const curtain = 0.05 * Math.exp(-(((Math.abs(az) - PART.curtainAt) / 0.3) ** 2));
   const part = PART.rise * Math.exp(-((az / PART.width) ** 2));
   return base + curtain - part;
@@ -394,7 +400,7 @@ function dwightHair(headR, colour, skin) {
   const pts = [];
   const from = hairlineAngle(0) - 0.02;
   for (let i = 0; i <= 18; i++) pts.push(onShell(from - (i / 18) * (from + 0.35), 1.012));
-  const w = headR * 0.05; const sp = []; const idx = []; // v0.22: a wider part (it was 0.028)
+  const w = headR * PART_STRIP; const sp = []; const idx = []; // v0.22: a wider part (it was 0.028); v0.23: wider again
   pts.forEach((q, i) => { const k = w * (1 - 0.5 * (i / 18)); sp.push(q.x - k, q.y, q.z, q.x + k, q.y, q.z); }); // narrowing toward the crown
   for (let i = 0; i < pts.length - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const strip = new THREE.BufferGeometry();
@@ -503,8 +509,26 @@ export function archer() {
     legG.add(at(mesh(shoe, 0x1f1d1c), 0, -legLen - 0.03, 0.045));
     root.add(mergeByMaterial(legG, legG.name));
   }
+  // v0.23 (Tiffany: "In the end let Dwight go sit down on the bench"): his legs as he sits, thighs
+  // forward from the hip and shins down to the ground, shown in place of the standing legs
+  // (world.js seats him: `sit`); SEAT has their lengths
+  const sit = new THREE.Group(); sit.name = 'sit';
+  for (const sd of [-1, 1]) {
+    const hip = V(sd * 0.085, hipY - 0.06, 0.02);
+    const knee = V(sd * 0.095, hipY - 0.06, 0.02 + ARCHER_SEAT.thigh);
+    sit.add(mesh(taperTube(new THREE.LineCurve3(hip, knee), 0.074, 0.064, 3, 9), A.slacks));
+    sit.add(mesh(taperTube(new THREE.LineCurve3(knee.clone().add(V(0, 0.02, 0)), V(knee.x, hipY - 0.06 - ARCHER_SEAT.shin, knee.z + 0.03)), 0.064, 0.054, 3, 9), A.slacks));
+    const shoe = new THREE.SphereGeometry(0.068, 12, 8); shoe.scale(0.85, 0.5, 1.5);
+    sit.add(at(mesh(shoe, 0x1f1d1c), knee.x, hipY - 0.06 - ARCHER_SEAT.shin - 0.03, knee.z + 0.075));
+  }
+  const seated = mergeByMaterial(sit, 'sit');
+  seated.visible = false;
+  root.add(seated);
+  root.userData.hipY = hipY - 0.06;
   return root;
 }
+// his thigh and shin as he sits (model metres)
+export const ARCHER_SEAT = { thigh: 0.4, shin: 0.5 };
 
 // ---------------- v0.17 the second archer (A2, spec §6.5, §10.5) ----------------
 // An original woodland elf archer in the drawing's hand, distinct from the first archer at a
@@ -713,6 +737,20 @@ export function flyingBird() {
     wing.position.set(sd * 0.06, 0.03, 0.02);
     g.add(wing);
   }
+  // v0.23 (Tiffany: "it should show the bird carrying it away in his feet"): its two legs and feet,
+  // tucked up under it as it flies and let down (`feet`, world.js birdCarry) when it has a crop to
+  // hold: yellow like its beak, three toes each
+  const feet = new THREE.Group(); feet.name = 'feet';
+  for (const sd of [-1, 1]) {
+    feet.add(at(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.1, 5), PAL.flower, { ink: false, shadow: false }), sd * 0.035, -0.05, 0));
+    for (const [dx, dz] of [[0, 0.04], [0.025, 0.025], [-0.025, 0.025]]) {
+      const toe = mesh(new THREE.CylinderGeometry(0.006, 0.004, 0.05, 4), PAL.flower, { ink: false, shadow: false });
+      feet.add(at(toe, sd * 0.035 + dx * 0.6, -0.105, dz * 0.6, Math.PI / 2.6, 0, -dx * 12));
+    }
+  }
+  feet.position.set(0, -0.05, -0.02);
+  feet.scale.setScalar(0.01);
+  g.add(feet);
   return g;
 }
 const EGG_COLOURS = [[0xf4eddc, PAL.red, PAL.flower], [0xf6e3c0, PAL.tool, PAL.leafLight], [0xf3dcd5, PAL.leaf, PAL.red], [0xe9eef2, PAL.flower, PAL.tool], [0xf1e8c4, 0x8b6fa8, PAL.leafLight]];
@@ -1168,6 +1206,9 @@ export function sun(radius, maxLen = () => Infinity) {
     halo.add(m);
   }
   glow.add(halo);
+  // v0.23: a pale hot heart on the disc, so the sun reads as shining and not only as yellow
+  const core = new THREE.Mesh(new THREE.CircleGeometry(R * 0.62, 40), new THREE.MeshBasicMaterial({ color: 0xfffbd8, transparent: true, opacity: 0, depthWrite: false }));
+  core.name = 'D22_SunCore'; core.userData.noOutline = true; core.userData.noFit = true; core.visible = false;
   const r = rng(22);
   for (let k = 0; k < 13; k++) {
     const a = (k / 13) * Math.PI * 2 + (r() - 0.5) * 0.25;
@@ -1203,7 +1244,8 @@ export function sun(radius, maxLen = () => Infinity) {
   disc.name = 'D22_SunDisc'; disc.userData.noOutline = true; disc.userData.noFit = true;
   disc.visible = false;
   glow.position.z = -R * 0.02;
-  g.add(glow, disc, strokes);
+  core.position.z = -R * 0.005; // on the disc, under the pen strokes
+  g.add(glow, disc, core, strokes);
   return g;
 }
 // D21: four check-mark birds, each two curved wing strokes

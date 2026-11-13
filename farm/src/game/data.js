@@ -148,11 +148,19 @@ export const STAGES = {
   // v0.12 (captain: "el lugar donde cultivas tomates deberia tambien de ser construido con sticks"):
   // the tomato plot is the raised bed, built with 4 wood (sticks) by DIY before its tomatoes are
   // dug; its coins only when tomatoes are not her first crop (spec v0.12 P28-7)
-  T0: { label: 'raised bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 14, W: 4, R: 0, workMs: 2000, crop: true, base: 'T', afterHarvest: true },
+  // v0.23: the bed is every farm's first DIY (Tiffany's order), so its coins are what one first
+  // yard sale of corn pays (10; it was 14)
+  T0: { label: 'raised bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 10, W: 4, R: 0, workMs: 2000, crop: true, base: 'T', afterHarvest: true },
   H1: { label: 'house foundation', prereq: ['first'], coins: 10, W: 4, R: 4, workMs: 3000 },
   G1: { label: 'path', prereq: ['H1'], coins: 6, W: 0, R: 3, workMs: 2000 },
-  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 16, W: 4, R: 2, workMs: 4000 },
-  A1: { label: 'archer', prereq: ['H2'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
+  // v0.23: the later parts of the house cost more (Tiffany: "make her need to make more money to
+  // continue building (DIY) later parts of the property, so the extra tables makes sense"): the
+  // walls come with the second yard-sale table and take about one sale of both tables, the windows
+  // and doors, the roof and the chimney about one sale of all three each (LATE_COINS below; v0.22:
+  // walls 16, home 34, roof 14, chimney 12)
+  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 36, W: 4, R: 2, workMs: 4000 },
+  // v0.23: hired after the foundation (he was hired after the walls, which now come late)
+  A1: { label: 'archer', prereq: ['H1'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
   C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   G2: { label: 'bench', prereq: ['H1'], coins: 10, W: 4, R: 0, workMs: 2000 },
@@ -163,10 +171,19 @@ export const STAGES = {
   // (roof and chimney: 26 coins, 2 wood, 2 stone, 4 s) is split between the roof (its wood) and
   // the chimney (its stone, a stack of stones and mortar), so the house costs what it did; the
   // home is the old H4 with the door frame and step the walls used to bring.
-  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 14, W: 2, R: 0, workMs: 2500 },
-  H4: { label: 'chimney', prereq: ['H3'], coins: 12, W: 0, R: 2, workMs: 2000 },
-  H5: { label: 'home', prereq: ['H4', 'G1', 'G2', 'G3', 'G4'], coins: 34, W: 4, R: 0, workMs: 4000 },
+  // v0.23 (Tiffany: "The DIY order should be raised garden bed, foundation, path, steppingstones,
+  // rocks around the base of the tree, bench, walls, windows and doors, roof, chimney"): the windows
+  // and doors (H5: the door, its frame and step, the windows; it was "the home", built last) come
+  // right after the walls, then the roof, and the chimney is the last build: the finale follows it.
+  // The ids keep their parts (H3 the roof, H4 the chimney, H5 the windows and doors), so a save from
+  // an earlier build keeps what it had built. The order itself is DIY_ORDER below, which the goal
+  // line follows one build at a time; the prerequisites here are only what a part stands on.
+  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 52, W: 2, R: 0, workMs: 2500 },
+  H4: { label: 'chimney', prereq: ['H3'], coins: 58, W: 0, R: 2, workMs: 2000 },
+  H5: { label: 'windows and doors', prereq: ['H2'], coins: 46, W: 4, R: 0, workMs: 4000 },
 };
+// v0.23: Tiffany's DIY order, exactly: the ten things Vanessa hammers up, first to last
+export const DIY_ORDER = ['T0', 'H1', 'G1', 'G3', 'G4', 'G2', 'H2', 'H5', 'H3', 'H4'];
 // Reserved for optional stages; the phone playtest removed the second archer.
 export const OPTIONAL_STAGES = [];
 // v0.16 (captain: "it should have a funny line when it is hired to be an archer"): what the archer
@@ -193,7 +210,9 @@ export const DWIGHT_SAYS_EVERY = 3;
 // the line for his n-th deterred bird (n from 1), or null when he says nothing this time
 export const dwightLine = (n) => (Number.isInteger(n) && n >= 1 && (n - 1) % DWIGHT_SAYS_EVERY === 0 ? DWIGHT_BIRD_LINES[((n - 1) / DWIGHT_SAYS_EVERY) % DWIGHT_BIRD_LINES.length] : null);
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).
-export const STAGE_ORDER = ['C0', 'S0', 'T0', 'H1', 'G1', 'H2', 'A1', 'C1', 'S1', 'G2', 'G3', 'G4', 'H3', 'H4', 'H5'];
+// v0.23: Tiffany's DIY order, with the plantings and the archer's hire between (guide.js goalOrder
+// puts her first crop first and the other base patch where this list has S0)
+export const STAGE_ORDER = ['C0', 'T0', 'H1', 'G1', 'S0', 'G3', 'A1', 'G4', 'G2', 'C1', 'H2', 'S1', 'H5', 'H3', 'H4'];
 // every stage the ledger keeps: the route, then the optional ones (v0.17)
 export const ALL_STAGES = [...STAGE_ORDER, ...OPTIONAL_STAGES];
 // One archer, guarding all three crops.
@@ -201,8 +220,11 @@ export const ARCHERS = ['A1'];
 // the stages the farm needs (all of them)
 export const ROUTE = STAGE_ORDER;
 // v0.15: foundation, walls, roof, chimney, home; the last one finishes the farm (the finale)
-export const HOUSE_STAGES = ['H1', 'H2', 'H3', 'H4', 'H5'];
-export const LAST_STAGE = 'H5';
+// v0.23: in the order they are built now: foundation, walls, windows and doors, roof, chimney. The
+// chimney is the last build of a new farm (the farm is finished when every stage is built:
+// ledger.js mainComplete, so an older save that built its chimney first still ends on what it lacks)
+export const HOUSE_STAGES = ['H1', 'H2', 'H5', 'H3', 'H4'];
+export const LAST_STAGE = 'H4';
 export const CROP_STAGES = STAGE_ORDER.filter((id) => STAGES[id].crop);
 // stages Vanessa hammers up herself: the house, the property builds and the raised bed (other
 // crop plots are dug, A1 is hired)
@@ -229,10 +251,24 @@ export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her 
 // house"): one table at the start and one more with every house stage, six with the home (H5); the
 // neighbours' stalls and their sellers are gone. As in v0.14 the tables have no maximum from the
 // fourth on (TABLES_UNLIMITED, the roof), so the route's sales are unchanged.
+// v0.23 (Tiffany: "Have only enough tables that when she fills them the yard sale button is
+// highlighted. There is generally an extra empty table"; and her question whether the extra tables
+// were needed: they were not, a sale never needed more than six): a yard sale is held when every
+// table standing is full, six on each, and a table more comes only when the builds begin to cost
+// what it brings: the second as the bench is built (the walls are next), the third as the walls
+// are built (the windows and doors, the roof and the chimney are next). Three at most, and no more
+// "no maximum": the tables hold six each, always (TABLE_STAGES; ledger.js tables, saleReady).
 export const SALE_MIN = 6;
-export const TABLES_MAX = 6;
-export const TABLES_UNLIMITED = 4;
-export const BUYERS = [[2, 3], [4, 5], [6, 7], [8, 10], [9, 11], [10, 12]];
+export const TABLE_STAGES = ['G2', 'H2'];
+export const TABLES_MAX = 1 + TABLE_STAGES.length;
+export const TABLES_UNLIMITED = Infinity; // (v0.14-v0.22: from the fourth table on; gone)
+export const BUYERS = [[2, 3], [4, 5], [6, 8]];
+// v0.23 (design audit 13, "buyer wishes"): now and then a neighbour asks for one crop before a
+// sale ("Two tomatoes, please!"); if that many are on the tables when the sale is held, they leave a
+// tip of WISH.tip coins on top. Every WISH.every-th sale has a wish, for the crops in turn, and only
+// for a crop she has planted. The tip is one coin: it never pays for a build by itself, so every
+// route's arithmetic stands with or without it (ledger.js saleWish, yardSale).
+export const WISH = { every: 3, n: 2, tip: 1, crops: ['T', 'C', 'S'] };
 
 // v0.12 (captain: "weeds keep appearing even over planted crops, you remove them because if not
 // you can lose the crop"; answer 1 "One plant wilts"): from the house foundation until the home
@@ -248,7 +284,7 @@ export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 75000, warnMs: 
 // a regrowth weed's id: `wr-` and the crop node it covers
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
-export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null;
+export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null || YARD_WEED_SLOTS.includes(id);
 
 // v0.17 birds (spec §7, §6.6 point 4; A22: "birds steal crops, archers chase them off, and losses
 // are capped so nobody gets stuck"). One bird event every `everyMs` of active time at most, from
@@ -275,4 +311,18 @@ export const BIRDS = {
   coverM: 3.5, drawMs: 800, fireMs: 3000, perchMs: 3000, cleanMs: 1800,
 };
 export const BIRD_KINDS = ['perch', 'node', 'carried'];
+// v0.23: the birds come from the house foundation on (with the raised bed built first, the second
+// crop plot is there before the first build; they came "from the second crop plot on")
+export const BIRDS_AFTER = 'H1';
+// v0.23 (Tiffany: "In the end, keep the birds coming and weeds growing random places in the yard
+// occasionally but don't let the weeds or birds take away / effect crops"): on the finished farm a
+// bird still comes now and then, lands on a crop plant, looks about and flies off with nothing
+// (birds.js, kind 'visit'); and a weed comes up somewhere on the grass, one every YARD_WEEDS.everyMs
+// of active time while fewer than `max` stand, at one of the YARD_WEED_SLOTS chosen by a seeded hash
+// (world/layout.js has their places). It is raked like any weed ("Allow weeding anywhere in the
+// picture there is a weed at the end") and is never over a crop: no plant wilts on the finished farm.
+export const END_BIRDS = { everyMs: 26000, firstMs: 9000, sitMs: 2600 };
+export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3 };
+export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10'];
+export const isYardWeed = (id) => YARD_WEED_SLOTS.includes(id);
 export const ARCHER_GUARDS = { A1: ['c1', 'c2', 'c3', 'c4', 's1', 's2', 's3', 's4', 't1', 't2'] };

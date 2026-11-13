@@ -2,8 +2,8 @@
 // localStorage, written synchronously after every accepted ledger transaction. Storage that is
 // denied or full degrades to disclosed session-only play; a corrupt payload offers the last
 // good copy or a new game, never a silent reset.
-import { ALL_STAGES, CAPACITY, CROP_STAGES, NODES, OPTIONAL_STAGES, PILES, ROCKS, STICK_SLOTS, WEEDS } from './data.js';
-import { createLedger, mainComplete, stoneShortfall, validateLedger } from './ledger.js';
+import { ALL_STAGES, CAPACITY, CROP_STAGES, CROPS, NODES, OPTIONAL_STAGES, PILES, PRICES, ROCKS, STICK_SLOTS, WEEDS, YARD_WEED_SLOTS } from './data.js';
+import { createLedger, mainComplete, stoneShortfall, tableCap, validateLedger } from './ledger.js';
 
 export const SCHEMA = 5;
 export const KEY = 'vanessas-farm/save';
@@ -21,7 +21,8 @@ export function createSaveData() {
     // (v0.21 kept `hunt`, what the player asked the songbook for; v0.22 has no clues to ask for,
     // and a save that still carries it is read as it is and the field left alone)
     // v0.22: creditsSeen now means the end's slideshow choice has been offered once
-    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0 },
+    // v0.23 (audit 14): race, true on a farm started as a race (a clock shows on the main route)
+    session: { endingSeen: false, firstSaleSeen: false, whoKnowsHelloSeen: false, creditsSeen: false, finishedAt: null, dwightDeterred: 0, race: false },
     vanessa: { x: null, z: null }, // validated position; null = start position
     // helpMeFinish (v0.12): no weeds creep over her crops and no stick is lost (v0.13: and each
     // tool comes to her by itself from the start; the Tools come to me setting is gone, P29-7)
@@ -255,6 +256,40 @@ export function migratePreV017(d0) {
   l.theft = { rotation: Number.isInteger(th.rotation) ? th.rotation : 0, log: Array.isArray(th.log) ? th.log : [], totalBeforeH4: Number.isInteger(th.totalBeforeH4) ? th.totalBeforeH4 : 0, stain: typeof th.stain === 'boolean' ? th.stain : false };
   return d;
 }
+// ---------- saves from v0.22 and before (the build order, the tables, the yard weeds) ----------
+// Still schema v5. v0.23 changes the order of the builds (the windows and doors before the roof, the
+// chimney last), but each stage keeps its id and its part, and the ledger's prerequisites are only
+// what a part stands on, so a farm keeps everything it had built and simply goes on in the new
+// order with what it lacks (it is finished when every stage is built). The ledger gains the
+// finished farm's yard weeds (none yet). The tables hold six each now, three tables at most: goods
+// beyond that (a v0.14-v0.22 farm could pile up any number on four tables or more) are sold where
+// they lie, at their prices, so nothing is lost. Returns a new payload; one that already has the
+// v0.23 shape is returned as is.
+export function isPreV023(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && !('yardWeeds' in l);
+}
+export function migratePreV023(d0) {
+  if (!isPreV023(d0)) return d0;
+  const d = structuredClone(d0);
+  const l = d.ledger;
+  l.yardWeeds = Object.fromEntries(YARD_WEED_SLOTS.map((id) => [id, false]));
+  l.yardWeedAt = null;
+  l.yardWeedSeq = 0;
+  try {
+    let over = CROPS.reduce((n, c) => n + (l.table?.[c] ?? 0), 0) - tableCap(l);
+    for (const c of CROPS) {
+      const k = Math.max(0, Math.min(over, l.table?.[c] ?? 0));
+      if (!k) continue;
+      l.table[c] -= k;
+      l.sold[c] += k;
+      l.purse += k * PRICES[c];
+      l.lifetimeCoins += k * PRICES[c];
+      over -= k;
+    }
+  } catch { /* a ledger too damaged to read: validation reports it */ }
+  return d;
+}
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
   if (!d?.session || typeof d.session !== 'object') return d;
@@ -262,7 +297,7 @@ function withSessionDefaults(d) {
   const s = d.session;
   const finishedAt = Number.isFinite(s.finishedAt) && s.finishedAt >= 0 ? s.finishedAt : null;
   const dwightDeterred = Number.isInteger(s.dwightDeterred) && s.dwightDeterred >= 0 ? s.dwightDeterred : 0;
-  const missing = ['whoKnowsHelloSeen', 'creditsSeen'].filter((k) => typeof s[k] !== 'boolean');
+  const missing = ['whoKnowsHelloSeen', 'creditsSeen', 'race'].filter((k) => typeof s[k] !== 'boolean');
   if (!missing.length && s.finishedAt === finishedAt && s.dwightDeterred === dwightDeterred) return d;
   return { ...d, session: { ...s, ...Object.fromEntries(missing.map((k) => [k, false])), finishedAt, dwightDeterred } };
 }
@@ -278,7 +313,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSessionDefaults(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))));
+  return withSessionDefaults(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d)))))))));
 }
 
 // `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).
@@ -312,7 +347,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d) || isPreV023(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

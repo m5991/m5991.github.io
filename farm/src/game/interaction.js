@@ -15,15 +15,25 @@
 // each"): a tool she has once taken at the tools comes to her hand at the job (`comes`), in the
 // same 0.5 s; she can still walk to the tools and take it there. The tables grow with the house:
 // her crops go onto any table that stands.
+// v0.23 (Tiffany's notes "Farm changes #2"):
+// - "When she puts down crops she should go to and drop them off in front of what ever table is
+//   empty": her crops go out only at the table that has room (the first one not full; they fill in
+//   order), and only as many as it holds; the next table takes the rest as she walks on to it.
+// - "The rake should always be in her hand when weeding, the shovel should always be in her hand
+//   when planting, and neither in her hand for harvesting ever. Rake automatically leaves her hand
+//   after weeding even if she is staying to collect the crop after": the tool goes back the moment
+//   its job is done unless another job for it is close by (KEEP_TOOL_M), and at once when she
+//   starts on anything else (gathering, harvesting).
 import { CAPACITY, CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, weedOpen,
+  available, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedOpen,
 } from './ledger.js';
 
 export const REACH_M = 0.9; // 1.5 Vanessa collision diameters with the 0.6 m base hero sphere
 export const STILL_SPEED_MS = 0.05; // m/s: the stillness clock runs only below this (P23-6.12)
 export const HIGHLIGHT_RANGE_M = 3.5; // the ground ring marks the nearest collectible this close
 export const YARD_REACH_M = 1.2; // P27-1: within about 1.2 m of the pile her load drops
+export const KEEP_TOOL_M = 3.5; // v0.23: a tool stays in her hand between two jobs this close
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 // the tool comes to her hand at the job: taken once (v0.13, P29-7), or any tool with Help me
@@ -163,6 +173,18 @@ export const hasCrops = (l) => CROPS.some((c) => l.carried[c] > 0);
 export function atTable(hero, targets) {
   return targets.some((t) => t.kind === 'table' && inReach(hero, t, TABLE_REACH_M));
 }
+// v0.23: she is at the table her crops go onto now (the first one with room; a target without a
+// `table` index is the only table there is)
+export function atFillTable(l, hero, targets) {
+  const k = fillTable(l);
+  if (k === null) return false;
+  return targets.some((t) => t.kind === 'table' && (t.table === undefined || t.table === k) && inReach(hero, t, TABLE_REACH_M));
+}
+// v0.23: another open job for the tool she holds lies within KEEP_TOOL_M: she keeps it in hand
+export function toolJobNear(l, hero, targets, opts = {}) {
+  if (!l.tool) return false;
+  return targets.some((t) => TOOL_FOR[t.kind] === l.tool && !t.hold && isWorkEligible(l, t, opts) && dist(hero, t) - (t.r ?? 0) <= KEEP_TOOL_M);
+}
 // v0.15 (captain: "Vanessa should click the yard sale buttom from the north of the table"): she
 // holds the sale from behind her tables, on their north side (the far side from the camera, smaller
 // z), within SALE_REACH_M of one; the buyers come up to the south side. Walking past still sets her
@@ -206,8 +228,9 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
         l = getLedger();
       }
       // the yard-sale table: walking past it sets her crops out on it (v0.12)
-      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atTable(ctx.hero, ctx.targets)) {
-        const res = commit({ t: 'stock' });
+      // (v0.23: at the table that has room, and only what that table still holds)
+      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atFillTable(l, ctx.hero, ctx.targets)) {
+        const res = commit({ t: 'stock', max: fillRoom(l) });
         events.push({ type: 'stock', result: res });
         l = getLedger();
       }
@@ -226,6 +249,10 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       if (s.stillMs < timing.stillMs) return events;
       if (!s.work || s.work.target.id !== target.id) {
         stopWork(events, 'switch');
+        // v0.23: nothing in her hand for anything but its own job: the rake or the shovel goes
+        // back as she starts to gather or harvest
+        // (once it has done a job: a tool just fetched and not yet used stays with her)
+        if (l.tool !== null && toolUsed(l, l.tool) && !TOOL_FOR[target.kind] && target.kind !== 'tools') { commit({ t: 'returnTool' }); l = getLedger(); }
         s.work = { target, elapsed: 0 };
         s.selectedId = target.id;
         events.push({ type: 'workStart', target });
@@ -239,6 +266,10 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
         const res = commit(tx);
         events.push({ type: 'unit', target, tx, result: res });
         if (!res.ok || !isWorkEligible(getLedger(), target, opts)) stopWork(events, res.ok ? 'done' : res.reason);
+        // v0.23: the weed is raked, or the spot dug: the tool leaves her hand, unless another job
+        // for it is a few steps away
+        const after = getLedger();
+        if (res.ok && (tx.t === 'clearWeed' || tx.t === 'dig') && after.tool !== null && !toolJobNear(after, ctx.hero, ctx.targets, opts)) commit({ t: 'returnTool' });
       }
       return events;
     },

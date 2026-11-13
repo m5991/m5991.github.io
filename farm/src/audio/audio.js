@@ -194,6 +194,21 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
       reconcile();
       changed();
     },
+    // v0.23 (Tiffany: "Sound automatically starts with the game"): try to start with no gesture, as
+    // the game starts. A browser that allows it plays at once; one that does not (most phones, until
+    // the page is touched) leaves the context waiting, with no prompt and no button: the first
+    // touch of the game, which every later `gesture()` is, starts it. Idempotent.
+    autostart() {
+      if (unsupported || hidden || !settings.soundEnabled) return;
+      if (!ctx && !create()) { changed(); return; }
+      if (musicState === 'none') loadMusic();
+      if (!running()) {
+        const c = ctx;
+        Promise.resolve(c.resume?.()).then(() => { if (c === ctx && running()) { blocked = false; reconcile(); changed(); } }, () => {});
+      }
+      reconcile();
+      changed();
+    },
     // Download the theme early (no context needed); skipped while Sound is off.
     prefetch() {
       if (unsupported || !settings.soundEnabled || musicBytes) return;
@@ -249,7 +264,14 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
         reconcile();
         ctx?.suspend?.().catch(() => {});
       } else if (ctx && settings.soundEnabled) {
-        awaitingReturn = true; // no autoplay after returning: the next gesture resumes
+        // v0.23: the sound comes back by itself when the browser lets it (it does once the page
+        // has been touched); if it does not, the next gesture resumes, as before
+        awaitingReturn = true;
+        const c = ctx;
+        Promise.resolve(c.resume?.()).then(() => {
+          if (c !== ctx || !running() || !awaitingReturn || hidden) return;
+          awaitingReturn = false; holds.delete('hidden'); reconcile(); changed();
+        }, () => {});
       } else {
         holds.delete('hidden'); // nothing was playing; the next gesture starts as usual
       }

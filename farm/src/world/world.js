@@ -30,13 +30,13 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { BIRDS, HOUSE_STAGES, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
-import { digOpen, isCommitted, mainComplete, plantSize, tableAvailable, tables, weedPresent } from '../game/ledger.js';
+import { digOpen, fillTable, isCommitted, mainComplete, plantSize, saleReady, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
 import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
 import { ribbonDistance } from './pathgeom.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START, YARD_WEED_PLACES } from './layout.js';
 import { ease } from '../core/tween.js';
 import { SPOTS } from '../game/songs.js';
 import { drawnShare, hopSpans } from './moments.js';
@@ -85,11 +85,16 @@ export const SALE_MS = { sign: 320, walkIn: 1250, take: 240, pause: 160, walkOut
 const BUYER_IN = { out: 2.4, lane: 0.5, speed: 3.2, maxMs: 1600, fade: 0.2 };
 const BUYER_AT = [[-1.6, 2.4], [0.3, 2.8], [2.1, 2.3]];
 const SELL_BEHIND_M = 0.95; // her selling spot, this far north of the first table's centre
+export const TABLE_FRONT_M = 0.85; // v0.23: where she sets her crops out, this far south of the table that has room
 // v0.16: the sign on its stick, three times the v0.15 sign (props.js saleSign), north of the
 // tables between the first two, `SIGN_AT` metres behind (north of) the first table's centre and
 // along the row
 export const SIGN_SCALE = 3;
 // v0.17c what the buyers say as they pick up their goods, by crop
+// v0.23 (audit 13): what a buyer with a wish says
+const WISH_COUNT = ['', 'One', 'Two', 'Three', 'Four'];
+const WISH_CROP = { C: ['corn cob', 'corn cobs'], S: ['sunflower', 'sunflowers'], T: ['tomato', 'tomatoes'] };
+export const wishWords = (w) => `${WISH_COUNT[w.n] ?? w.n} ${WISH_CROP[w.crop][w.n === 1 ? 0 : 1]}, please!`;
 export const BUYER_WORDS = { C: ['Corny!', 'Ooh, corn!', 'A-maize-ing!'], S: ['So sunny!', 'Sunflowers!', 'Lovely!'], T: ['Yum!', 'Tomatoes!', 'Mine!'], any: ['Ooh!'] };
 const SIGN_AT = { along: 0.55, behind: 1.75 };
 // v0.16 the egg bird: it crosses `cross` m to each side of the drop point at `high` m, swooping to
@@ -97,6 +102,12 @@ const SIGN_AT = { along: 0.55, behind: 1.75 };
 export const EGG = { cross: 7, high: 4.2, dropAt: 2.6, flyMs: 2200, fallMs: 520, size: 1.9, birdSize: 2.1 };
 // v0.16 the archer raises his crossbow to aim for `holdMs` every `everyMs`
 export const ARCHER_AIM = { everyMs: 7000, holdMs: 1600 };
+// v0.23 Dwight's few steps on watch: every `everyMs` he walks slowly (`speed` m/s) to the next of
+// `spots` (metres from his post), so he is never more than a step or two from it; and his walks
+// (off the picture at `off`, a drawing point beyond its right edge; to the bench, where he sits at
+// `seatX` along it): his pace (m/s), his stride (m) and the swing of his legs (rad)
+export const ARCHER_STROLL = { everyMs: 8500, firstMs: 3500, speed: 0.55, spots: [[0.75, 0.2], [0.1, 0.5], [-0.55, -0.1], [0, 0]] };
+export const ARCHER_WALK = { speed: 1.5, leave: 2.6, stride: 0.72, swing: 0.5, off: [108, 79], seatX: 0.47 };
 const PUFF_SIZE = 2.4; // a dust puff read at phone size: about 0.6 m across at its fullest
 // v0.15: the house model's node for each stage's part (greybox.js house())
 export const HOUSE_NODES = { H1: 'D01_House_H1_Plinth', H2: 'D01_House_H2_Walls', H3: 'D01_House_H3_Roof', H4: 'D01_House_H4_Chimney', H5: 'D01_House_H5_Details' };
@@ -130,10 +141,24 @@ export const TOOL_LEAN = { along: { shovel: 1.3, rake: 0.72 }, stand: 0.95, gap:
 // a song spot's star while she is not standing in its circle, against its full size
 export const SPOT_STAR = 0.6;
 export const KEEPSAKE_SIZE = 1.9;
+// v0.23: a keepsake's bounce: two hops of `hopMs` every `everyMs`, `high` metres up
+export const KEEPSAKE_BOUNCE = { everyMs: 1700, hopMs: 380, high: 0.2 };
+// how high it is at time t, 0..1 (pure: the checks read it)
+export function keepsakeBounce(t) {
+  const c = ((t % KEEPSAKE_BOUNCE.everyMs) + KEEPSAKE_BOUNCE.everyMs) % KEEPSAKE_BOUNCE.everyMs;
+  if (c < KEEPSAKE_BOUNCE.hopMs) return Math.sin((c / KEEPSAKE_BOUNCE.hopMs) * Math.PI);
+  if (c < KEEPSAKE_BOUNCE.hopMs * 1.8) return 0.55 * Math.sin(((c - KEEPSAKE_BOUNCE.hopMs) / (KEEPSAKE_BOUNCE.hopMs * 0.8)) * Math.PI);
+  return 0;
+}
 // the end's sun: the spiral's turn (rad/s), how far a ray reaches out and draws back and how
 // long that takes, the beams' light (least, most) and the time of the wave that goes round them
-export const SUN = { spin: 0.55, reach: 0.09, reachMs: 760, beam: [0.1, 0.36], waveMs: 620 };
-export const THIEF = { size: 2.3, crop: 2.1, away: [9, 4.2, -5] };
+// v0.23 (Tiffany: "Have the suns spiral spinning and sun be brighter in the final graphic. Also
+// make the sky around the sun lighter like its lighting up the sky"): the spiral turns plainly (a
+// turn in about four seconds; v0.22's turn took eleven and was easy to miss), the beams and the
+// halo are stronger (`beam`, `halo`: times v0.22's), the disc has a pale hot heart (`core`), and
+// the sky is lit round it (look.js paperBackdrop uSunGlow)
+export const SUN = { spin: 1.6, reach: 0.11, reachMs: 760, beam: [0.2, 0.56], waveMs: 620, halo: 1.6, core: 0.85 };
+export const THIEF = { size: 2.3, crop: 2.6, away: [9, 4.2, -5] };
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
@@ -446,6 +471,7 @@ export class World {
     const line = this.steppingPlaces();
     this.stations.G3.pos.copy(line[Math.floor(line.length / 2)]).setY(0);
     this.buildRegrowth();
+    this.buildYardWeeds();
     this.buildSale();
     this.marker = { obj: G.marker(), id: null, alpha: 0, t: 0, pop: 0, popAmp: 0, scale: 1 };
     this.marker.obj.visible = false;
@@ -725,7 +751,7 @@ export class World {
     sun.lookAt(p.camera.position);
     this.root.add(sun);
     const sunInk = sun.getObjectByName('D22_SunInk');
-    this.sunParts = { disc: sun.getObjectByName('D22_SunDisc'), ink: sunInk, inkMat: sunInk.userData.ink, spiral: sun.getObjectByName('D22_SunSpiral'), rays: sun.getObjectByName('D22_SunRays'), glow: sun.getObjectByName('D22_SunGlow'), t: 0 };
+    this.sunParts = { disc: sun.getObjectByName('D22_SunDisc'), ink: sunInk, inkMat: sunInk.userData.ink, spiral: sun.getObjectByName('D22_SunSpiral'), rays: sun.getObjectByName('D22_SunRays'), glow: sun.getObjectByName('D22_SunGlow'), core: sun.getObjectByName('D22_SunCore'), t: 0 };
     this.sunParts.disc.material.uniforms.uColor.value.set(FINALE_COLOURS.sun);
     const bc = p.backdropAt(SKY.D21.u, SKY.D21.v, z);
     const bw = bc.distanceTo(p.backdropAt(SKY.D21.u + SKY.D21.wu, SKY.D21.v, z));
@@ -811,6 +837,25 @@ export class World {
     }
   }
 
+  // v0.23 (Tiffany: "In the end, keep ... weeds growing random places in the yard occasionally";
+  // "Allow weeding anywhere in the picture there is a weed at the end"): the places a weed can come
+  // up on the finished farm's grass (layout.js YARD_WEED_PLACES), each a weed station like the
+  // others, hidden until the ledger has a weed there
+  buildYardWeeds() {
+    for (const [id, [u, v]] of Object.entries(YARD_WEED_PLACES)) {
+      const obj = G.weed();
+      const pos = this.proj.groundAt(u, v);
+      obj.position.copy(pos);
+      obj.rotation.y = (u * 3.1 + v) % 6.28;
+      obj.visible = false;
+      obj.name = `weed:${id}`;
+      this.root.add(obj);
+      const def = { id, kind: 'weed', r: 0.3, label: 'weeds', yard: true };
+      obj.scale.setScalar(stationScale(def));
+      this.stations[id] = { def, obj, pos: pos.clone().setY(0) };
+    }
+  }
+
   // v0.12: the sale's sign and buyers, made once and shown only during a yard sale
   buildSale() {
     const t = this.stations.table;
@@ -847,9 +892,10 @@ export class World {
       if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
       if (s.def.kind === 'rock' && this.finished) continue; // v0.22: the leftover rocks are gone from the finished farm (sync hides them): nothing to gather there
-      if (s.def.regrow && !weedPresent(l, id)) continue;
+      if ((s.def.regrow || s.def.yard) && !weedPresent(l, id)) continue;
       const kind = s.def.kind === 'node' && digOpen(l, id) ? 'dig' : s.def.kind;
       const t = { id, kind, x: s.pos.x, z: s.pos.z, r: s.def.r, label: s.def.label };
+      if (s.def.kind === 'table') t.table = s.def.table; // v0.23: her crops go onto the table that has room
       if (s.def.kind === 'stick' && this.branch.state !== 'idle' && this.branch.id === id) t.hold = true; // still falling
       out.push(t);
     }
@@ -862,9 +908,10 @@ export class World {
     for (const [id, s] of Object.entries(this.stations)) {
       const { kind } = s.def;
       if (kind === 'weed') {
-        const gone = s.def.regrow ? !weedPresent(l, id) : l.weeds[id];
+        const comes = s.def.regrow || s.def.yard; // a weed that creeps in (over a crop; v0.23: on the finished farm's grass)
+        const gone = comes ? !weedPresent(l, id) : l.weeds[id];
         if (gone && s.obj.visible && animate && !this.revealing?.has(id)) this.shrinkAway(id);
-        else if (!gone && !s.obj.visible && animate && s.def.regrow && !this.revealing?.has(id)) this.creepIn(id);
+        else if (!gone && !s.obj.visible && animate && comes && !this.revealing?.has(id) && !this.playHidden) this.creepIn(id);
         else if (!this.revealing?.has(id)) { s.obj.visible = !gone; s.obj.scale.setScalar(stationScale(s.def)); }
       } else if (kind === 'pile') {
         showUnits(s.obj, l.piles[id]);
@@ -1128,7 +1175,8 @@ export class World {
     }
     for (const a of Object.values(this.archers ?? {})) { // not in the drawing: away for the finale, back after
       a.hidden = k > 0;
-      if (k > 0) a.root.visible = false;
+      // (v0.23: he walks out of the picture himself as the finale starts: archerLeave)
+      if (k > 0 && !(a.mode === 'walk' && a.walk?.then === 'gone')) a.root.visible = false;
     }
     if (this.stain && k > 0) this.stain.visible = false;
     if (k > 0 || this.finaleActive) {
@@ -1186,20 +1234,21 @@ export class World {
     if (!s) return;
     const k = this.finaleColour?.sun ?? 0;
     s.glow.visible = k > 0.001;
-    if (!s.glow.visible) { s.spiral.rotation.z = 0; for (const r of s.rays.children) r.scale.x = 1; return; }
+    if (!s.glow.visible) { s.spiral.rotation.z = 0; for (const r of s.rays.children) r.scale.x = 1; if (s.core) s.core.visible = false; return; }
     const still = this.reducedMotion();
     if (!still) s.t += dtMs;
     const t = s.t;
     s.spiral.rotation.z = still ? 0 : -(t / 1000) * SUN.spin;
     s.rays.children.forEach((r, i) => { r.scale.x = still ? 1 : 1 + SUN.reach * Math.sin(t / SUN.reachMs + i * 1.7); });
     for (const o of s.glow.children) {
-      if (o.name === 'D22_SunHalo') { for (const ring of o.children) ring.material.opacity = k * ring.userData.level * (still ? 1 : 0.9 + 0.1 * Math.sin(t / 900)); continue; }
+      if (o.name === 'D22_SunHalo') { for (const ring of o.children) ring.material.opacity = Math.min(1, k * ring.userData.level * SUN.halo * (still ? 1 : 0.9 + 0.1 * Math.sin(t / 900))); continue; }
       const i = Number(o.name.split('_').pop());
       const wave = still ? 0.5 : 0.5 + 0.5 * Math.sin(t / SUN.waveMs - i * 0.9);
       o.material.opacity = k * (SUN.beam[0] + (SUN.beam[1] - SUN.beam[0]) * wave);
       o.scale.x = still ? 1 : 0.94 + 0.1 * wave;
     }
     for (const o of s.glow.children) if (o.material) o.material.color.set(FINALE_COLOURS.sunGlow);
+    if (s.core) { s.core.visible = true; s.core.material.opacity = k * SUN.core * (still ? 1 : 0.92 + 0.08 * Math.sin(t / 700)); }
   }
   // has the finale's grass reached this point of the ground (it stays after the finale)
   onGrass(pos) {
@@ -1208,9 +1257,15 @@ export class World {
   }
   // the horizon's height on screen for the sky's rise (per frame, with the camera in use)
   updateSky(camera) {
-    if (!(this.finaleColour?.sky > 0)) return;
+    const u = this.skyMesh.material.uniforms;
+    if (!(this.finaleColour?.sky > 0)) { u.uSunGlow.value = 0; return; }
     tmpV.set(0, 0, this.groundCorners[0].z).project(camera);
-    this.skyMesh.material.uniforms.uHorizon.value = Math.max(0, Math.min(1, (tmpV.y + 1) / 2));
+    u.uHorizon.value = Math.max(0, Math.min(1, (tmpV.y + 1) / 2));
+    // v0.23: where the sun is on screen, and how much it lights the sky round it
+    tmpV.copy(this.objects.D22.position).project(camera);
+    u.uSun.value.set((tmpV.x + 1) / 2, (tmpV.y + 1) / 2);
+    u.uAspect.value = camera.aspect || 1;
+    u.uSunGlow.value = this.finaleColour?.sun ?? 0;
   }
   // the finale's outline step: anything the ledger has not finished (normally nothing at H4)
   // takes its colour, k 0..1; 0 gives every part back its ledger look
@@ -1307,6 +1362,26 @@ export class World {
     const v = this.heroView;
     this.hand.updateWorldMatrix(true, false);
     const hp = this.hand.getWorldPosition(tmpV);
+    // v0.23 (Tiffany: "When she is shoveling or raking make an animation of her doing it, not just
+    // holding the tool"): while she works with it (`toolStroke`, from hero.js: the tool and where
+    // in the stroke she is) the tool works the ground before her: the rake's head lies on the
+    // ground and is drawn toward her feet, the shovel's blade goes into the earth and lifts it out.
+    // Its foot is put where the stroke has it and its handle runs up through her fist.
+    const st = this.toolStroke;
+    if (st && st.kind === kind) {
+      const yaw = v.rotation.y;
+      const fx = Math.sin(yaw); const fz = Math.cos(yaw); // her forward
+      const foot = tmpU.set(v.position.x + fx * st.reach - fz * st.side, v.position.y + st.lift, v.position.z + fz * st.reach + fx * st.side);
+      const up = tmpW.copy(hp).sub(foot);
+      if (up.lengthSq() > 1e-4) {
+        up.normalize();
+        // the rake's tines curl back toward her; the shovel's hollow faces away from her
+        quat.setFromUnitVectors(Y_UP, up).multiply(tmpQ.setFromEuler(tmpE.set(0, yaw + (kind === 'rake' ? Math.PI : 0), 0)));
+        pos.copy(foot);
+        this.toolFoot = (this.toolFoot ?? new THREE.Vector3()).copy(foot);
+        return pos;
+      }
+    }
     const side = Math.sign(v.worldToLocal(hp.clone()).x) || -1; // the fist's side of her body
     quat.copy(v.quaternion).multiply(tmpQ.setFromEuler(tmpE.set(GRIP.forward, 0, side * GRIP.out)));
     const up = tmpU.set(0, 1, 0).applyQuaternion(quat);
@@ -1434,7 +1509,7 @@ export class World {
       case 'sketch': return this.sketchProp ? to(this.sketchProp.position) : null;
       // she stands side on to the sunflowers and leans toward them (her left)
       case 'between': return to(this.stations.s3?.pos ?? this.stations.S0.pos) - Math.PI / 2;
-      case 'sunflowers': case 'world': case 'table': case 'paper': case 'path': case 'field': case 'pose': case 'easel': case 'flipflops': return viewer();
+      case 'sunflowers': case 'world': case 'table': case 'pockets': case 'paper': case 'path': case 'field': case 'pose': case 'easel': case 'flipflops': return viewer();
       default: return null; // the bench, the chimney and the stones turn her themselves
     }
   }
@@ -1455,6 +1530,79 @@ export class World {
       default: return {};
     }
   }
+  // v0.23 (Tiffany: "When she builds the chimney have her clime onto the roof first"): her way for
+  // the chimney's DIY: round the house's corner to the foot of its left wall, up the wall, over the
+  // roof's ridge and down to a stand beside the chimney, which is on the right slope
+  roofRoute() {
+    const h = this.objects.D01;
+    h.updateMatrixWorld(true);
+    const at = (x, y, z) => h.localToWorld(new THREE.Vector3(x, y, z));
+    const top = h.userData.chimneyTop;
+    return [this.eggSpotPos('chimney'), at(-2.75, 0, G.HOUSE.d / 2 + 0.55), this.eggSpotPos('chimney'), at(-2.18, 1.2, 0.9), at(-2.18, 2.8, 0.9), at(-0.9, 3.8, 0.75), at(top.x - 0.62, top.y - 0.78, top.z + 0.12)];
+  }
+  // the chimney itself, for her to face and hammer at
+  chimneyPoint(out = new THREE.Vector3()) { return out.copy(this.smoke.top).add(new THREE.Vector3(0, -0.5, 0)); }
+  // ---------- v0.23 (design audit 8): one small ink moment as each house stage is built ----------
+  // The foundation: two neighbours peek over it from behind, say "Ooh!" and are gone. The walls:
+  // (main.js has Vanessa wave through where the window will be) a pencilled "Hello in there!".
+  // The windows and doors: the door swings open and "Home!" is pencilled beside it. The roof: a
+  // bird lands on the ridge and Dwight shoos it off. The chimney: its first puff curls into a
+  // heart. Each is short, in ink, with no shake and no confetti; reduced motion keeps the words
+  // and the heart, still. -> a Promise resolved when the moment is over.
+  async houseMoment(stage) {
+    const h = this.objects.D01;
+    if (!h || this.finaleActive) return;
+    h.updateMatrixWorld(true);
+    const at = (x, y, z) => h.localToWorld(new THREE.Vector3(x, y, z));
+    const still = this.reducedMotion();
+    const front = G.HOUSE.d / 2;
+    if (stage === 'H1') {
+      const who = [this.sale.buyers[3], this.sale.buyers[10]].filter((b) => b && !b.visible);
+      if (this.sale.active || who.length < 2 || still) { await this.inkWord('Ooh!', at(0.4, 1.5, -front - 0.4), { h: 0.5, ms: 1500, rise: 0.4 }); return; }
+      const xs = [-0.75, 0.55];
+      who.forEach((b, i) => { b.position.copy(at(xs[i], 0, -front - 0.55)); b.rotation.y = h.rotation.y + (i ? -0.25 : 0.2); b.visible = true; setOpacity(b, 1); for (const nm of ['legL', 'legR', 'armL', 'armR']) b.getObjectByName(nm).rotation.x = 0; });
+      const low = -1.25; const up = -0.62; // head and shoulders over the foundation's far edge
+      await this.tweens.run(420, (t) => who.forEach((b, i) => { b.position.y = low + (up - low) * ease.outBack(Math.max(0, Math.min(1, t * 1.15 - i * 0.15))); }));
+      this.inkWord('Ooh!', at(-0.1, 1.15, -front - 0.55), { h: 0.46, ms: 1300, rise: 0.35 });
+      await this.tweens.run(1100, (t) => who.forEach((b, i) => { b.rotation.z = 0.09 * Math.sin(t * Math.PI * 2 + i * 1.7); }));
+      await this.tweens.run(320, (t) => who.forEach((b) => { b.position.y = up + (low - up) * t * t; }));
+      who.forEach((b) => { b.visible = false; b.position.y = 0; b.rotation.z = 0; });
+    } else if (stage === 'H2') {
+      await this.inkWord('Hello in there!', at(WINDOW_X, 2.55, front + 0.3), { h: 0.42, ms: 1900, rise: 0.35 });
+    } else if (stage === 'H5') {
+      const door = h.getObjectByName('D01_House_Door');
+      const word = this.inkWord('Home!', at(1.75, 1.75, front + 0.35), { h: 0.6, ms: 2300, rise: 0.4 });
+      if (door && !still) {
+        await this.tweens.run(520, (t) => { door.rotation.y = -1.75 * ease.outBack(t); });
+        await this.tweens.wait(900);
+        await this.tweens.run(620, (t) => { door.rotation.y = -1.75 * (1 - ease.inOut(t)); });
+        door.rotation.y = 0;
+      }
+      await word;
+    } else if (stage === 'H3') {
+      const ridge = at(-0.2, G.HOUSE.plinth + G.HOUSE.wall + G.HOUSE.roof + 0.2, 0.9);
+      if (still) { await this.inkWord('Shoo!', ridge.clone().add(new THREE.Vector3(0, 0.5, 0)), { h: 0.42, ms: 1400 }); return; }
+      const bird = this.eggBird ??= (() => { const b = G.flyingBird(); b.scale.setScalar(EGG.birdSize); this.root.add(b); return b; })();
+      const wl = bird.getObjectByName('wingL'); const wr = bird.getObjectByName('wingR');
+      const from = ridge.clone().add(new THREE.Vector3(-6, 4.5, -3));
+      const away = ridge.clone().add(new THREE.Vector3(7, 5, -4));
+      const flap = (t, amp) => { const f = Math.sin(t / 60); wl.rotation.z = -amp * f; wr.rotation.z = amp * f; };
+      bird.visible = true;
+      let clock = 0;
+      await this.tweens.run(900, (t) => { clock = t * 900; bird.position.lerpVectors(from, ridge, ease.inOut(t)); bird.rotation.set(0, Math.atan2(ridge.x - from.x, ridge.z - from.z), 0); flap(clock, 0.7 * (1 - t * 0.6)); });
+      wl.rotation.z = 0; wr.rotation.z = 0;
+      const a = this.archer;
+      if (a?.root.visible && a.mode === 'post') this.archerDraw('A1', { x: ridge.x, z: ridge.z }, 900);
+      await this.tweens.run(1000, (t) => { bird.position.copy(ridge).setY(ridge.y + Math.abs(Math.sin(t * Math.PI * 4)) * 0.05); bird.rotation.y += 0.01; });
+      this.inkWord('Shoo!', a?.root.visible ? this.archerHead(new THREE.Vector3()).add(new THREE.Vector3(0, 0.1, 0)) : ridge.clone().add(new THREE.Vector3(0, 0.6, 0)), { h: 0.42, ms: 1200, rise: 0.3 });
+      this.puff(ridge.clone(), { scale: 0.45 });
+      await this.tweens.run(900, (t) => { clock += 16; bird.position.lerpVectors(ridge, away, ease.inOut(t)); bird.rotation.set(0, Math.atan2(away.x - ridge.x, away.z - ridge.z), 0); flap(t * 900, 0.85); });
+      bird.visible = false;
+    } else if (stage === 'H4') {
+      const top = this.smoke.top.clone();
+      await this.inkWord('♥', top.clone().add(new THREE.Vector3(0.1, 0.35, 0)), { h: 1.0, ms: 2100, rise: 1.5, colour: '#d33a2c' });
+    }
+  }
   chimneyRoute() {
     const h = this.objects.D01;
     const at = (x, y, z) => h.localToWorld(new THREE.Vector3(x, y, z));
@@ -1467,7 +1615,14 @@ export class World {
     return Math.abs(p.x) < 1.13 && Math.abs(p.z) < 0.49 ? this.bed.scale.y * 0.37 : 0;
   }
   standPoint(id, out = new THREE.Vector3()) {
-    if (id === 'table') return this.sellSpot(out).setY(0);
+    // v0.23: with crops to set out, the place in front of the table that has room ("she should go
+    // to and drop them off in front of what ever table is empty"); for a sale, behind the first
+    if (id === 'table') {
+      const l = this.lastLedger;
+      const k = l && !saleReady(l) ? fillTable(l) : null;
+      const st = k === null ? null : this.tableStations()[k];
+      return st ? out.copy(st.pos).add(new THREE.Vector3(0, 0, TABLE_FRONT_M)).setY(0) : this.sellSpot(out).setY(0);
+    }
     const st = this.stations[id];
     if (!st) return null;
     out.copy(st.pos).setY(0);
@@ -1494,13 +1649,19 @@ export class World {
     }
     mark.getObjectByName('standDisc').material.opacity = ready ? 0.3 : 0.12;
   }
-  updateGoalMarkers(ids, dtMs) {
+  // v0.23 ("Actions should be in a different color than songs and collecting crops. Maybe red for
+  // actions?"): a place in `acts` is marked for an action (the bench's stain: Clean the bench), and
+  // its circle is the actions' red one, kept apart from the guide's yellow one for the same place.
+  updateGoalMarkers(ids, dtMs, acts = []) {
     this.goalMarkers ??= {};
     const hero = this.heroPos();
-    for (const id of new Set([...Object.keys(this.goalMarkers), ...ids])) {
-      let mark = this.goalMarkers[id];
-      if (!mark) { mark = this.goalMarkers[id] = G.standMarker(); this.root.add(mark); }
-      mark.visible = ids.includes(id) && !this.finaleActive && !this.playHidden;
+    const want = ids.map((id) => (acts.includes(id) ? `act:${id}` : id));
+    for (const key of new Set([...Object.keys(this.goalMarkers), ...want])) {
+      const act = key.startsWith('act:');
+      const id = act ? key.slice(4) : key;
+      let mark = this.goalMarkers[key];
+      if (!mark) { mark = this.goalMarkers[key] = act ? G.standMarker(G.ACTION_RED) : G.standMarker(); this.root.add(mark); }
+      mark.visible = want.includes(key) && !this.finaleActive && !this.playHidden;
       if (!mark.visible) continue;
       const at = this.standPoint(id);
       if (!at) { mark.visible = false; continue; }
@@ -1520,7 +1681,8 @@ export class World {
     const shown = !this.finaleActive && !this.playHidden;
     for (const id of new Set([...Object.keys(this.eggSparkles), ...spots])) {
       let sp = this.eggSparkles[id];
-      if (!sp) { sp = this.eggSparkles[id] = G.standMarker(); sp.userData.in = 0; this.root.add(sp); }
+      // v0.23: an action's circle is red (the yellow ones are the guide's and the songs')
+      if (!sp) { sp = this.eggSparkles[id] = G.standMarker(G.ACTION_RED); sp.userData.in = 0; this.root.add(sp); }
       const on = shown && spots.includes(id);
       sp.userData.in = Math.max(0, Math.min(1, (sp.userData.in ?? 0) + (on ? 1 : -1) * (still ? 1 : dtMs / 320)));
       sp.visible = shown && sp.userData.in > 0;
@@ -1556,9 +1718,27 @@ export class World {
   }
   // is a spot's circle and star in view now (checks)
   eggSpotLook(id) { return this.eggSparkles?.[id]?.visible ? 'star' : null; }
+  // v0.23 (Tiffany: "Have all the keepsakes icons not circles and the songs all circles"): the song
+  // itself, the egg the bird has dropped, lies in a yellow circle that breathes a little, so it is
+  // seen without an arrow. `egg`: the egg on the grass, or null.
+  updateEggCircle(egg, dtMs) {
+    if (!this.eggCircle) { this.eggCircle = G.standMarker(PAL.flower, { star: false }); this.eggCircle.visible = false; this.root.add(this.eggCircle); }
+    const m = this.eggCircle;
+    const on = !!egg && egg.visible && !this.finaleActive && !this.playHidden;
+    m.visible = on;
+    if (!on) { m.userData.t = 0; return; }
+    m.userData.t = (m.userData.t ?? 0) + dtMs;
+    const hero = this.heroPos();
+    const at = egg.position.clone().setY(0);
+    this.updateStandMarker(m, at, dtMs, !!hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= 1.1);
+    const k = ease.out(Math.min(1, m.userData.t / 320)) * (this.reducedMotion() ? 1 : 1 + 0.06 * Math.sin(m.userData.t / 260));
+    m.getObjectByName('standCircle').scale.multiplyScalar(Math.max(0.01, k * 1.25));
+    m.getObjectByName('standDisc').scale.setScalar(1.25);
+  }
   hideMarkers() {
     this.marker.obj.visible = false;
     for (const m of [...Object.values(this.eggSparkles ?? {}), ...Object.values(this.goalMarkers ?? {})]) m.visible = false;
+    if (this.eggCircle) this.eggCircle.visible = false;
     if (this.nuisance) this.nuisance.bird.visible = false;
     for (const k of Object.values(this.keepsakes ?? {})) k.obj.visible = false;
     if (this.weedProp) { this.weedProp.visible = false; this.sketchProp.visible = false; }
@@ -1649,14 +1829,24 @@ export class World {
       root.position.copy(post).add(new THREE.Vector3(0.35, 0, 0.15));
       root.visible = false;
       this.root.add(root);
-      this.archers[id] = { id, root, height, t: 0, shown: false, hidden: false, aim: null, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body') };
+      this.archers[id] = {
+        id, root, height, t: 0, shown: false, hidden: false, aim: null, arms: root.getObjectByName('arms'), head: root.getObjectByName('head'), body: root.getObjectByName('body'),
+        // v0.23: his post (where his cover is measured from), his legs, and what he is up to:
+        // 'post' (on watch, with a few steps now and then), 'walk' (on his way somewhere: off the
+        // picture before the final image, or to the bench), 'gone' (out of the picture), 'seated'
+        post: root.position.clone(), legL: root.getObjectByName('legL'), legR: root.getObjectByName('legR'), sit: root.getObjectByName('sit'),
+        scale: height / model, mode: 'post', walk: null, stroll: { at: 0, to: null, from: null, t: 0, ms: 0, rest: ARCHER_STROLL.firstMs }, stride: 0,
+      };
     }
     this.archer = this.archers.A1;
     this.arrows = [];
   }
   syncArcher(l, animate) {
     for (const a of Object.values(this.archers ?? {})) {
-      const want = isCommitted(l, a.id) && !a.hidden && !this.playHidden;
+      // (v0.23: he walks off the picture before the final image, so the finale's hiding of the play
+      // things leaves him be while he is on his way, and he is away once he is out of it)
+      const leaving = a.mode === 'walk' && a.walk?.then === 'gone';
+      const want = isCommitted(l, a.id) && a.mode !== 'gone' && (leaving || (!a.hidden && !this.playHidden));
       if (want === a.shown && a.root.visible === want) continue;
       a.shown = want;
       a.root.visible = want;
@@ -1671,7 +1861,129 @@ export class World {
   }
   // where each hired archer's cover is measured from (his post), for the birds (game/birds.js)
   archerPosts(l) {
-    return Object.values(this.archers ?? {}).filter((a) => isCommitted(l, a.id)).map((a) => ({ id: a.id, pos: { x: a.root.position.x, z: a.root.position.z } }));
+    // (v0.23: his post, not where his few steps have taken him; none once he sits on the bench)
+    return Object.values(this.archers ?? {}).filter((a) => isCommitted(l, a.id) && a.mode === 'post').map((a) => ({ id: a.id, pos: { x: a.post.x, z: a.post.z } }));
+  }
+  // ---------- v0.23: Dwight moves ----------
+  // Tiffany: "Have Dwight walking around just a little. He is too stiff. Not too distracting
+  // though": on watch he takes a few slow steps to a place close by every ARCHER_STROLL.everyMs or
+  // so, stands, and comes back the next time, his legs walking and his body bobbing a little; when
+  // a bird comes he stops and turns to it. "If Dwight doesn't already walk off the screen before
+  // the final image appears, have him do that. Not just disappear": `archerLeave` walks him off the
+  // right side of the picture as the finale starts. "In the end let Dwight go sit down on the
+  // bench": `archerToBench` walks him to the bench, where he sits, his crossbow on his knees
+  // (`instant`: he is there already, as on a finished farm that loads).
+  archerWalk(a, points, { speed = ARCHER_WALK.speed, then = 'post' } = {}) {
+    const pts = points.map((q) => q.clone().setY(0));
+    const legs = [];
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) { const d = pts[i].distanceTo(pts[i - 1]); legs.push(d); total += d; }
+    a.walk = { pts, legs, total, d: 0, speed, then };
+    a.mode = 'walk';
+    this.archerSit(a, false);
+  }
+  archerSit(a, on) {
+    if (a.sit) a.sit.visible = on;
+    for (const leg of [a.legL, a.legR]) if (leg) { leg.visible = !on; leg.rotation.x = 0; }
+    a.root.position.y = 0;
+    if (a.body) a.body.position.y = 0;
+  }
+  // the finale: off the right side of the picture, round the sunflowers
+  archerLeave(id = 'A1') {
+    const a = this.archers?.[id];
+    if (!a || !a.root.visible || a.mode === 'gone') return;
+    if (this.reducedMotion()) { a.mode = 'gone'; a.root.visible = false; a.shown = false; return; }
+    const from = a.root.position.clone();
+    const out = this.ground(ARCHER_WALK.off[0], ARCHER_WALK.off[1]);
+    const via = a.mode === 'seated' || from.x < this.ground(45, 70).x ? [this.ground(40, 86), this.ground(70, 96)] : [this.ground(76, 76.5)];
+    a.aim = null;
+    this.archerWalk(a, [from, ...via, out], { speed: ARCHER_WALK.leave, then: 'gone' });
+  }
+  // where he sits: the bench's right end as it faces the path (Vanessa's seat moves to the other)
+  archerSeatPos(out = new THREE.Vector3()) {
+    const b = this.objects.D10;
+    b.updateMatrixWorld(true);
+    return out.copy(b.localToWorld(new THREE.Vector3(ARCHER_WALK.seatX, 0.46, 0.02)));
+  }
+  archerSeated(id = 'A1') { return this.archers?.[id]?.mode === 'seated'; }
+  archerToBench(id = 'A1', { instant = false } = {}) {
+    const a = this.archers?.[id];
+    if (!a || !this.lastLedger || !isCommitted(this.lastLedger, a.id) || !isCommitted(this.lastLedger, 'G2')) return;
+    if (a.mode === 'seated' || (a.mode === 'walk' && a.walk?.then === 'seated')) return;
+    const seat = this.archerSeatPos();
+    const sit = () => {
+      a.mode = 'seated'; a.walk = null; a.aim = null;
+      a.root.position.set(seat.x, seat.y - (a.root.userData.hipY ?? 0.91) * a.scale + 0.03, seat.z);
+      a.root.rotation.y = this.objects.D10.rotation.y;
+      this.archerSit(a, true);
+      a.root.position.y = seat.y - (a.root.userData.hipY ?? 0.91) * a.scale + 0.03;
+    };
+    if (instant || this.reducedMotion()) { sit(); return; }
+    // from where he is (or, if he walked out of the picture, back in from there): along the grass
+    // below the tables to the path's last bend, in through the ring's gap, and onto the bench
+    const from = a.mode === 'gone' ? this.ground(ARCHER_WALK.off[0], ARCHER_WALK.off[1]) : a.root.position.clone();
+    if (a.mode === 'gone') a.root.position.copy(from);
+    const front = this.stations.G2.pos.clone();
+    const via = from.x > this.ground(80, 76).x ? [this.ground(76, 76.5)] : [];
+    this.archerWalk(a, [from, ...via, this.ground(44, 75), this.ground(31, 76.5), this.ground(25.5, 78), front, seat.clone().setY(0)], { then: 'seated' });
+    a.walk.sit = sit;
+    a.root.visible = !this.playHidden && !this.finaleActive;
+    a.shown = a.root.visible;
+  }
+  // back on watch at his post (a new farm, or a save that is not finished)
+  archerReset(id = 'A1') {
+    const a = this.archers?.[id];
+    if (!a) return;
+    a.mode = 'post'; a.walk = null; a.aim = null;
+    a.root.position.copy(a.post);
+    Object.assign(a.stroll, { to: null, from: null, t: 0, ms: 0, rest: ARCHER_STROLL.firstMs, at: 0 });
+    this.archerSit(a, false);
+  }
+  // his walk and his few steps, per frame; -> whether he is walking now
+  stepArcher(a, dtMs) {
+    const still = this.reducedMotion();
+    if (a.mode === 'walk' && a.walk) {
+      const w = a.walk;
+      w.d = Math.min(w.total, w.d + (w.speed * dtMs) / 1000);
+      let left = w.d; let i = 0;
+      while (i < w.legs.length - 1 && left > w.legs[i]) { left -= w.legs[i]; i++; }
+      const p = w.pts[i]; const q = w.pts[i + 1] ?? p;
+      const k = w.legs[i] > 1e-6 ? Math.min(1, left / w.legs[i]) : 1;
+      a.root.position.lerpVectors(p, q, k).setY(0);
+      const want = Math.atan2(q.x - p.x, q.z - p.z);
+      const d = Math.atan2(Math.sin(want - a.root.rotation.y), Math.cos(want - a.root.rotation.y));
+      a.root.rotation.y += d * Math.min(1, dtMs / 140);
+      a.stride += (w.speed * dtMs) / 1000 / ARCHER_WALK.stride;
+      if (w.d >= w.total) {
+        const then = w.then;
+        a.walk = null;
+        if (then === 'gone') { a.mode = 'gone'; a.root.visible = false; a.shown = false; } else if (then === 'seated') w.sit?.(); else a.mode = 'post';
+        return false;
+      }
+      return true;
+    }
+    if (a.mode !== 'post' || still || a.aim) { if (a.aim && a.stroll.to) { a.stroll.to = null; a.stroll.rest = ARCHER_STROLL.everyMs; } return false; }
+    // a few slow steps to a place close by, then a long stand
+    const st = a.stroll;
+    if (!st.to) {
+      st.rest -= dtMs;
+      if (st.rest > 0) return false;
+      if (a.t % ARCHER_AIM.everyMs < ARCHER_AIM.holdMs + 500) return false; // not while his crossbow is up
+      const spot = ARCHER_STROLL.spots[st.at % ARCHER_STROLL.spots.length];
+      st.at += 1;
+      st.from = a.root.position.clone();
+      st.to = a.post.clone().add(new THREE.Vector3(spot[0], 0, spot[1]));
+      st.ms = (st.from.distanceTo(st.to) / ARCHER_STROLL.speed) * 1000;
+      st.t = 0;
+      if (st.ms < 60) { st.to = null; st.rest = ARCHER_STROLL.everyMs; return false; }
+    }
+    st.t += dtMs;
+    const k = Math.min(1, st.t / st.ms);
+    a.root.position.lerpVectors(st.from, st.to, k).setY(0);
+    a.stride += (ARCHER_STROLL.speed * dtMs) / 1000 / ARCHER_WALK.stride;
+    a.strollYaw = Math.atan2(st.to.x - st.from.x, st.to.z - st.from.z);
+    if (k >= 1) { st.to = null; st.rest = ARCHER_STROLL.everyMs; a.strollYaw = undefined; return false; }
+    return true;
   }
   // per frame: he watches the sky's birds (yaw toward the flock, the head following a little
   // more), and every ARCHER_AIM.everyMs raises his bow for a moment; drawing at a bird he turns
@@ -1680,10 +1992,30 @@ export class World {
     const sky = this.objects.D21?.position;
     const still = this.reducedMotion();
     for (const a of Object.values(this.archers ?? {})) {
-      if (!a.root.visible) continue;
+      if (!a.root.visible) { if (a.mode === 'walk' && a.walk && (this.playHidden || this.finaleActive) && a.walk.then !== 'gone') continue; if (a.mode !== 'walk') continue; }
       if (!still) a.t += dtMs;
+      // v0.23: his legs walk while he moves, and his body bobs with the steps
+      const walking = this.stepArcher(a, dtMs);
+      const swing = walking ? Math.sin(a.stride * Math.PI * 2) : 0;
+      if (a.legL && a.legL.visible) { a.legL.rotation.x += (swing * ARCHER_WALK.swing - a.legL.rotation.x) * Math.min(1, dtMs / 90); a.legR.rotation.x += (-swing * ARCHER_WALK.swing - a.legR.rotation.x) * Math.min(1, dtMs / 90); }
+      if (a.mode !== 'seated') a.root.position.y = walking ? Math.abs(Math.cos(a.stride * Math.PI * 2)) * 0.022 : 0;
+      if (a.mode === 'walk' || a.mode === 'gone') { if (a.arms) { a.arms.rotation.x = 0.05 * swing; a.arms.position.y = 1.45; } if (a.head) a.head.rotation.set(0, 0, 0); continue; }
+      if (a.mode === 'seated') {
+        // on the bench: his crossbow on his knees, looking about, in no hurry
+        a.root.rotation.y = this.objects.D10.rotation.y;
+        if (a.arms) { a.arms.rotation.x = 0.42; a.arms.position.y = 1.36; }
+        if (a.head) a.head.rotation.set(still ? 0 : 0.04 * Math.sin(a.t / 2100), still ? 0 : 0.5 * Math.sin(a.t / 3100), 0);
+        continue;
+      }
       const p = a.root.position;
       let yaw; let up;
+      if (walking && a.strollYaw !== undefined) {
+        const d = Math.atan2(Math.sin(a.strollYaw - a.root.rotation.y), Math.cos(a.strollYaw - a.root.rotation.y));
+        a.root.rotation.y += d * Math.min(1, dtMs / 220);
+        if (a.head) a.head.rotation.set(0, 0.2 * Math.sin(a.t / 1700 + 1), 0);
+        if (a.arms) { a.arms.rotation.x += (0 - a.arms.rotation.x) * Math.min(1, dtMs / 160); a.arms.position.y += (1.45 - a.arms.position.y) * Math.min(1, dtMs / 160); }
+        continue;
+      }
       if (a.aim) {
         a.aim.t += dtMs;
         const want = Math.atan2(a.aim.x - p.x, a.aim.z - p.z);
@@ -1693,8 +2025,11 @@ export class World {
         if (a.aim.t > a.aim.ms) a.aim = null;
       } else {
         const base = sky ? Math.atan2(sky.x - p.x, sky.z - p.z) : Math.PI;
-        // he faces the camera side mostly, turning toward the flock by half
-        yaw = still ? 0.4 : 0.35 + 0.35 * Math.sin(a.t / 2300) + 0.25 * Math.sin(base);
+        // he faces the camera side mostly, turning toward the flock by half (eased, so he turns
+        // back smoothly from a few steps: v0.23)
+        const rest = still ? 0.4 : 0.35 + 0.35 * Math.sin(a.t / 2300) + 0.25 * Math.sin(base);
+        const d = Math.atan2(Math.sin(rest - a.root.rotation.y), Math.cos(rest - a.root.rotation.y));
+        yaw = still ? rest : a.root.rotation.y + d * Math.min(1, dtMs / 260);
         const cyc = a.t % ARCHER_AIM.everyMs;
         up = still ? 0 : cyc < ARCHER_AIM.holdMs ? Math.min(1, 1.6 * Math.sin((cyc / ARCHER_AIM.holdMs) * Math.PI)) : 0;
       }
@@ -1761,7 +2096,8 @@ export class World {
   benchSeat(out = new THREE.Vector3()) {
     const b = this.objects.D10;
     b.updateMatrixWorld(true);
-    return out.copy(b.localToWorld(new THREE.Vector3(0, 0.46, 0)));
+    // (v0.23: with Dwight on the bench's one end, she sits at the other)
+    return out.copy(b.localToWorld(new THREE.Vector3(this.archerSeated() || this.archer?.walk?.then === 'seated' ? -ARCHER_WALK.seatX : 0, 0.46, 0)));
   }
   buildBird() {
     const bird = G.flyingBird();
@@ -1769,7 +2105,7 @@ export class World {
     bird.visible = false;
     bird.name = 'NuisanceBird';
     this.root.add(bird);
-    this.nuisance = { bird, wl: bird.getObjectByName('wingL'), wr: bird.getObjectByName('wingR'), t: 0, from: new THREE.Vector3(), leaveFrom: null, carry: null, phase: 'idle' };
+    this.nuisance = { bird, wl: bird.getObjectByName('wingL'), wr: bird.getObjectByName('wingR'), feet: bird.getObjectByName('feet'), t: 0, from: new THREE.Vector3(), leaveFrom: null, carry: null, phase: 'idle' };
   }
   // s: the director's state; at: the target point (top of the plant, the bench seat, over her head)
   updateBird(dtMs, s, at) {
@@ -1781,7 +2117,13 @@ export class World {
     if (!s || s.phase === 'idle' || this.playHidden || this.finaleActive) {
       bird.visible = false; n.phase = 'idle';
       if (n.carry) { bird.remove(n.carry); n.carry = null; }
+      n.feet?.scale.setScalar(0.01);
       return;
+    }
+    // its feet come down as it lands and while it carries (v0.23)
+    if (n.feet) {
+      const down = n.carry || s.phase === 'sit' || (s.phase === 'approach' && s.t > 400) ? 1 : 0.01;
+      n.feet.scale.setScalar(n.feet.scale.x + (down - n.feet.scale.x) * Math.min(1, dtMs / 120));
     }
     if (s.phase !== n.phase) {
       if (s.phase === 'warn') n.from.copy(at).add(new THREE.Vector3(-6, 7, -4)); // in from the sky
@@ -1840,14 +2182,19 @@ export class World {
     const n = this.nuisance;
     if (!n || !res) return;
     if (n.carry) n.bird.remove(n.carry);
+    // v0.23 (Tiffany: "it should show the bird carrying it away in his feet"): the crop hangs
+    // from its two feet, right under them, and a good deal bigger than the bird's body so it is
+    // plain what it has: a cob held along it, a sunflower's head face out, a tomato
     n.carry = new THREE.Group();
     const crop = G.unitMesh(res);
     crop.scale.setScalar(THIEF.crop / n.bird.scale.x);
-    crop.position.set(0, -0.15, 0);
+    crop.position.set(0, res === 'C' ? -0.09 : -0.12, 0);
     if (res === 'S') crop.rotation.x = Math.PI / 2; // the sunflower's face to the viewer
+    if (res === 'C') crop.rotation.set(Math.PI / 2, 0, 0); // the cob lies along the bird, a foot at each end
     n.carry.add(crop);
-    n.carry.position.set(0, -0.03, 0.02);
+    n.carry.position.set(0, -0.155, -0.02); // at its feet
     n.bird.add(n.carry);
+    n.feet?.scale.setScalar(1);
   }
   // The plant a bird took from (v0.22: "so the crops need to grow back"). Its ripe crop is gone
   // from it (the ledger: sync hides the units); here it shudders in a puff of dust, and the corn
@@ -1859,6 +2206,17 @@ export class World {
     const top = this.nodeTop(id, new THREE.Vector3());
     if (top) this.puff(top, { scale: 0.9 });
     const o = res === 'T' ? this.nodeViews[id]?.plant : st.obj;
+    const view = this.nodeViews[id];
+    if (view) view.stripped = true; // its crop pops back in when it is ripe again (regrowCrop)
+    // v0.23: a sunflower loses its head to the bird, and grows a new one from a bud over the time
+    // its crop takes (the corn's cobs and the tomatoes are the ledger's units: gone, then back)
+    const head = res === 'S' ? st.obj.getObjectByName('head') : null;
+    if (head) {
+      const token = (head.userData.regrow = (head.userData.regrow ?? 0) + 1);
+      head.scale.setScalar(0.12);
+      if (this.reducedMotion()) this.tweens.wait(NODE_RENEW_MS.S).then(() => { if (head.userData.regrow === token) head.scale.setScalar(1); });
+      else this.tweens.run(NODE_RENEW_MS.S, (k) => { if (head.userData.regrow === token) head.scale.setScalar(0.12 + 0.88 * ease.inOut(k)); }).then(() => { if (head.userData.regrow === token) head.scale.setScalar(1); });
+    }
     if (!o || this.reducedMotion()) return;
     this.wobble(o, { amp: 0.16, ms: 700 });
     if (res === 'T') return; // the bed's plants keep their size: their fruit is what went
@@ -1868,6 +2226,21 @@ export class World {
     this.tweens.run(260, (k) => { if (mine()) o.scale.y = full * (1 - 0.3 * ease.out(k)); })
       .then(() => this.tweens.run(Math.max(500, NODE_RENEW_MS[res] - 500), (k) => { if (mine()) o.scale.y = full * (0.7 + 0.3 * k); }))
       .then(() => { if (mine()) o.scale.y = full; });
+  }
+  // v0.23 ("... which had disappeared as the bird carries it away, regrows"): the crop a bird took
+  // is ripe again: the cobs, or the tomatoes, swell back onto the plant with a small bounce (the
+  // ledger has shown them at once; this is how they come). Only for a plant a bird stripped.
+  regrowCrop(id) {
+    const view = this.nodeViews[id];
+    if (!view?.stripped) return;
+    view.stripped = false;
+    if (this.reducedMotion()) return;
+    const parts = view.fruit ? view.fruit.filter((f) => f.mesh.visible).map((f) => f.mesh) : view.units ? view.units.children.filter((c) => c.visible) : [];
+    for (const [i, m] of parts.entries()) {
+      const full = (m.userData.fullScale ??= m.scale.clone());
+      m.scale.copy(full).multiplyScalar(0.05);
+      this.tweens.wait(i * 70).then(() => this.tweens.run(420, (k) => m.scale.copy(full).multiplyScalar(Math.max(0.05, ease.outBack(k))))).then(() => m.scale.copy(full));
+    }
   }
   // a shoo: a little puff where the bird was as it flies off
   birdShoo() { if (this.nuisance?.bird.visible) this.puff(this.nuisance.bird.position.clone(), { scale: 0.5 }); }
@@ -2185,19 +2558,34 @@ export class World {
   // v0.22 (Tiffany: "should not have yellow circles around them, they should just be icons that
   // look like the item in the photo"): each lies on the grass as the thing itself. No ring, no
   // yellow glint; when she is near it gives a small hop now and then, so it is seen.
-  updateKeepsakes(dtMs, { out = false, found = {}, hero = null } = {}) {
+  // v0.23 (Tiffany: "Have the icons bouncing a bit so she sees them"; "just a few at a time"): only
+  // the keepsakes in `shown` lie out (main.js: the first few still to find), and each bounces all
+  // the time, wherever she is: two small hops, a rest, and again, each in its own time; a new one
+  // pops up as one is found. Reduced motion: they lie still.
+  updateKeepsakes(dtMs, { out = false, found = {}, shown = null } = {}) {
     if (!this.keepsakes) this.buildKeepsakes();
     const show = out && !this.playHidden && !this.finaleActive;
     const still = this.reducedMotion();
     for (const [id, k] of Object.entries(this.keepsakes)) {
       if (k.picking) continue;
-      k.obj.visible = show && !found[id];
+      const on = show && !found[id] && (!shown || shown.includes(id));
+      if (on && !k.obj.visible && k.wasOut && !still) k.popMs = 0; // it takes the place of one just found
+      k.wasOut = show;
+      k.obj.visible = on;
       k.obj.position.y = 0;
-      if (!k.obj.visible || !hero || still) continue;
+      k.obj.scale.setScalar(KEEPSAKE_SIZE);
+      if (!on || still) continue;
       k.t += dtMs;
-      const near = Math.hypot(hero.x - k.pos.x, hero.z - k.pos.z) < KEEPSAKE_NEAR_M;
-      const cyc = k.t % 2600;
-      if (near && cyc < 420) k.obj.position.y = Math.sin((cyc / 420) * Math.PI) * 0.12;
+      const h = keepsakeBounce(k.t);
+      k.obj.position.y = h * KEEPSAKE_BOUNCE.high;
+      // a little squash as it lands, a little stretch in the air
+      k.obj.scale.set(KEEPSAKE_SIZE * (1 - 0.06 * h), KEEPSAKE_SIZE * (1 + 0.1 * h), KEEPSAKE_SIZE * (1 - 0.06 * h));
+      if (k.popMs !== undefined) {
+        k.popMs += dtMs;
+        const u = Math.min(1, k.popMs / 360);
+        k.obj.scale.multiplyScalar(Math.max(0.01, ease.outBack(u)));
+        if (u >= 1) k.popMs = undefined;
+      }
     }
   }
   // she picks it up: a hop and a puff, and it is gone
@@ -2297,7 +2685,7 @@ export class World {
 
   // ---------- v0.17c: ink words, wobbles and the hunt's spot moments ----------
   // a word in the drawing's pencil hand, outlined in paper, as a camera-facing sprite `h` metres tall
-  inkSprite(text, h = 0.5) {
+  inkSprite(text, h = 0.5, colour = '#253347') {
     const n = Math.max(1, [...text].length);
     const w = Math.min(1024, 96 + n * 56);
     const c = document.createElement('canvas'); c.width = w; c.height = 128;
@@ -2305,15 +2693,15 @@ export class World {
     g.font = '700 88px "Pencil Title", "Comic Sans MS", cursive';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.lineWidth = 10; g.strokeStyle = '#fff7e5'; g.strokeText(text, w / 2, 68);
-    g.fillStyle = '#253347'; g.fillText(text, w / 2, 68);
+    g.fillStyle = colour; g.fillText(text, w / 2, 68);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
     sp.scale.set(h * (w / 128), h, 1); sp.renderOrder = 10; sp.userData.noOutline = true; sp.userData.noFit = true;
     this.root.add(sp);
     return sp;
   }
   // a word pops up at `pos`, rises a little and fades (a still word with reduced motion)
-  inkWord(text, pos, { ms = 1400, h = 0.5, rise = 0.6 } = {}) {
-    const sp = this.inkSprite(text, h);
+  inkWord(text, pos, { ms = 1400, h = 0.5, rise = 0.6, colour = '#253347' } = {}) {
+    const sp = this.inkSprite(text, h, colour);
     this.inkWords ??= new Set(); this.inkWords.add(sp);
     sp.position.copy(pos);
     const still = this.reducedMotion();
@@ -2373,7 +2761,7 @@ export class World {
       case 'sunflowers': say(0.86); wob(['s1', 's2', 's3', 's4'].map(st), { amp: 0.16, ms: ms * 0.8 }); break;
       // the punchline, and the corn shakes with laughter
       case 'corn': say(0.56); after(0.56, () => wob(['c1', 'c2', 'c3', 'c4'].map(st), { amp: 0.13, ms: 1000 })); break;
-      case 'table': {
+      case 'table': case 'pockets': {
         // out of her pockets: a few small treasures fly up and land round her
         say(0.55);
         after(0.5, () => {
@@ -2596,7 +2984,10 @@ export class World {
   // puts that table's goods into their basket while coins pop toward Vanessa (`onCoins`), and they
   // walk off. `items` [res...] in table order (six to a table). Resolves when it is over; the
   // tables take nothing until then.
-  async yardSale(items, { onCoins = null, onSign = null, sale: saleNo = 1, tables: nTables = 1 } = {}) {
+  // v0.23 (design audit 13): `wish` ({ crop, n, met }) is a buyer's wish for this sale: the first
+  // buyer says it as they walk up ("Two tomatoes, please!") and, if it was on the tables, thanks
+  // her with a coin on top (`onTip`); if not, "Next time!".
+  async yardSale(items, { onCoins = null, onSign = null, onTip = null, wish = null, sale: saleNo = 1, tables: nTables = 1 } = {}) {
     const sale = this.sale;
     const token = ++sale.token;
     sale.active = true;
@@ -2687,6 +3078,12 @@ export class World {
       await Promise.all(plan.map((p, i) => this.tweens.wait(i * SALE_MS.stagger).then(() => walk(p.b, routes[i], walkMs(routes[i], SALE_MS.walkIn), i, 1)).then(() => stand(p.b, p.k))));
     }
     if (!live()) return;
+    if (wish && plan[0]) {
+      plan[0].b.updateMatrixWorld(true);
+      this.inkWord(wishWords(wish), plan[0].b.position.clone().setY(2.15), { h: 0.44, ms: 1700, rise: 0.3 });
+      if (!reduced) await this.tweens.wait(650);
+      if (!live()) return;
+    }
     // each takes their goods into the basket, a coin popping out for each; the buyers take
     // theirs at the same time, a little apart
     const take = async (p, i) => {
@@ -2724,6 +3121,13 @@ export class World {
     };
     await Promise.all(plan.map((p, i) => take(p, i)));
     if (!live()) return;
+    if (wish && plan[0]) {
+      const over = plan[0].b.position.clone().setY(2.15);
+      this.inkWord(wish.met ? 'Thank you! +1' : 'Next time!', over, { h: 0.44, ms: 1300, rise: 0.35 });
+      if (wish.met) onTip?.(plan[0].b.position.clone().setY(1.3));
+      if (!reduced) await this.tweens.wait(500);
+      if (!live()) return;
+    }
     sale.goods = null;
     this.sync(this.lastLedger, false);
     // they walk off; the sign comes up again
@@ -2995,6 +3399,8 @@ export class World {
 // the held tool's grip: how far up the handle her fist is (model metres at the tool's drawing
 // scale) and the handle's lean forward and outward, radians (tuned in the browser)
 export const GRIP = { at: 0.9, forward: 0.16, out: 0.12 };
+const Y_UP = new THREE.Vector3(0, 1, 0);
+const tmpW = new THREE.Vector3();
 // the shovel gives a small shiver as the rake comes to rest on it
 function wob2(world, obj) { world.wobble(obj, { amp: 0.04, ms: 420 }); }
 const tmpQ = new THREE.Quaternion();

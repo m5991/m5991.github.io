@@ -175,8 +175,9 @@ export function cottage() {
   const handle = mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 12, Math.PI), PAL.ink, { ink: false });
   handle.position.set(0.28, 0.92, 0.07); handle.rotation.z = Math.PI / 2;
   door.add(handle);
-  door.position.set(0.55, P, front + 0.03);
-  details.add(door);
+  // v0.23 (design audit 8: "home: the door swings open"): the door is its own part on its hinge
+  // (`D01_House_Door`, a child of the details node, so it takes its colour with them), closed as
+  // the drawing has it; world.js houseMoment swings it
   details.add(at(mesh(new THREE.BoxGeometry(1.1, 0.1, 0.45), PAL.stone), 0.55, 0.05, front + 0.3)); // door step
   const round = new THREE.Group();
   round.add(mesh(new THREE.CircleGeometry(0.3, 24), PAL.shirt, { ink: false }));
@@ -220,7 +221,14 @@ export function cottage() {
   chimney.add(at(mesh(new THREE.BoxGeometry(0.58, 0.12, 0.58), mix(PAL.red, PAL.ink, 0.35)), cx, roofY + 1.24, cz));
 
   const g = new THREE.Group();
-  g.add(mergeByMaterial(plinth), mergeByMaterial(walls), mergeByMaterial(roof), mergeByMaterial(chimney), mergeByMaterial(details));
+  const detailsNode = mergeByMaterial(details);
+  const hinge = new THREE.Group(); hinge.name = 'D01_House_Door';
+  hinge.position.set(0.55 - 0.43, P, front + 0.03);
+  const leaf = mergeByMaterial(door, 'D07_Door');
+  leaf.position.x = 0.43;
+  hinge.add(leaf);
+  detailsNode.add(hinge);
+  g.add(mergeByMaterial(plinth), mergeByMaterial(walls), mergeByMaterial(roof), mergeByMaterial(chimney), detailsNode);
   g.userData.chimneyTop = new THREE.Vector3(cx, roofY + 1.35, cz);
   g.userData.doorStep = new THREE.Vector3(0.55, 0, front + 0.3 + 0.225); // the door step's front edge
   return g;

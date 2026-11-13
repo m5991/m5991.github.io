@@ -17,14 +17,17 @@
 //   6. set out: with crops in hand before the first sale, the arrow leads to the yard-sale
 //      table, `Walk past the table to set out your crops`;
 //   7. yard sale: once the table is full, a hand points at the Yard Sale button;
-//   8. DIY: at the first build's spot (the house foundation, or the raised bed), with everything
-//      in hand, a hand points at the DIY button.
+//   8. DIY: at the first build's spot (v0.23: the raised bed, always), with everything in hand,
+//      the goal line says DIY and the arrow leads to the bed (v0.12-v0.22: a hand pointed at the
+//      DIY button).
 // It all goes once the house foundation stands. Afterwards only the self-explaining hint remains:
 // lingering in reach of a collectible while moving says "Stand still to ...".
 import { HAMMERED, isWeedId, MATERIALS, NODES, PILES, ROCKS, STAGES, STICK_SLOTS } from './data.js';
 import { choiceTargets, nextGoal } from './guide.js';
 import { digOpen, isCommitted, saleReady, tableAvailable, tableRoom } from './ledger.js';
 
+// (v0.23: the raised bed is built before it, so the first DIY is taught at the bed; and no hand
+// points at the DIY button any more: the goal line says DIY and the arrow leads to the place)
 export const TUTORIAL_STAGE = 'H1'; // the tutorial ends when the house foundation stands
 export const MOVED_M = 1.2; // metres of travel that count as "has moved"
 export const LINGER_MS = 600; // moving in reach of a collectible this long shows the hint
@@ -163,6 +166,8 @@ export function coachPrompt(s) {
   if (step.phase === 'stock') return 'Walk past the table to set out your crops';
   if (step.phase === 'sale') return mode === 'keyboard' ? 'The table is full: press E for Yard Sale' : 'The table is full: tap Yard Sale';
   if (step.phase === 'take' && step.tool === 'shovel' && here !== 'tools' && !working) return 'Now take the shovel';
-  if (step.phase === 'build' && point === 'diy') return mode === 'keyboard' ? 'Press E to DIY' : 'Tap DIY to build it';
+  // v0.23 (Tiffany: "Don't have the arrow point at DIY"): no hand points at the DIY button; at the
+  // part the button itself says DIY, and only the keyboard gets its key named
+  if (step.phase === 'build' && s.atSite) return mode === 'keyboard' ? 'Press E to DIY' : null;
   return null;
 }

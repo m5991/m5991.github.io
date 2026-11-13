@@ -27,10 +27,24 @@
 // v0.22 (Tiffany: 'Instead of "rake the corn" say "remove the weeds"'): the line for a weed over a
 // crop named the crop as the thing to rake ("Weeds! · rake the corn"). Every line about weeds now
 // says what is done to the weeds: "Remove the weeds" (the rake is the tool, named where it is fetched).
-import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, ROUTE, SALE_MIN, STAGES, STICK_SLOTS } from './data.js';
+// v0.23 (Tiffany's notes "Farm changes #2", 2026-11-12):
+// - "The DIY order should be raised garden bed, foundation, path, steppingstones, rocks around the
+//   base of the tree, bench, walls, windows and doors, roof, chimney": `goalOrder` is that order,
+//   with the plantings and the archer's hire between, and the goal line works on one build at a
+//   time: the first one in the order that is not built (`nextStage`). Nothing else is ever offered
+//   ("Don't allow the option to DIY the stones surrounding the tree at the same time as the wall
+//   DIY"): `buildBar` no longer gives the build she happens to stand at.
+// - "When it says DIY path, go there ... Just have the [tasks line] say DIY so that it's
+//   noticeable": once she has everything for the next build the goal line says so, loud: "DIY ·
+//   Path" (`diy` on the goal; the screen marks the line), and that comes before everything else,
+//   a weed over the crops included ("When it is DIY time make the only highlighted circle be
+//   around the DIY location").
+// - a yard sale is held when every table is full, so the line fills the tables and then sells;
+//   her crops go onto the table that has room.
+import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, STAGES, STICK_SLOTS } from './data.js';
 import {
-  available, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, plotWeeds,
-  regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableCount, tableRoom, toolComes, undug,
+  available, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable, plotWeeds,
+  regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableRoom, toolComes, undug,
 } from './ledger.js';
 
 export const WOOD_PILES = Object.keys(PILES).filter((k) => PILES[k].res === 'W'); // the starter logs by the path
@@ -46,7 +60,12 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 // short names for the goal line, so a build and its needs fit one line on a phone
 export const SHORT_LABEL = {
   C0: 'Corn patch', S0: 'Sunflowers', T0: 'Raised bed', H1: 'Foundation', G1: 'Path', H2: 'Walls', A1: 'Archer', C1: 'More corn',
-  S1: 'More sunflowers', G2: 'Bench', G3: 'Step stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Home',
+  S1: 'More sunflowers', G2: 'Bench', G3: 'Step stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
+};
+// v0.23: where a build is, for the DIY line ("DIY · Path") and the note when DIY is pressed away from it
+export const PLACE_LABEL = {
+  C0: 'Corn patch', S0: 'Sunflower patch', T0: 'Raised bed', H1: 'Foundation', G1: 'Path', H2: 'Walls', A1: 'Archer', C1: 'More corn',
+  S1: 'More sunflowers', G2: 'Bench', G3: 'Stepping stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
 };
 const NEED_ORDER = ['W', 'R', 'coins'];
 // the line of a build that still needs things: its short name, each need with its number, the
@@ -73,20 +92,16 @@ const cropsCarried = (l) => CROPS.reduce((n, c) => n + l.carried[c], 0);
 const mustFetch = (l, tool, come = false) => !come && l.tool !== tool && !toolComes(l, tool);
 // what is out on the tables, and what is out plus on her head, in coins
 const outValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
-// a sale is the next thing to do: six at least are out, and nothing she carries still fits or
-// what is out and on her head pays for the build (v0.13: the tables hold more as the house grows;
-// the goal line sells what the build needs rather than filling every table first)
-const sellNow = (l, short) => saleReady(l)
-  && (tableRoom(l) === 0 || covers(l, short) || !anyReady(l, pickable(l)));
-// what is out and on her head makes a sale (six at least) that pays for the build
-const covers = (l, short) => tableCount(l) + cropsCarried(l) >= SALE_MIN && outValue(l) + cropValue(l) >= short;
+// a sale is the next thing to do: every table is full (v0.23; v0.13-v0.22 sold once six were out)
+const sellNow = (l) => saleReady(l);
+export { outValue };
 // the planted crops she still has room on her head for (v0.13: with more tables, a full head goes
 // to the table even when they would hold more)
 const pickable = (l) => planted(l).filter((id) => l.carried[NODES[id].res] < CAPACITY);
 // her crops go onto the tables now: what she carries fills them, pays for the build, or nothing
 // more she can pick is ready
 const setOutNow = (l, short, cropReady) => cropsCarried(l) > 0 && tableAvailable(l) && tableRoom(l) > 0
-  && (cropsCarried(l) >= tableRoom(l) || covers(l, short) || !cropReady);
+  && (cropsCarried(l) >= tableRoom(l) || !cropReady);
 // the button a stage's bottom line becomes once she has everything
 export const actionVerb = (id) => (STAGES[id].hire ? 'Hire' : STAGES[id].crop && !STAGES[id].W ? 'Plant' : 'DIY');
 
@@ -135,12 +150,12 @@ export function bestHarvest(l, nodes = pickable(l)) {
 // coins for a stage: a full table sells with Yard Sale; crops on her head go onto the table;
 // otherwise harvest (or wait for the crops to grow)
 function coinsGoal(l, label, short) {
-  if (sellNow(l, short)) return { text: `${label} · ${short} more coins: the goods are out, go to the back of the table and tap Yard Sale`, target: 'table', sale: true };
+  if (sellNow(l)) return { text: `${label} · ${short} more coins: the tables are full, go to the back of the table and tap Yard Sale`, target: 'table', sale: true };
   const nodes = pickable(l);
   const cropReady = anyReady(l, nodes);
   // to the table once what she carries fills it, or nothing more is ready to pick
   if (setOutNow(l, short, cropReady)) {
-    return { text: `${label} · ${short} more coins: walk past the yard-sale table to set out your crops`, target: 'table' };
+    return { text: `${label} · ${short} more coins: set your crops out on the yard-sale table that has room`, target: 'table' };
   }
   const all = planted(l);
   return { text: `${label} · ${short} more coins: ${cropReady ? 'harvest your crops' : 'your crops are growing'}, then set them out on the yard-sale table`, target: bestHarvest(l, nodes) ?? nodes[0] ?? all[0] ?? null, ...(cropReady ? {} : { wait: 'crops growing' }) };
@@ -185,38 +200,51 @@ function cropSteps(l, id, label, come = false) {
   return null;
 }
 
-// The goal line's order (spec v0.11 §6.4, each first crop's route): the house foundation (the
-// DIY lesson), the path, the cheaper of the other two crop plots, the walls, the archer, the
-// last plot, then the §6.3 order (v0.12: the tomatoes' plot is their raised bed, built by DIY).
+// The goal line's order. v0.23 (Tiffany): the DIY order is the raised bed, the foundation, the
+// path, the stepping stones, the stones round the tree, the bench, the walls, the windows and
+// doors, the roof, the chimney (data.js DIY_ORDER). Her first crop leads (with the tomatoes that is
+// the raised bed itself), and between the builds come the things that are not DIY: the other crop
+// patch after the path, the archer after the stepping stones, the last patch (only when the
+// tomatoes were first) before the bench, more corn before the walls, more sunflowers after them.
+// (v0.11-v0.22: the foundation, the path, the bench, a patch, the walls, the archer, a patch, then
+// the rest, the home last.)
 export function goalOrder(l) {
-  const others = BASE_STAGES.filter((id) => !isFirstCrop(l, id)).sort((a, b) => STAGES[a].coins - STAGES[b].coins);
-  const head = ['H1', 'G1', 'G2', others[0], 'H2', 'A1', others[1]];
-  // her first crop leads (with the tomatoes its raised bed is built first, by DIY)
   const first = firstStage(l);
-  return [...(first ? [first] : []), ...head, ...ROUTE.filter((id) => !head.includes(id) && !isFirstCrop(l, id))];
+  const others = BASE_STAGES.filter((id) => id !== first && id !== 'T0'); // the corn and sunflower patches still to plant
+  const order = [
+    ...(first ? [first] : []), 'T0', 'H1', 'G1', others[0], 'G3', 'A1', 'G4', ...(others[1] ? [others[1]] : []),
+    'G2', 'C1', 'H2', 'S1', 'H5', 'H3', 'H4',
+  ];
+  return order.filter((id, i) => id && order.indexOf(id) === i);
 }
-// the next stage the goal line works on: the first one in goalOrder not built whose
-// prerequisites are met (open, or waiting only for its weeds)
+// the next stage the goal line works on: the first one in goalOrder that is not built (or a
+// planted crop stage that still has spots to dig). One at a time, in order (v0.23).
 export function nextStage(l) {
-  return goalOrder(l).find((id) => {
-    if (isCommitted(l, id)) {
-      // a planted crop stage still has spots to dig
-      return STAGES[id].crop && undug(l).some((n) => NODES[n].stage === id);
-    }
-    return stageState(l, id) === 'OPEN' || !missingPrereqs(l, id).length; // open, or only its weeds left
-  }) ?? null;
+  if (!l.crop) return null; // nothing is next before she has chosen her first crop
+  return goalOrder(l).find((id) => (isCommitted(l, id)
+    ? STAGES[id].crop && undug(l).some((n) => NODES[n].stage === id) // a planted crop stage still has spots to dig
+    : true)) ?? null;
+}
+// v0.23: she has everything for the next build and it can be built now (a crop patch: once its
+// weeds are raked): the goal line says DIY (Plant, Hire) and the place
+export function readyBuild(l) {
+  const id = nextStage(l);
+  if (!id || isCommitted(l, id) || isFree(l, id) || missingPrereqs(l, id).length || stageState(l, id) !== 'OPEN') return null;
+  if (STAGES[id].crop && plotWeeds(id).some((w) => !l.weeds[w])) return null;
+  const short = shortage(l, id);
+  return short.coins + short.W + short.R === 0 ? id : null;
 }
 
-// v0.12: the bottom line. The stage she stands at (when she can build it now), else the goal
-// line's next build; what is still to get for it, or, once she has everything, its DIY (Hire,
-// Buy seeds) button, which works only at its site. -> null when no build is next.
+// v0.12: the bottom line: the goal line's next build and, once she has everything for it, its DIY
+// (Hire, Plant) button, which works only at its site. -> null when no build is next.
+// v0.23: only ever the next build in the order: standing at another part that could be built
+// offers nothing (v0.12-v0.22 gave the stage she stood at when she could build it).
 // -> { stage, label, short, ready, here, verb, text }
 export function buildBar(l, hereId = null) {
-  const buildable = (id) => !!id && id in STAGES && !isCommitted(l, id) && !isFree(l, id) && stageState(l, id) === 'OPEN';
-  const id = buildable(hereId) ? hereId : nextStage(l);
+  const id = nextStage(l);
   if (!id || isCommitted(l, id) || isFree(l, id) || missingPrereqs(l, id).length) return null;
   const short = shortage(l, id);
-  const ready = short.coins + short.W + short.R === 0 && stageState(l, id) === 'OPEN';
+  const ready = readyBuild(l) === id;
   const label = STAGES[id].label;
   const verb = actionVerb(id);
   const here = hereId === id;
@@ -236,6 +264,14 @@ export function nextGoal(l, { toolsCome = false } = {}) {
     const choice = choiceTargets(l);
     return { text: 'Choose your first crop: remove the weeds on the corn, the sunflowers or the tomato bed with the rake', target: choice[0]?.target ?? null, choice, line: { icon: 'weed', label: 'Choose a crop', tail: 'remove its weeds' } };
   }
+  // v0.23: DIY time comes first: she has everything for the next build. The line says so and
+  // names the place ("DIY · Path"); the one arrow and the one circle lead there (main.js)
+  const diy = readyBuild(l);
+  if (diy) {
+    const verb = actionVerb(diy);
+    const place = PLACE_LABEL[diy] ?? cap(STAGES[diy].label);
+    return { text: `${verb}: ${place}. You have everything: go there and ${verb === 'DIY' ? 'build it' : verb.toLowerCase()}.`, target: diy, diy, verb, line: { icon: verb === 'DIY' ? 'hammer' : 'check', label: verb, tail: place, hot: true } };
+  }
   // a weed over her crops, once it has grown to a clump: rake it before the plant under it wilts
   const over = regrowWeeds(l).filter((w) => l.activeMs - l.overgrown[w.slice(3)] >= REGROW.warnMs);
   if (over.length) {
@@ -254,21 +290,25 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   if (!id) return { text: 'Keep gathering and selling while the next build opens.', target: null, line: { label: 'Keep gathering and selling' } };
   const s = STAGES[id];
   const label = cap(s.label);
-  if (s.crop) {
+  // a crop patch's own steps: its weeds, then (once planted) its spots. v0.23: for a patch that is
+  // still to be built or planted, what it costs comes first and its weeds last, so she rakes them
+  // where she then builds or plants, in one visit (they came first, a walk there and back again);
+  // a patch that is not hers to work yet, before her first harvest, has only its needs to show
+  const short = shortage(l, id);
+  if (s.crop && patchWorkable(l, id) && (isCommitted(l, id) || short.coins + short.W + short.R === 0)) {
     const step = cropSteps(l, id, label, toolsCome);
     if (step) return step;
   }
-  const short = shortage(l, id);
   if (short.coins + short.W + short.R === 0) {
-    const verb = actionVerb(id);
-    return { text: `${label} · You have everything: ${verb === 'DIY' ? 'DIY it' : verb.toLowerCase()} at its spot`, target: id, line: { icon: 'check', label: SHORT_LABEL[id] ?? label, tail: 'ready!' } };
+    // everything is here but it cannot be built yet (it waits for her first harvest)
+    return { text: `${label} · You have everything: harvest your first crop, then build it`, target: bestHarvest(l) ?? planted(l)[0] ?? null, line: { icon: 'check', label: SHORT_LABEL[id] ?? label, tail: 'after your first harvest' } };
   }
   // what is still missing, as icons and numbers; the need she is after now is marked
   const lined = (g, now) => ({ ...g, line: needsLine(id, short, now, g.wait ?? null) });
   // a full table sells now; crops on her head go onto the table once they fill it (or nothing
   // more is ready to harvest)
-  if (short.coins > 0 && sellNow(l, short.coins)) return lined(coinsGoal(l, label, short.coins), 'coins');
-  if (short.coins > 0 && tableAvailable(l) && cropsCarried(l) > 0 && (cropsCarried(l) >= tableRoom(l) || covers(l, short.coins))) {
+  if (short.coins > 0 && sellNow(l)) return lined(coinsGoal(l, label, short.coins), 'coins');
+  if (short.coins > 0 && tableAvailable(l) && cropsCarried(l) > 0 && tableRoom(l) > 0 && cropsCarried(l) >= tableRoom(l)) {
     return lined(coinsGoal(l, label, short.coins), 'coins');
   }
   // her crops grow while she gathers the wood and stone

@@ -94,7 +94,8 @@ export function createCards(dialog, { player = null } = {}) {
     // the songbook: { title, intro, songs: [{ id, number, title, playTitle, lyric, src, download, suno }], stamp, left, available, onClose }
     // v0.22: only the songs found, in list order (no row for a song still to find)
     songbook(o) {
-      const rows = o.songs.map((x) => `<li class="song-row" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>`).join('');
+      // v0.23: every song is listed, found or not; a found one carries a small mark
+      const rows = o.songs.map((x) => `<li class="song-row${x.found ? ' found' : ''}" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}${x.found ? ' <span class="song-found" title="Found on the farm"><span aria-hidden="true">✓</span><span class="sr-only"> found on the farm</span></span>' : ''}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>`).join('');
       open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
       dialog.querySelectorAll('.song-row').forEach((row) => { const x = o.songs.find((y) => y.id === row.dataset.id); wirePlay(row, { id: x.id, src: x.src, title: x.playTitle ?? x.title }); });
     },
@@ -107,22 +108,34 @@ export function createCards(dialog, { player = null } = {}) {
     },
     // a picture and a link that saves it ({ title, text, src, alt, download, save, onClose }).
     // v0.22 "The drawing": Vanessa's own drawing, to download
+    // v0.23 (audit 12, the postcard): `stats` ([[label, value]]) is a strip of this farm's numbers
+    // under the picture (`statsText` reads it out), and `share` a button that hands the picture
+    // with that strip to `onShare(img, say)`: `say` puts a word under the buttons.
     picture(o) {
-      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}"></figure><div class="actions"><a class="button primary" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
+      const strip = o.stats?.length ? `<dl class="stats-strip" aria-label="${esc(o.statsText ?? '')}">${o.stats.map(([k, v]) => `<div><dd>${esc(v)}</dd><dt>${esc(k)}</dt></div>`).join('')}</dl>` : '';
+      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}"></figure>${strip}<div class="actions">${o.share ? `<button type="button" class="primary" data-act="share"><span aria-hidden="true">↗</span> ${esc(o.share)}</button>` : ''}<a class="button${o.share ? '' : ' primary'}" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div><p class="small share-said" role="status"></p>`, {
+        '[data-act="share"]': async (b) => {
+          const img = dialog.querySelector('figure img');
+          const said = dialog.querySelector('.share-said');
+          b.disabled = true;
+          try { await o.onShare?.(img, (t) => { said.textContent = t; }); } catch { said.textContent = 'That did not work here. Download the drawing instead.'; }
+          b.disabled = false;
+        },
+      }, o.onClose);
     },
-    // v0.22 the credits, as a quiet card of lines: { title, lines: [{ what, who }], onClose }
-    credits(o) {
-      const rows = o.lines.map((l) => `<div class="credit"><dt>${esc(l.what)}</dt><dd>${esc(l.who)}</dd></div>`).join('');
-      open(`<h2 id="card-title">${esc(o.title)}</h2><dl class="credits-list">${rows}</dl><div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
-    },
+    // (v0.23, Tiffany: "Get rid of the credits tab": the Credits card of v0.22 is gone)
     close(v = 'close') { if (dialog.open) dialog.close(v); },
 
     // generic message / confirmation
-    message({ title, text, confirm, cancel = 'Close', onConfirm, onClose: closeCb }) {
+    // (v0.23, audit 14: `extra` is a second way to go on, with a line that says what it is: the
+    // new farm's "as a race")
+    message({ title, text, confirm, cancel = 'Close', onConfirm, onClose: closeCb, extra = null, extraNote = '', onExtra = null }) {
       open(`<h2 id="card-title">${esc(title)}</h2><p>${esc(text)}</p><div class="actions">
         ${confirm ? `<button type="button" class="primary" data-act="ok">${esc(confirm)}</button>` : ''}
-        <button type="button" data-close ${confirm ? 'autofocus' : 'autofocus'}>${esc(cancel)}</button></div>`, {
+        ${extra ? `<button type="button" data-act="extra">${esc(extra)}</button>` : ''}
+        <button type="button" data-close ${confirm ? 'autofocus' : 'autofocus'}>${esc(cancel)}</button></div>${extra && extraNote ? `<p class="small">${esc(extraNote)}</p>` : ''}`, {
         '[data-act="ok"]': () => { dialog.close('ok'); onConfirm?.(); },
+        '[data-act="extra"]': () => { dialog.close('extra'); onExtra?.(); },
       }, closeCb);
     },
   };
