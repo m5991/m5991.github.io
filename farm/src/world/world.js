@@ -2123,7 +2123,8 @@ export class World {
   // where his speech bubble goes (above his head)
   archerHead(out = new THREE.Vector3(), id = 'A1') {
     const a = this.archers?.[id] ?? this.archer;
-    return out.copy(a.root.position).setY(a.height + 0.35);
+    // (v0.27: on the bench he sits lower by what his seat takes off his height: his bubble's tail ends at his head there too)
+    return out.copy(a.root.position).setY((a.mode === 'seated' ? a.root.position.y : 0) + a.height + 0.35);
   }
   // v0.17: he turns to the bird and draws for `ms`
   archerDraw(id, at, ms) {

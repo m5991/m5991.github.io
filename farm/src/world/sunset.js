@@ -28,25 +28,27 @@ export class Sunset {
     this.active = true;
     this.held = false; // a check's hold (seek) never outlives its run
     this.t = 0;
+    this.endedAt = null; // v0.27: the scene's time when it ended (a skip: when it was skipped)
     this.reduced = this.reducedMotion();
     const w = this.world; const h = this.hero;
     // Dwight is on the bench (he walks there after the finale; here he simply is there)
     w.archerToBench('A1', { instant: true });
-    this.front = w.stations.G2.pos.clone().setY(0); // the bench's front, where she turns to sit
     this.seat = w.benchSeat(); // its free end
     this.benchYaw = w.objects.D10.rotation.y;
+    // v0.27: her spot in front of that seat, where her feet stay while she sits down (hero.js
+    // sitSpot; v0.25 walked her to the bench's front and slid her from there into the seat)
+    this.front = h.sitSpot(this.seat, this.benchYaw);
     const from = h.position.clone();
     this.walk = planWalk(from, this.front, obstaclesOf(w, h), 48, Infinity); // from wherever she is: no jump
     // her way takes its length at a walk, inside the scene's time for it
     const room = SUNSET.walk[1] - SUNSET.walk[0];
     this.walkMs = Math.max(600, Math.min(room, (this.walk.len / WALK_SPEED) * 1000));
     this.seated = false;
-    this.sitFrom = null;
     w.resetFade(); // the tree is opaque: nothing is to be seen through it
     w.hideMarkers(); // no guide circle, and no ring round what she stood beside
     if (w.marker) w.marker.obj.visible = false;
     h.halt();
-    h.cancelMoment();
+    h.cancelMoment({ hard: true });
     this.shotK = this.reduced ? 1 : 0;
     this.rig.frameRect = this.frame;
     this.rig.frameK = 0;
@@ -104,21 +106,21 @@ export class Sunset {
       h.anim.update(dtMs / 1000);
       return;
     }
-    // at the bench: she turns the way it faces and sits down at its free end
-    if (!this.sitFrom) this.sitFrom = this.reduced ? this.front.clone() : h.position.clone().setY(0);
+    // on her spot in front of the bench: she turns the way it faces and sits down at its free
+    // end, her feet staying where they are (v0.27: hero.js poseSit)
     h.anim.play('idle', 0.3);
     h.anim.update(dtMs / 1000);
-    const d = Math.atan2(Math.sin(this.benchYaw - h.yaw), Math.cos(this.benchYaw - h.yaw));
-    h.yaw += d * (this.reduced ? 1 : 1 - Math.exp(-dtMs / 140));
-    h.yawTarget = h.yaw;
-    h.view.rotation.y = h.yaw;
     const s = st.sit;
-    const seat = this.seat.clone(); seat.y -= 0.86; // her hips on the seat (hero.js bench moment)
-    h.position.copy(this.sitFrom).lerp(seat, s);
-    h.body.position.x = h.position.x; h.body.position.z = h.position.z;
-    for (const side of ['L', 'R']) { h.poseBone(`Hip_${side}`, -1.42 * s); h.poseBone(`Knee_${side}`, 1.48 * s); }
-    h.poseBone('Spine1_M', 0.12 * s);
-    h.momentSmile = s;
+    if (s > 0 || this.reduced) h.poseSit(this.seat, this.benchYaw, s);
+    else {
+      const d = Math.atan2(Math.sin(this.benchYaw - h.yaw), Math.cos(this.benchYaw - h.yaw));
+      h.yaw += d * (1 - Math.exp(-dtMs / 140));
+      h.yawTarget = h.yaw;
+      h.view.rotation.y = h.yaw;
+      h.view.position.set(this.front.x, 0, this.front.z);
+      h.momentSmile = 0;
+    }
+    h.body.position.x = this.front.x; h.body.position.z = this.front.z;
     h.updateFace(dtMs, false);
     this.seated = s >= 1;
   }
@@ -134,23 +136,26 @@ export class Sunset {
   // Skip (button or Escape): straight to the end of it
   skip() {
     if (!this.active) return;
+    this.endedAt = this.t;
     this.t = SUNSET.total;
     this.state = SUNSET_END;
     this.onState(SUNSET_END);
     this.end();
   }
 
-  // she gets up again beside the bench, the evening stays (main.js)
+  // The scene ends with her seated (a skipped one too: Skip lands on its last frame), and she
+  // gets up from there as the farm goes on: an animated stand-up onto her spot in front of the
+  // bench (hero.js standUp), the evening stays (main.js). (v0.25 put her on her feet at once; the
+  // captain: "she sits and then teleports to not being sitted".)
   end() {
     if (!this.active) return;
     this.active = false;
     const h = this.hero;
     h.restorePose();
-    h.momentSmile = 0;
     h.stack.root.scale.setScalar(1);
-    h.place(this.front.x, this.front.z);
-    h.yaw = this.benchYaw; h.yawTarget = this.benchYaw; h.view.rotation.y = this.benchYaw;
+    h.standUp(this.seat, this.benchYaw);
     this.shotK = 1; // (the framing holds while the camera eases back to her)
+    this.endedAt ??= this.t;
     this.onEnd();
   }
 }

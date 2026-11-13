@@ -365,6 +365,8 @@ ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height
 #speech[hidden] { display: none; }
 #speech::after { content: ""; pointer-events: none; position: absolute; left: var(--tail, 50%); bottom: -11px; width: 16px; height: 16px; background: var(--paper); border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateX(-50%) rotate(45deg); }
 #speech .who { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.75; }
+/* v0.27: the part of a line he says in much smaller letters ("your Assistant (of the) General Manager") */
+#speech .aside { font-size: 0.56em; letter-spacing: 0.01em; }
 @media (prefers-reduced-motion: reduce) { #speech { animation: note-fade 0.15s linear; } }
 
 /* v0.17c the finished farm's evening: a golden-to-dusk wash over the world (under the HUD) */

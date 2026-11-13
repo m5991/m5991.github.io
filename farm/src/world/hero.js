@@ -19,10 +19,16 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
-import { actionPose, finalePose, stepUpHeight, toolPose } from './moments.js';
+import { actionPose, finalePose, SIT, sitPose, stepUpHeight, toolPose } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
+const tmpSit = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const tmpE = new THREE.Euler();
+// the bones a seat sets outright, from the model's rest pose: her pelvis and her legs
+const SEAT_BONES = ['Root_M', 'Hip_L', 'Knee_L', 'Ankle_L', 'Toes_L', 'Hip_R', 'Knee_R', 'Ankle_R', 'Toes_R'];
+const SEAT_LEGS = /^(Hip|Knee|Ankle)_[LR]$/;
 export { RUN_SPEED }; // m/s, mover.js
 
 export class Hero {
@@ -32,6 +38,10 @@ export class Hero {
     this.world = world;
     this.view = registry.instance('Vanessa');
     this.view.name = 'D17_Vanessa';
+    // v0.27: her legs as the model has them at rest, straight (her idle stance bends them a
+    // little): the seat is worked out from these (poseSit)
+    this.rest = new Map();
+    for (const name of SEAT_BONES) { const b = this.view.getObjectByName(name); if (b) this.rest.set(name, { q: b.quaternion.clone(), p: b.position.clone() }); }
     // the face is drawn lines already (eyes, brows, mouth): it gets no ink hull
     this.view.traverse((m) => { if (m.isMesh && m.morphTargetDictionary?.blink !== undefined) m.userData.noOutline = true; });
     addOutline(this.view, 0.012);
@@ -84,7 +94,7 @@ export class Hero {
   get position() { return this.view.position; }
 
   place(x, z) {
-    this.cancelMoment(); this.groundY = 0; this.stepTarget = 0; this.stepMs = 500;
+    this.cancelMoment({ hard: true }); this.groundY = 0; this.stepTarget = 0; this.stepMs = 500;
     this.body.position.set(x, HERO_RADIUS, z);
     this.view.position.set(x, 0, z);
     this.halt();
@@ -110,6 +120,8 @@ export class Hero {
   // mover step (before the physics step)
   preStep(dtMs) {
     this.moving = this.input.lengthSq() > 1e-6;
+    // v0.27: she is getting up from a seat: she walks once she is on her feet (a pushed stick hurries her)
+    if (this.rise) { this.mover.speed = 0; this.body.velocity.set(0, 0, 0); if (this.moving) this.rise.ms = Math.min(this.rise.ms, SIT.quickMs); return; }
     const v = stepMover(this.mover, this.input, dtMs / 1000, this.speed);
     this.body.velocity.x = v.x;
     this.body.velocity.z = v.z;
@@ -125,6 +137,7 @@ export class Hero {
     const p = this.body.position;
     const recovered = this.world.clampToBounds(p);
     if (recovered) { this.mover.speed = 0; this.body.velocity.set(0, 0, 0); }
+    if (this.rise) { this.updateRise(dtMs, working); return; } // v0.27: getting up from a seat
     this.view.position.x += (p.x - this.view.position.x) * 0.5;
     this.view.position.z += (p.z - this.view.position.z) * 0.5;
     const height = this.world.bedHeight?.(new THREE.Vector3(p.x, 0, p.z)) ?? 0;
@@ -145,7 +158,8 @@ export class Hero {
     if (this.celebrateMs > 0) this.celebrateMs = g.kind === 'still' && !working ? this.celebrateMs - dtMs : 0;
     const toolWork = g.kind === 'still' && working && tool ? toolPose(tool, stroke, this.reducedMotion()) : null;
     // (with a tool she stands in her idle stance and the work's own pose is laid over it)
-    const action = g.kind === 'still' ? (toolWork ? 'idle' : working ? 'gather' : this.celebrateMs > 0 ? 'celebrate' : 'idle') : g.kind;
+    // (v0.27: on her way to her spot in front of a seat she walks: `momentGait`)
+    const action = g.kind === 'still' ? (this.momentGait ?? (toolWork ? 'idle' : working ? 'gather' : this.celebrateMs > 0 ? 'celebrate' : 'idle')) : g.kind;
     const swap = (prev === 'walk' && g.kind === 'run') || (prev === 'run' && g.kind === 'walk');
     this.anim.play(action, swap ? 0.2 : 0.15, g.rate, swap ? this.anim.phase() : null);
     this.anim.update(dtMs / 1000);
@@ -168,8 +182,18 @@ export class Hero {
   }
 
   restorePose() {
-    for (const [bone, q] of this.poseSaved ?? []) bone.quaternion.copy(q);
+    for (const [bone, q, p] of this.poseSaved ?? []) { bone.quaternion.copy(q); if (p) bone.position.copy(p); }
     this.poseSaved = [];
+  }
+  // v0.27: a bone taken w of the way (0..1) from where her clip has it to the model's rest pose
+  // turned by (x, y, z): at w 1 the angle is exact, whatever her stance was
+  poseBoneTo(name, w, x = 0, y = 0, z = 0) {
+    const bone = this.view.getObjectByName(name);
+    const rest = this.rest.get(name);
+    if (!bone || !rest) return;
+    this.poseSaved.push([bone, bone.quaternion.clone(), bone.position.clone()]);
+    bone.quaternion.slerp(tmpQ.copy(rest.q).multiply(new THREE.Quaternion().setFromEuler(tmpE.set(x, y, z))), w);
+    bone.position.lerp(rest.p, w);
   }
   poseBone(name, x, y = 0, z = 0) {
     const bone = this.view.getObjectByName(name);
@@ -190,13 +214,67 @@ export class Hero {
       this.view.getObjectByName('Hand_R_Tool')?.add(this.cloth);
     }
   }
-  cancelMoment() {
+  // (v0.27: a moment that is called off while she sits has her stand up, hero.standUp; `hard`:
+  // a teleport or a scene's own pose takes her as she is, standing)
+  cancelMoment({ hard = false } = {}) {
+    const m = this.moment;
     this.moment = null;
+    this.momentGait = null;
     this.momentSmile = 0;
     if (this.cloth) this.cloth.visible = false;
     for (const p of Object.values(this.props ?? {})) p.visible = false;
     this.view.rotation.z = 0;
     this.restorePose();
+    if (hard) { this.rise = null; return; }
+    if (m?.kind === 'bench' && m.seat && m.sat > 0) this.standUp(m.seat, m.yaw ?? this.yaw, { from: m.sat, ms: SIT.quickMs });
+  }
+  // ---------- v0.27: sitting down and standing up (moments.js sitPose) ----------
+  // where her feet stand for a seat (the seat's top, in the world) that faces `yaw`: on the
+  // ground in front of its middle
+  sitSpot(seat, yaw, out = new THREE.Vector3()) {
+    return out.set(seat.x + Math.sin(yaw) * SIT.feet, 0, seat.z + Math.cos(yaw) * SIT.feet);
+  }
+  // her body and her legs at k of the way from standing on that spot (0) to seated (1); her feet
+  // stay on the spot. Laid over her idle stance (the caller has restored the last pose).
+  poseSit(seat, yaw, k) {
+    const q = sitPose(k, seat.y);
+    const feet = this.sitSpot(seat, yaw, tmpSit);
+    this.view.position.set(feet.x - Math.sin(yaw) * q.back, -q.drop, feet.z - Math.cos(yaw) * q.back);
+    this.yaw = yaw; this.yawTarget = yaw; this.view.rotation.y = yaw;
+    // her pelvis and her legs leave her idle stance for the worked-out pose over the first part
+    // of the way down (and come back to it over the last part of the way up)
+    const w = Math.max(0, Math.min(1, k / SIT.settle));
+    const exact = w * w * (3 - 2 * w);
+    for (const name of SEAT_BONES) if (!SEAT_LEGS.test(name)) this.poseBoneTo(name, exact);
+    for (const [name, angles] of Object.entries(q.bones)) { if (SEAT_LEGS.test(name)) this.poseBoneTo(name, exact, ...angles); else this.poseBone(name, ...angles); }
+    this.momentSmile = q.smile;
+    return q;
+  }
+  // She gets up: from k `from` of the seat (1: seated) onto her feet, on her spot in front of it,
+  // in `ms` for the whole way. Play moves it on (update); until she stands she does not walk.
+  standUp(seat, yaw, { from = 1, ms = SIT.upMs } = {}) {
+    const feet = this.sitSpot(seat, yaw);
+    this.moment = null; this.momentGait = null;
+    this.groundY = 0; this.stepTarget = 0; this.stepMs = 500;
+    this.body.position.set(feet.x, HERO_RADIUS, feet.z);
+    this.halt();
+    this.rise = { seat: seat.clone(), yaw, k: Math.max(0, Math.min(1, from)), ms };
+    this.restorePose();
+    this.poseSit(seat, yaw, this.rise.k);
+  }
+  // per step while she gets up (the last pose is restored already)
+  updateRise(dtMs, working) {
+    const r = this.rise;
+    r.k = Math.max(0, r.k - dtMs / r.ms);
+    this.gait = 'still';
+    this.anim.play('idle', 0.2);
+    this.anim.update(dtMs / 1000);
+    this.stepPhase = null;
+    this.stack.update(dtMs, { vx: 0, vz: 0, yaw: this.yaw, reducedMotion: this.reducedMotion() });
+    this.poseSit(r.seat, r.yaw, r.k);
+    this.updateFace(dtMs, working);
+    this.toolStroke = null;
+    if (r.k <= 0) { this.rise = null; this.momentSmile = 0; this.view.position.y = 0; }
   }
   // What she holds in a moment: the sheet with her drawing on it (held up over her head, or as
   // the pad she sketches on) and the crumpled sketch she picks up. Made on first use.
@@ -225,14 +303,33 @@ export class Hero {
     if (this.moving) { this.cancelMoment(); return; }
     m.t = Math.min(m.ms, m.t + dtMs);
     const still = this.reducedMotion();
-    const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5, up: m.up, down: m.down });
+    const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5, up: m.up, down: m.down, seatY: m.seat?.y });
+    if (m.kind === 'bench' && m.seat) {
+      // v0.27: she steps to her spot in front of the seat, turning to face the way it does; then
+      // her feet stay there while she sits down, rests and stands up again (moments.js sitPose)
+      const yaw = m.yaw ?? this.yaw;
+      m.feet ??= this.sitSpot(m.seat, yaw);
+      m.yaw0 ??= this.view.rotation.y;
+      m.sat = q.seat.sit;
+      if (q.seat.step < 1) {
+        this.position.set(m.from.x + (m.feet.x - m.from.x) * q.seat.step, this.groundY ?? 0, m.from.z + (m.feet.z - m.from.z) * q.seat.step);
+        const turn = Math.atan2(Math.sin(yaw - m.yaw0), Math.cos(yaw - m.yaw0));
+        this.yaw = m.yaw0 + turn * q.seat.step; this.yawTarget = this.yaw; this.view.rotation.y = this.yaw;
+        this.momentGait = 'walk';
+      } else {
+        this.momentGait = null;
+        this.poseSit(m.seat, yaw, q.seat.sit);
+      }
+      // (she is where she is seen, her body on her spot while she sits: when the act ends she stands there)
+      const on = q.seat.step < 1 ? this.position : m.feet;
+      this.body.position.x = on.x; this.body.position.z = on.z;
+      this.body.velocity.set(0, 0, 0);
+      if (m.t >= m.ms) { this.cancelMoment({ hard: true }); this.view.position.y = this.groundY ?? 0; }
+      return;
+    }
     for (const [name, angles] of Object.entries(q.bones)) this.poseBone(name, ...angles);
     this.momentSmile = q.smile;
-    if (m.kind === 'bench' && m.seat) {
-      const at = m.seat.clone(); at.y -= 0.86;
-      this.position.copy(m.from).lerp(at, q.blend);
-      this.view.rotation.y = m.yaw ?? this.yaw;
-    } else if ((m.kind === 'chimney' || m.kind === 'roof') && m.route) {
+    if ((m.kind === 'chimney' || m.kind === 'roof') && m.route) {
       const points = [m.from, ...m.route.slice(1)];
       const at = q.travel * (points.length - 1);
       const i = Math.min(points.length - 2, Math.floor(at));
@@ -307,7 +404,7 @@ export class Hero {
   // smile (it was the hands-on-hips clip, turned to one side).
   showFinalePose(on) {
     this.stack.root.visible = !on;
-    this.cancelMoment();
+    this.cancelMoment({ hard: true });
     this.anim.play('idle', 0);
     this.anim.update(1 / 60);
     this.restorePose();

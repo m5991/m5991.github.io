@@ -119,8 +119,8 @@ export const ritualOpen = (l, eggId) => { const g = ritualGate(eggId); return g 
 // ---------- P25-2: the colour finale, inside the approved 15 s ----------
 // times in ms from the start of the finale (the last build is already saved)
 // v0.25 (the captain's v0.24 playtest: "The animation when the house is finished feels off ...
-// it should be better thought"): the finale has two shots, composed for the screen it plays on
-// (world/framing.js FINALE_SHOTS), and what happens is where the camera is looking:
+// it should be better thought"): the finale had two shots, composed for the screen it played on
+// (v0.25's FINALE_SHOTS in world/framing.js), and what happened was where the camera was looking:
 //   1. `home`: the camera eases from play to the finished house, large, and holds on it while
 //      Vanessa, in front of it, cheers at what she has built;
 //   2. `travel`: she runs to her place in the drawing and the camera goes with her to the second
@@ -131,10 +131,15 @@ export const ritualOpen = (l, eggId) => { const g = ritualGate(eggId); return g 
 // (v0.9-v0.24: the camera eased to the whole drawing in the first 2 s, she ran to her place under
 // it, and everything was coloured in that one frame; v0.21 framed an upright screen's colour beats
 // on the drawing's middle between two bands of paper and then eased back to the whole.)
+// v0.27 (the captain's v0.25 playtest: "not what I was looking for / maybe we should simply show
+// the whole farm"): there is one shot, the whole farm, on every screen (world/framing.js
+// WHOLE_FARM). The camera eases out of play to it in `hide` and stays; what happens, and when, is
+// as v0.25 had it: she cheers at the house, runs to her place across the picture, turns to the
+// viewer, and the colour comes.
 export const FINALE = {
-  hide: [0, 2000], // HUD, mats, piles, crate, head stack, leftover rocks, blueprint and ring hide (V9); the camera eases to the first shot, the house
+  hide: [0, 2000], // HUD, mats, piles, crate, head stack, leftover rocks, blueprint and ring hide (V9); the camera eases out to the whole farm
   cheer: [300, 2000], // she cheers at the house she has finished, in front of it
-  travel: [2100, 4700], // she runs to D17 (from 2000: walk.js WALK) and the camera goes with her to the second shot
+  travel: [2100, 4700], // she runs to D17 (from 2000: walk.js WALK), across the picture
   settle: [4700, 5400], // Vanessa settles at D17, facing the viewer, hands in her pockets
   outlines: [5200, 6000], // anything still in outline takes its colour
   grass: [6000, 9500], // the ground animates into grass, spreading from her feet
@@ -155,20 +160,17 @@ export const FINALE_COLOURS = { grass: 0x86c754, grassStroke: 0x559a34, sky: 0x8
 
 const ramp = ([a, b], t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
 const smooth = (x) => x * x * (3 - 2 * x);
-// The finale's state at time t (ms). Every value is 0..1 and only rises. `shot` (v0.25) is the
-// camera's travel from the first shot to the second (framing.js finaleRect). Reduced motion goes
-// straight to the coloured composition in the second shot with a short fade (REDUCED_FADE_MS) and
-// then holds: no camera move.
-const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
+// The finale's state at time t (ms). Every value is 0..1 and only rises. `camera` is the weight of
+// the whole-farm framing over the play camera's. Reduced motion goes straight to the coloured
+// composition with a short fade (REDUCED_FADE_MS) and then holds: no camera move.
 export function finaleState(t, { reducedMotion = false } = {}) {
   if (reducedMotion) {
     const k = Math.max(0, Math.min(1, t / REDUCED_FADE_MS));
-    return { hide: 1, camera: 1, shot: 1, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
+    return { hide: 1, camera: 1, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
   }
   return {
     hide: smooth(ramp([0, 400], t)), // play elements shrink away in the first 0.4 s
     camera: smooth(ramp(FINALE.hide, t)),
-    shot: easeInOut(ramp(FINALE.travel, t)),
     settled: t >= FINALE.settle[0],
     outlines: ramp(FINALE.outlines, t),
     grass: ramp(FINALE.grass, t),

@@ -39,6 +39,7 @@ export const SUNSET = Object.freeze({
   walk: [400, 5200], // she walks to the bench (where Dwight sits)
   travel: [4300, 6900], // an upright screen: the camera goes back across to the bench's half
   sit: [6600, 7700], // she sits down at its free end
+  says: [7900, 14000], // v0.27: Dwight, beside her, says his line (data.js DWIGHT_THANKS) in his speech bubble, to the end
   sign: [8200, 10700], // "The Farm, complete" is pencilled in
   stamp: [10900, 11400], // the gold 100% comes onto the paper beside it
   hold: [11400, 14000],
@@ -53,13 +54,14 @@ const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 // The scene's state at time t (ms); every value is 0..1 and only rises:
 //   camera (the drawing framing's weight), shot (the camera's travel from the first shot to the
 //   bench's), evening (the light), fireflies, walk (her way to the bench), sit (sitting down),
-//   sign (how much of the signature is written), stamp, done.
+//   sign (how much of the signature is written), stamp, says (v0.27: 1 once Dwight is saying
+//   his line), done.
 // Reduced motion: no camera travel and no walk: the evening, the two of them seated, the signature
-// and the stamp come in one short fade on the bench's shot, and then it holds.
+// and the stamp come in one short fade on the bench's shot, his line with them, and then it holds.
 export function sunsetState(t, { reducedMotion = false } = {}) {
   if (reducedMotion) {
     const k = Math.max(0, Math.min(1, t / SUNSET_REDUCED_FADE_MS));
-    return { camera: 1, shot: 1, evening: k, fireflies: k, walk: 1, sit: 1, sign: k, stamp: k, done: t >= SUNSET.total };
+    return { camera: 1, shot: 1, evening: k, fireflies: k, walk: 1, sit: 1, sign: k, stamp: k, says: 1, done: t >= SUNSET.total };
   }
   return {
     camera: smooth(ramp(SUNSET.camera, t)),
@@ -70,11 +72,19 @@ export function sunsetState(t, { reducedMotion = false } = {}) {
     sit: smooth(ramp(SUNSET.sit, t)),
     sign: ramp(SUNSET.sign, t),
     stamp: smooth(ramp(SUNSET.stamp, t)),
+    says: t >= SUNSET.says[0] ? 1 : 0,
     done: t >= SUNSET.total,
   };
 }
 // Skip lands on the end state (the same as the last frame)
 export const SUNSET_END = Object.freeze(sunsetState(SUNSET.total));
+// v0.27: Dwight's line has to be up this long to have been read. A scene skipped before that (or
+// before he spoke) has him say it as she gets up, for SAYS_AFTER_MS, on the farm itself.
+export const SAYS_READ_MS = 3500;
+export const SAYS_AFTER_MS = 6500;
+// how long his line was up in a scene that ended at `endedAt` ms (a skipped one: when it was skipped)
+export const saidFor = (endedAt = SUNSET.total) => Math.max(0, Math.min(SUNSET.says[1], endedAt) - SUNSET.says[0]);
+export const saysAfter = (endedAt = SUNSET.total, { reducedMotion = false } = {}) => (reducedMotion ? endedAt : saidFor(endedAt)) < SAYS_READ_MS;
 
 // The evening light on the farm, 0 (day) .. 1 (golden evening):
 //   `cycle` is v0.17c's own evening, which comes and goes on the finished farm (game/evening.js);

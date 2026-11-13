@@ -8,6 +8,7 @@
 // eases back out and ends on the whole drawing, as before.
 // The framing is an exact crop of the drawing: the camera only narrows its lens (a zoom) and shifts
 // its image (projection.js frameViewport), so nothing in the composition moves against anything else.
+// (v0.25 and v0.27: the finale has a framing of its own, below; the opening's page keeps this one.)
 // Pure arithmetic: no three.js, no DOM.
 import { DRAWING_ASPECT, MARGIN } from './drawing.js';
 
@@ -60,39 +61,32 @@ export function drawingFrame(w, h, k = 1) {
 // the drawing's u (% across) at the left and right edges of the screen in a frame
 export const frameSpan = (w, frame) => ({ u0: ((0 - frame.rect.x) / frame.rect.w) * 100, u1: ((w - frame.rect.x) / frame.rect.w) * 100 });
 
-// ---------- v0.25: the finale's shots (the captain's v0.24 playtest) ----------
-// "The animation when the house is finished feels off. I know that is because of the landscape and
-// portrait mode and how out of focus, but I think that it should be better thought."
-// v0.21's upright framing showed the colour beats in a strip between two bands of paper, cut
-// through the tree on one side and the sun on the other, and then eased back to the whole drawing,
-// a third of the screen high in empty sky and grass. The drawing is wider than it is tall, and an
-// upright screen cannot show all of it large. But it falls into two halves that are each an
-// upright picture: on the left the house, the path, the tree and the bench, with the birds over
-// them; on the right the corn, the sun, the sunflowers, the raised bed, and Vanessa's place. So
-// the finale is shot for the screen it plays on, in two shots it travels between:
-//   an upright screen  - `home`, the left half, the finished house in its middle, filling the
-//     screen's width; then the camera goes with her, one screen to the right, to `hers`, the right
-//     half, where the grass spreads from her feet, the sky turns blue and the sun, large above the
-//     corn, turns yellow. It ends there. Nothing is cut in half and nothing is small: in both
-//     shots she and the house are about as large as in play.
-//   a wide screen      - `home` is a close shot of the house, whole, with her in front of it (the
-//     tree's crown and the first corn come in from the edges); then the camera eases out with her
-//     to `hers`, the whole drawing, tree to sun, which a wide screen shows large, for the grass,
-//     the sky and the sun.
-// A shot is a box of the drawing (u, v in % of its width and height; it may reach past the
-// drawing's own edges, where the tree's crown and the sun's rays go) fitted whole into the screen,
-// as large as it goes. Like every drawing framing it is an exact crop of the one composition (the
-// camera narrows its lens and shifts its image: projection.js frameViewport), so the two shots and
-// the travel between them are the drawing itself, seen closer. No paper bands: above and below the
-// drawing the world's own sky and ground go on. Pure arithmetic.
-export const FINALE_SHOTS = Object.freeze({
-  // (measured on the built farm: the tree's crown reaches u -10, the house ends at u 44.5, the
-  // corn begins at u 49 and the last sunflower ends at u 97; the two boxes are the same width)
-  upright: Object.freeze({ home: Object.freeze({ u0: -10.5, u1: 45, v0: 10, v1: 86 }), hers: Object.freeze({ u0: 45.5, u1: 101, v0: -2, v1: 90 }) }),
-  wide: Object.freeze({ home: Object.freeze({ u0: 10, u1: 58, v0: 12, v1: 60 }), hers: Object.freeze({ u0: -10, u1: 104, v0: -3, v1: 91 }) }),
-});
+// ---------- v0.27: the finale shows the whole farm (the captain's v0.25 playtest) ----------
+// v0.25 had split the drawing into two upright halves for an upright phone, so that nothing would
+// be small, and the camera travelled from the house's half to her half (a wide screen opened on a
+// close shot of the house). The captain, with a picture of the second half on his phone, the house
+// out of it: "not what I was looking for / maybe we should simply show the whole farm".
+// So the finale has one shot on every screen: the whole farm, the tree's crown to the sun's rays
+// and the top ray to the grass under the ring of stones, fitted whole into the screen and as large
+// as it goes (an upright screen: across its width; a wide one: up its height). The house, the
+// path, the tree and the bench, Vanessa, the bed, the corn, the sunflowers and the sun are in it
+// from the moment the camera has eased out of play until it eases back. Above and below the farm
+// an upright screen has the world's own sky and ground, where the sky turns blue and the grass
+// spreads.
+// It is an exact crop of the one drawing, as every drawing framing is (the camera narrows its lens
+// and shifts its image: projection.js frameViewport). A camera of its own for the upright screen
+// was measured on the built farm and left out: the farm's width, tree to sunflowers to sun, is
+// what fills an upright screen, and no other place for the camera makes it narrower. Higher up,
+// the ground takes more of the screen's height but everything standing on it is smaller (Vanessa
+// 44 px from the drawing's own place on a 390 px phone, 33 px from 10 m up); to one side, the tree
+// stands in front of the house. Pure arithmetic.
+// A box of the drawing: u, v in % of its width and height; it may reach past the drawing's own
+// edges, where the tree's crown and the sun's rays go. (Measured on the built farm: the crown
+// reaches u -10, the last sunflower u 97, the sun's rays at their longest u 105 and v -2, the
+// ring of stones v 85.6. test/v027-world.test.mjs holds every part inside it, and holds the box
+// to the farm: its sides are the crown and the rays.)
+export const WHOLE_FARM = Object.freeze({ u0: -10.5, u1: 105.5, v0: -2.5, v1: 90 });
 export const SHOT_PAD = 0.98; // a shot's box takes this share of the screen (or of its area) at most
-export const finaleShots = (w, h) => (isPortrait(w, h) ? FINALE_SHOTS.upright : FINALE_SHOTS.wide);
 // Where the whole drawing lands (CSS px; it may run off the screen) so that `box` is fitted whole
 // into `area` (default: the whole w x h screen), centred there. -> { x, y, w, h }
 export function shotRect(w, h, box, { pad = SHOT_PAD, area = null } = {}) {
@@ -105,10 +99,13 @@ export function shotRect(w, h, box, { pad = SHOT_PAD, area = null } = {}) {
   const vc = (box.v0 + box.v1) / 200;
   return { x: a.x + a.w / 2 - rw * uc, y: a.y + a.h / 2 - rh * vc, w: rw, h: rh };
 }
-// The drawing's frame at k of the camera's travel (0: `home`, 1: `hers`): the point of the drawing
-// at the screen's centre moves in a straight line and the zoom changes at a constant rate, so an
-// upright screen's travel is a level pan and a wide one's an even ease out. -> { x, y, w, h }
-export function finaleRect(w, h, k = 1, shots = finaleShots(w, h)) {
+// the finale's frame on a w x h screen: where the whole drawing lands so that the whole farm is on it
+export const finaleRect = (w, h) => shotRect(w, h, WHOLE_FARM);
+// The drawing's frame at k of a camera's travel between two shots (0: `home`, 1: `hers`; the
+// sunset below has such a travel): the point of the drawing at the screen's centre moves in a
+// straight line and the zoom changes at a constant rate, so a travel between two shots of one size
+// is a level pan. -> { x, y, w, h }
+export function travelRect(w, h, k, shots) {
   const a = shotRect(w, h, shots.home);
   const b = shotRect(w, h, shots.hers);
   const e = Math.max(0, Math.min(1, k));
@@ -124,28 +121,36 @@ export function finaleRect(w, h, k = 1, shots = finaleShots(w, h)) {
 }
 // the part of the drawing on screen in a frame: { u0, u1, v0, v1 } in % (tests, the report)
 export const rectSpan = (w, h, r) => ({ u0: ((0 - r.x) / r.w) * 100, u1: ((w - r.x) / r.w) * 100, v0: ((0 - r.y) / r.h) * 100, v1: ((h - r.y) / r.h) * 100 });
-// The end card ("The farm is finished", once, after the finale) no longer lies over the picture:
-// the whole drawing is framed in the part of the screen the card leaves free. An upright screen
-// has the picture above and the card below; a wide one the picture on the left and the card on
-// the right. -> { area: the picture's part of the screen, card: 'below' | 'right', rect: where the
-// whole drawing lands }
+// The end card ("The farm is finished", once, after the finale) does not lie over the picture
+// (v0.25): the whole farm is framed in the part of the screen the card leaves free. An upright
+// screen has the picture above and the card below; a wide one the picture on the left and the card
+// on the right. -> { area: the picture's part of the screen, card: 'below' | 'right', rect: where
+// the whole drawing lands }
 export const END_CARD = Object.freeze({ below: 0.44, right: 0.36 }); // the card's share of the height (upright) or the width (wide)
 export function endCardFrame(w, h) {
   const upright = w / h < 1;
   const area = upright ? { x: 0, y: 0, w, h: h * (1 - END_CARD.below) } : { x: 0, y: 0, w: w * (1 - END_CARD.right), h };
-  return { area, card: upright ? 'below' : 'right', rect: shotRect(w, h, FINALE_SHOTS.wide.hers, { area }) };
+  return { area, card: upright ? 'below' : 'right', rect: shotRect(w, h, WHOLE_FARM, { area }) };
+}
+// v0.27: the picture's way from the finale's frame to the end card's (k 0..1, eased by the
+// caller): its size and its place change evenly, so the farm slides up (or to the left) into the
+// room the card leaves, instead of jumping there. -> { x, y, w, h }
+export function mixRect(a, b, k) {
+  const e = Math.max(0, Math.min(1, k));
+  const m = (p, q) => p + (q - p) * e;
+  return { x: m(a.x, b.x), y: m(a.y, b.y), w: m(a.w, b.w), h: m(a.h, b.h) };
 }
 
 // ---------- v0.25: "Sunset on the bench" (game/sunset.js) ----------
-// The same two kinds of shot as the finale, the other way round: an upright screen starts on the
-// corn's half of the drawing, where the fireflies come up as the evening falls, and goes back
-// across to the bench's half, a little lower than the finale's first shot so the bench is near the
-// middle and there is grass under it for the signature; a wide screen has the bench, the corn and
-// the sun in one picture, the whole drawing, from start to end.
+// Two shots on an upright screen, which the camera travels between: it starts on the corn's half
+// of the drawing, where the fireflies come up as the evening falls, and goes back across to the
+// bench's half, framed so the bench is near the middle and there is grass under it for the
+// signature; a wide screen has the bench, the corn and the sun in one picture, the whole drawing,
+// from start to end. (v0.27 left this scene's framing as v0.25 made it: the boxes are v0.25's.)
 export const SUNSET_SHOTS = Object.freeze({
-  upright: Object.freeze({ home: FINALE_SHOTS.upright.hers, hers: Object.freeze({ u0: -10.5, u1: 45, v0: 22, v1: 100 }) }),
-  wide: Object.freeze({ home: FINALE_SHOTS.wide.hers, hers: FINALE_SHOTS.wide.hers }),
+  upright: Object.freeze({ home: Object.freeze({ u0: 45.5, u1: 101, v0: -2, v1: 90 }), hers: Object.freeze({ u0: -10.5, u1: 45, v0: 22, v1: 100 }) }),
+  wide: (() => { const whole = Object.freeze({ u0: -10, u1: 104, v0: -3, v1: 91 }); return Object.freeze({ home: whole, hers: whole }); })(),
 });
 export const sunsetShots = (w, h) => (isPortrait(w, h) ? SUNSET_SHOTS.upright : SUNSET_SHOTS.wide);
 // the drawing's frame at k of the camera's travel (0: the corn's shot, 1: the bench's)
-export const sunsetRect = (w, h, k = 1) => finaleRect(w, h, k, sunsetShots(w, h));
+export const sunsetRect = (w, h, k = 1) => travelRect(w, h, k, sunsetShots(w, h));

@@ -5,13 +5,14 @@
 // shows the real photo from the credits material (assets/credits/credits.json; v0.20: its
 // `keepsakes` list, since `gifts` became the slideshow's photos). Pure: no DOM.
 // Nothing is needed for anything; Extras → Keepsakes (and the HUD's counter) lists what is found.
+// (v0.27: but the last song, "I gave it to the world", waits for them: game/songs.js LAST_SONG.)
 // v0.22 (Tiffany: "Remove the dates on the keepsakes"; "they should just be icons that look like
 // the item in the photo"; the yellow circles are the songs' alone): a keepsake lies on the grass as
 // the thing itself, with no ring and no yellow glint, and its prints show no year. Three of them
 // moved a step, clear of the song spots (the CD, the novel, the Peep farmer).
 
 // id -> what it is, the credits prints it shows (gift ids), where it lies (drawing u, v), and the
-// hint once the songs are all found
+// hint once every song but the last is found (v0.27: the last one waits for the keepsakes)
 export const KEEPSAKES = {
   jello: { label: 'the jello', gifts: ['gift-03', 'gift-05'], u: 84, v: 63, hint: 'Something red and wobbly by the sunflowers.' },
   ornament: { label: 'the ornament', gifts: ['gift-30'], u: 20, v: 67.5, hint: 'Something hangs about under the tree.' },

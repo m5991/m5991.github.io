@@ -75,17 +75,21 @@
 // grow straight back; Pause has the sound switch and the two volumes.
 // v0.25 (the captain's v0.24 playtest, 2026-11-13): the finale is shot for the screen it plays on
 // (the house, then her place, each filling an upright screen; a closer start and the whole drawing
-// on a wide one: world/framing.js finaleShots); the opening cannot be skipped and a new farm plays
+// on a wide one; v0.27: the whole farm, on every screen); the opening cannot be skipped and a new farm plays
 // it; a welcome card opens every new farm; the weeds of the later corn and sunflower plots can be
 // raked from the start; she carries one table's worth of crops and the rest goes into the crate
 // beside the tables, which fill from it; with every song and keepsake found the day turns to a
 // lasting golden evening on the bench (game/sunset.js) and The drawing is signed and stamped.
+// v0.27 (the captain's v0.25 playtest, 2026-11-13: "maybe we should simply show the whole farm"):
+// the finale is one shot on every screen, the whole farm (world/framing.js WHOLE_FARM), and the
+// picture slides into the room the end card leaves; on the bench in the sunset Dwight says his
+// line, "(of the)" in much smaller letters (game/data.js DWIGHT_THANKS).
 import * as THREE from 'three';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HEAD_CROPS, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, DWIGHT_THANKS, dwightLine, HAMMERED, HEAD_CROPS, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, lineText, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
   apply, autoTxs, available, canTake, crateCount, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, restockReady, saleReady, saleWish,
   tableCap, tables, toolIdle,
@@ -101,7 +105,7 @@ import { createRace, fmtRace, raceClock } from './game/race.js';
 import { drawPostcard, postcardStats, sharePostcard, statsItems, statsLine } from './ui/postcard.js';
 import { createDiyHint } from './game/hints.js';
 import { PATCH_NAME, PLACE_LABEL, SHORT_LABEL, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
-import { eggPhase, found, foundCount, foundSongs, huntGoal, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink, visibleSpots } from './game/songs.js';
+import { eggPhase, found, foundCount, foundSongs, huntGoal, lastSongTurn, lastSongWaits, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink, visibleSpots } from './game/songs.js';
 import { createNotes, onePill, quietCoach } from './ui/voices.js';
 import { Hammering } from './world/build.js';
 import { wishWords } from './world/world.js';
@@ -111,7 +115,7 @@ import * as G from './world/greybox.js';
 import { createPrefs } from './game/prefs.js';
 import { Finale, FINALE_YAW } from './world/finale.js';
 import { Sunset } from './world/sunset.js';
-import { eveningLight, everythingFound, SIGNATURE, STAMP, SUNSET_AFTER_MS, sunsetDue } from './game/sunset.js';
+import { eveningLight, everythingFound, SAYS_AFTER_MS, saysAfter, SIGNATURE, STAMP, SUNSET_AFTER_MS, sunsetDue } from './game/sunset.js';
 import { Opening } from './world/opening.js';
 import { freshFarm, playsOpening, saveNotice, WELCOME, welcomeDue } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
@@ -122,7 +126,7 @@ import {
 import { nextGoal } from './game/guide.js';
 import { coachPrompt, dropLesson, guideTargets, kindOf, learned, LINGER_MS, MOVED_M, routineGather, tutorialStep } from './game/tutorial.js';
 import { fitRect, PRESETS, Projection, projectedExtent } from './world/projection.js';
-import { endCardFrame } from './world/framing.js';
+import { endCardFrame, finaleRect, mixRect } from './world/framing.js';
 import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
 import { CameraRig } from './world/camera.js';
@@ -263,9 +267,13 @@ async function boot() {
   const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !sunset.active && !finaleDue && !opening.active && rig.mode !== 'whole';
   // v0.25: every song and every keepsake is found (every action with them: a song is found by its action)
   const allFound = () => everythingFound(data, songsFor(), KEEPSAKE_IDS);
+  // v0.27: the circles out now. The last song's ("I gave it to the world") comes out when every
+  // other song and every keepsake is found (songs.js LAST_SONG), so it is always the last find.
+  const keepsakesDone = () => keepsakesLeft(data.keepsakes ?? {}).length === 0;
+  const spotsNow = () => visibleSpots(data.discoveries, undefined, { othersFound: keepsakesDone() });
   function spotHere(heroXZ) {
     // (v0.23: only the few spots on show have their action)
-    for (const id of visibleSpots(data.discoveries)) {
+    for (const id of spotsNow()) {
       world.eggSpotPos(id, tmpH);
       if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= world.spotReach(id)) return id;
     }
@@ -277,7 +285,7 @@ async function boot() {
     // v0.23 (Tiffany: "have just a few at a time ... replacing each other as she collects them"):
     // the first few spots that still hold a song, each with its red circle (the action); the
     // song itself, the egg on the grass, lies in a yellow one
-    const showing = visibleSpots(data.discoveries);
+    const showing = spotsNow();
     world.updateSpotProps(showing, true); // the weeds and the crumpled sketch lie at their spots
     const waiting = hunt.busy || hunt.egg || hunt.moment;
     world.updateEggSpots(waiting ? [] : showing, dt);
@@ -352,7 +360,7 @@ async function boot() {
       title: `Keepsakes · ${found.length} of ${KEEPSAKE_IDS.length}`,
       text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes lie about the finished farm, a couple at a time. Each one you find is kept here.',
       prints: found.flatMap((id) => keepsakePrints(id, c)),
-      left: left.length && foundCount(data.discoveries) >= songsFor().length ? `Hints: ${left.map((id) => KEEPSAKES[id].hint).join(' ')}` : left.length ? `${left.length} still hidden.` : '',
+      left: left.length && lastSongTurn(data.discoveries) ? `Hints: ${left.map((id) => KEEPSAKES[id].hint).join(' ')}` : left.length ? `${left.length} still hidden.` : '',
       cancel: 'Close',
       ...(fromPlay ? { onClose: () => loop.resume('card') } : {}),
     });
@@ -531,14 +539,24 @@ async function boot() {
   }
 
   // ---------- v0.16: what the archer says when he is hired ----------
-  const speech = { el: $('speech'), until: 0, id: 'A1' };
-  function archerSays(line, ms = 7000, id = 'A1') {
+  // (v0.27: a line may have parts said in much smaller letters, data.js DWIGHT_THANKS; `scene`: the
+  // sunset's own line, the only one shown while that scene plays)
+  const speech = { el: $('speech'), until: 0, id: 'A1', scene: false };
+  function archerSays(line, ms = 7000, id = 'A1', { scene = false } = {}) {
     speech.id = id;
+    speech.scene = scene;
     speech.el.querySelector('.who').textContent = 'Archer';
-    speech.el.querySelector('.text').textContent = `“${line}”`;
+    const parts = (typeof line === 'string' ? [line] : line).map((p) => {
+      if (typeof p === 'string') return p;
+      const small = document.createElement('span');
+      small.className = 'aside';
+      small.textContent = p.small;
+      return small;
+    });
+    speech.el.querySelector('.text').replaceChildren('“', ...parts, '”');
     speech.el.hidden = false;
     speech.until = performance.now() + ms;
-    hud.announce(`The archer: ${line}`);
+    hud.announce(`The archer: ${lineText(line)}`);
   }
   // v0.23 (Tiffany: "If Dwight has a speech bubble don't let it block the birds, and make it have
   // the pointy part pointing towards him"): the bubble stands beside his head with a pointed tail
@@ -547,7 +565,7 @@ async function boot() {
   const toScreen = (v) => ({ x: ((v.x + 1) / 2) * view.w, y: ((1 - v.y) / 2) * view.h, front: v.z < 1 });
   function placeSpeech() {
     if (speech.el.hidden) return;
-    if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active || sunset.active) { speech.el.hidden = true; return; }
+    if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active || (sunset.active && !speech.scene)) { speech.el.hidden = true; return; }
     const head = toScreen(world.archerHead(tmpP, speech.id).project(rig.camera));
     const avoid = [];
     const flock = world.objects.D21;
@@ -557,7 +575,9 @@ async function boot() {
     // (nor Vanessa herself)
     { const v = toScreen(tmpP.copy(hero.position).setY(hero.position.y + 1).project(rig.camera)); if (v.front) avoid.push({ x: v.x, y: v.y, r: 44 }); }
     const w = speech.el.offsetWidth || 260; const h = speech.el.offsetHeight || 70;
-    const at = bubblePlace(head, { w, h }, { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop || view.h }, avoid);
+    // (in the sunset there is no HUD: the bubble has the screen down to the signature's line)
+    const area = sunset.active ? { left: 0, right: view.w, top: 0, bottom: signTop() } : { left: 0, right: view.w, top: live.playTop || live.hudBottom, bottom: live.ctlTop || view.h };
+    const at = bubblePlace(head, { w, h }, area, avoid);
     speech.el.style.transform = `translate(${at.left.toFixed(1)}px, ${at.top.toFixed(1)}px)`;
     speech.el.dataset.tail = at.side;
     speech.el.style.setProperty('--tail', `${at.tail.toFixed(0)}px`);
@@ -1195,7 +1215,8 @@ async function boot() {
       if (sunsetWait >= SUNSET_AFTER_MS) { sunsetWait = 0; sunset.start(); }
     } else sunsetWait = 0;
     // v0.17c: with every song found, the goal line counts the keepsakes and gives the next hint
-    const allSongs = foundCount(data.discoveries) >= songsFor().length;
+    // (v0.27: with only the last song left, which waits for the keepsakes, the line is the keepsakes')
+    const allSongs = foundCount(data.discoveries) >= songsFor().length || lastSongWaits(data.discoveries, keepsakesDone());
     const nextKeep = keepsakesLeft(data.keepsakes ?? {})[0];
     // v0.21 (audit 5): one line, icon-first; in the hunt the counter row is the songs found of all
     // (and the keepsakes, once one is found), so the line does not count them again
@@ -1205,9 +1226,9 @@ async function boot() {
     if (goalBeat) { goalBeat.ms -= dt; if (goalBeat.ms <= 0) goalBeat = goalBeat.then ?? null; }
     hud.setRace(data.session.race ? fmtRace(raceClock(data.ledger, data.session)) : null, mainComplete(data.ledger));
     hud.setGoal(goalBeat ? goalBeat.goal : !hunting ? goal
-      : allSongs && nextKeep ? { text: `${keepsakeLine(data.keepsakes)}. ${KEEPSAKES[nextKeep].hint}`, line: { icon: 'gift', label: KEEPSAKES[nextKeep].hint, wrap: true } }
+      : allSongs && nextKeep ? { text: `${keepsakeLine(data.keepsakes)}. ${KEEPSAKES[nextKeep].hint}${foundCount(data.discoveries) < songsFor().length ? ' The last song comes when every keepsake is found.' : ''}`, line: { icon: 'gift', label: KEEPSAKES[nextKeep].hint, wrap: true } }
         : allSongs ? { text: `Every song and every keepsake found.`, line: { icon: 'check', label: 'Everything found' } }
-          : huntGoal({ discoveries: data.discoveries, egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : hunt.moment ? 'moment' : null }));
+          : huntGoal({ discoveries: data.discoveries, othersFound: keepsakesDone(), egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : hunt.moment ? 'moment' : null }));
     // one pill: the coach's "how" while it teaches, else the status (ui/voices.js)
     const pill = onePill(coachState?.prompt ?? null, statusWant);
     if (coachState) coachState.prompt = pill.coach;
@@ -1226,7 +1247,7 @@ async function boot() {
     if (!inHunt()) return false;
     if (hunt.egg && near(hunt.egg.position)) return true;
     if (hunt.busy || hunt.egg || hunt.moment) return false;
-    return visibleSpots(data.discoveries).some((sp) => near(world.eggSpotPos(sp, tmpS)));
+    return spotsNow().some((sp) => near(world.eggSpotPos(sp, tmpS)));
   }
   let statusWant = null; // what the status pill would say (updateContext)
 
@@ -1608,7 +1629,7 @@ async function boot() {
   const finale = new Finale({
     world, hero, rig,
     at: () => proj.groundAt(VANESSA_START.u, VANESSA_START.v), // D17
-    house: () => world.objects.D01.position, // v0.25: she cheers at it in the first shot
+    house: () => world.objects.D01.position, // v0.25: she cheers at it before she sets off
     reducedMotion,
     onStart: () => {
       ix.reset();
@@ -1660,6 +1681,15 @@ async function boot() {
     signEl.style.setProperty('--sign', st.sign.toFixed(3));
     signEl.style.setProperty('--stamp', st.stamp.toFixed(3));
   }
+  // where the signature's line begins on screen, top (px), whether it is written yet or not
+  const signTop = () => {
+    if (!signEl.hidden) return signEl.getBoundingClientRect().top;
+    return $('btn-skip').hidden ? view.h : $('btn-skip').getBoundingClientRect().top - 72;
+  };
+  // v0.27 (the captain: "when all completed and in the bench Dwight can say something like this
+  // wouldn't be possible without the help of your Assistant (of the) General Manager"): once she
+  // has sat down beside him he says it, in his speech bubble, and it stays to the end of the scene
+  const sunsetSays = (st) => { if (st.says > 0 && !speech.scene) archerSays(DWIGHT_THANKS, Infinity, 'A1', { scene: true }); };
   const sunset = new Sunset({
     world, hero, rig, reducedMotion,
     onStart: () => {
@@ -1674,8 +1704,13 @@ async function boot() {
       burst.hide();
       hud.announce('Everything is found. The day turns to a golden evening, and Vanessa sits down on the bench beside Dwight.');
     },
-    onState: (st) => showSign(st),
+    onState: (st) => { showSign(st); if (sunset.active) sunsetSays(st); },
     onEnd: () => {
+      // his line goes with the scene; one that was skipped before it could be read he says now,
+      // as she gets up beside him
+      speech.scene = false;
+      speech.el.hidden = true;
+      if (saysAfter(sunset.endedAt, { reducedMotion: sunset.reduced }) && world.archerSeated('A1')) archerSays(DWIGHT_THANKS, SAYS_AFTER_MS);
       document.body.classList.remove('finale', 'sunset');
       $('btn-skip').hidden = true;
       world.showHeldTool(true);
@@ -1690,21 +1725,30 @@ async function boot() {
       menuButton().focus({ preventScroll: true });
     },
   });
-  // (v0.21's paper bands above and below an upright screen's framing are gone: v0.25's finale
-  // shots fill the screen, world/framing.js)
+  // (v0.21's paper bands above and below an upright screen's framing are gone since v0.25: above
+  // and below the farm the world's own sky and ground go on, world/framing.js)
 
   // ---------- v0.17: the end credits (§5.1) and the completed menu (§5) ----------
   // Both sit over the coloured drawing at the finale camera: the play elements away, Vanessa at
   // D17 in the drawing's pose, nothing on her head; the world is paused behind them.
   const completedEl = $('completed');
   let backdrop = false;
-  // v0.25: `card`: the end card's backdrop. The whole drawing is framed in the part of the screen
+  // v0.25: `card`: the end card's backdrop. The whole farm is framed in the part of the screen
   // the card leaves free (above it on an upright screen, left of it on a wide one: framing.js
   // endCardFrame), so the card no longer lies over the picture. The slideshow keeps the centred frame.
+  // v0.27: the card comes as the finale ends on the whole farm, and the picture slides from the
+  // finale's frame into its place beside the card (CARD_SLIDE_MS; reduced motion: it is there).
+  const CARD_SLIDE_MS = 600;
+  let cardAt = 0; // when the end card came up (performance.now)
+  const cardFrame = (w, h) => {
+    const k = reducedMotion() ? 1 : Math.max(0, Math.min(1, (performance.now() - cardAt) / CARD_SLIDE_MS));
+    return mixRect(finaleRect(w, h), endCardFrame(w, h).rect, k * k * (3 - 2 * k));
+  };
   function holdBackdrop(on, { card = false } = {}) {
     backdrop = on;
     document.body.classList.toggle('backdrop', on); // no HUD over the drawing
-    if (on) rig.frameRect = card ? (w, h) => endCardFrame(w, h).rect : null;
+    if (on && card) cardAt = performance.now();
+    if (on) rig.frameRect = card ? cardFrame : null;
     if (on) {
       ix.reset(); input.release(); hero.halt();
       const p = proj.groundAt(VANESSA_START.u, VANESSA_START.v);

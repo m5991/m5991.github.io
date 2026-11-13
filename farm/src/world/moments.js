@@ -14,20 +14,87 @@
 //   to      0..1 how far she has stepped to the act's own place (the tree's trunk, the window)
 //   smile   0..1
 //   prop    0..1 how far the act's own thing is out (the sheet held up, the pad, the paper picked up)
+//   seat    the bench only (v0.27): { step, sit, back, drop }, her way to her spot and into the seat
 // Rig notes (measured on the model): Shoulder x < 0 raises the arm forward, z < 0 lifts the right
 // arm out to the side (z > 0 the left), y > 0 turns the right arm in across the body (y < 0 the
-// left); Elbow x < 0 bends it; Hip x < 0 swings the leg forward, Knee x > 0 bends it; Spine1 x > 0
+// left); Elbow x < 0 bends it; Hip x < 0 swings the leg forward, Knee x > 0 bends it, Ankle x > 0
+// lifts the toes; Spine1 x > 0
 // bows forward, z > 0 leans to her right; Head x < 0 looks up, z > 0 tilts to her right.
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
 const smooth = (u) => { const t = clamp01(u); return t * t * (3 - 2 * t); };
 // 0 outside [a, d], 1 inside [b, c], eased between
 const span = (u, a, b, c, d) => smooth((u - a) / Math.max(1e-6, b - a)) * smooth((d - u) / Math.max(1e-6, d - c));
+// ---------- v0.27: sitting down and standing up ----------
+// The captain (2026-11-13): "the animation of Vanessa sitting is kind of bad, her feet dissappear
+// and also when the games completes she sits and then teleports to not being sitted".
+// v0.17c-v0.25 sat her by dropping her whole body until her hip joints were level with the seat
+// and bending her hips and knees by two fixed angles made for a seat as high as her knees. The
+// drawing's bench is 0.32 m high, lower than her knees (0.50 m): her shins and feet went 0.21 m
+// into the ground. And every way out of the seat but the act's own end put her on her feet in one
+// frame.
+// Now her seat is worked out from her own legs. She stands on a spot in front of the seat
+// (SIT.feet metres from its middle, clear of the bench) and her feet stay on that spot, flat on
+// the ground, while her hips go back and down onto the seat and, to stand up, the same way back:
+// at every moment her thigh and shin are the two bones that reach from her hip to her ankle
+// (`sitPose`). On the bench her knees are a little higher than her hips, as on any low seat, her
+// shins lean forward to her feet, her hands rest on her thighs.
+// Her leg, in metres, measured on the model as it stands (test/v027.test.mjs holds the feet on the
+// ground with these numbers): the hip joint's height, the thigh, the shin, the ankle joint's
+// height over the sole.
+export const LEG = Object.freeze({ hip: 0.88, thigh: 0.38, shin: 0.415, ankle: 0.085 });
+// rest: her hip joint above the seat's top when she sits (half a thigh's thickness); feet: how
+// far in front of the seat's middle her feet stand (the bench's half depth and her own half
+// width: where she can also stand); bow: how far she bows forward on the way down and up, and
+// lean: at rest; settle: the share of the way down over which her legs leave her idle stance (it
+// bends them a little and turns her feet out) for the worked-out pose; upMs: a calm stand-up;
+// quickMs: one she is hurried into (the stick is pushed while she rests)
+export const SIT = Object.freeze({ rest: 0.075, feet: 0.5, bow: 0.34, lean: 0.1, settle: 0.3, upMs: 750, quickMs: 380 });
+// Her pose at k of the way from standing on her spot (0) to seated (1), for a seat whose top is
+// `seatY` above the ground. -> { back: metres her hips are behind her feet, drop: metres her body
+// is lower than standing, bones, smile, knee: [forward, up] of her knee and hip: [..] of her hip
+// joint from her ankle (the tests) }
+export function sitPose(k, seatY = 0.32, leg = LEG) {
+  const e = smooth(k);
+  const hipY = leg.hip + (seatY + SIT.rest - leg.hip) * e;
+  const back = SIT.feet * e;
+  // the two bones from her hip to her ankle: the ankle stays over her spot
+  const dy = hipY - leg.ankle;
+  const reach = Math.min(leg.thigh + leg.shin - 1e-5, Math.hypot(dy, back));
+  const cos = (x) => Math.acos(Math.max(-1, Math.min(1, x)));
+  const knee = Math.PI - cos((leg.thigh ** 2 + leg.shin ** 2 - reach ** 2) / (2 * leg.thigh * leg.shin)); // how far it is bent
+  const thigh = Math.atan2(back, dy) + cos((leg.thigh ** 2 + reach ** 2 - leg.shin ** 2) / (2 * leg.thigh * reach)); // forward of straight down
+  const shin = thigh - knee; // forward of straight down (her feet are ahead of her knees on a low seat)
+  // she bows forward as her weight goes back, most halfway, and sits a little bowed
+  const bow = SIT.bow * Math.sin(Math.PI * clamp01(k)) + SIT.lean * e;
+  const bones = { Spine1_M: [bow] };
+  for (const side of ['L', 'R']) {
+    bones[`Hip_${side}`] = [-thigh];
+    bones[`Knee_${side}`] = [knee];
+    bones[`Ankle_${side}`] = [shin]; // the foot stays flat on the ground
+    // her hands come to rest on her thighs
+    bones[`Shoulder_${side}`] = [-0.5 * e];
+    bones[`Elbow_${side}`] = [-0.62 * e];
+  }
+  return {
+    back, drop: leg.hip - hipY, bones, smile: e,
+    hip: [-back, hipY - leg.ankle],
+    knee: [-back + leg.thigh * Math.sin(thigh), hipY - leg.ankle - leg.thigh * Math.cos(thigh)],
+  };
+}
+// The rest on the bench (the song spot's act), in shares of the act: she steps to her spot in
+// front of the seat and turns (to `step`), sits down (to `down`), rests, and from `up` stands up
+// again, on her feet by `end`.
+export const BENCH = Object.freeze({ step: 0.15, down: 0.43, up: 0.7, end: 0.96 });
+const ramp = (u, a, b) => clamp01((u - a) / Math.max(1e-6, b - a));
+// -> { step: 0..1 of her way to her spot, sit: 0..1 how far she is seated }
+export const benchAt = (u) => ({ step: smooth(ramp(u, 0, BENCH.step)), sit: ramp(u, BENCH.step, BENCH.down) * (1 - ramp(u, BENCH.up, BENCH.end)) });
+
 export const stepUpHeight = (from, to, u) => from + (to - from) * smooth(u) + Math.max(0, to - from) * 0.16 * Math.sin(Math.PI * clamp01(u));
 
 // The kinds: what she does, in a few words (the tests check each act's verb against these words,
 // so a button never names something she does not do).
 export const ACTIONS = {
-  bench: 'sits down on the bench, knees bent, and rests',
+  bench: 'steps in front of the bench, sits down on it with her feet on the ground, rests, and stands up again',
   clean: 'bends over the bench and wipes it with a cloth',
   chimney: 'climbs the wall and the roof to the chimney, and comes back down',
   roof: 'climbs the wall onto the roof, builds the chimney there, and comes back down',
@@ -153,16 +220,20 @@ export function hopAt(u, stones) {
 }
 
 export function actionPose(kind, u, reduced = false, opts = {}) {
-  const { stones = 5 } = opts;
+  const { stones = 5, seatY } = opts;
   const blend = smooth(u / 0.18) * smooth((1 - u) / 0.18);
   const wave = reduced ? 0 : Math.sin(u * Math.PI * 12);
   const beat = reduced ? 0 : Math.sin(u * Math.PI * 6); // three slow swings over the act
   const bones = {};
   let travel = 0; let lift = 0; let roll = 0; let spin = 0; let to = 0; let smile = 0; let prop = 0;
+  let seat = null;
   if (kind === 'bench') {
-    for (const side of ['L', 'R']) { bones[`Hip_${side}`] = [-1.42 * blend]; bones[`Knee_${side}`] = [1.48 * blend]; }
-    bones.Spine1_M = [0.12 * blend];
-    smile = blend;
+    // v0.27: her seat is worked out from her legs, her feet on the ground the whole time (sitPose)
+    const at = benchAt(u);
+    const q = sitPose(at.sit, seatY);
+    Object.assign(bones, q.bones);
+    smile = q.smile;
+    seat = { step: at.step, sit: at.sit, back: q.back, drop: q.drop };
   } else if (kind === 'clean') {
     bones.Spine1_M = [0.55 * blend]; bones.Shoulder_R = [-0.9 * blend, 0.2 * wave, -0.25 * blend]; bones.Elbow_R = [-0.65 * blend];
     bones.Hip_L = [-0.25 * blend]; bones.Knee_L = [0.4 * blend];
@@ -329,7 +400,7 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     lift = reduced ? 0 : 0.07 * Math.abs(s) * blend;
     smile = blend;
   }
-  return { blend, bones, travel, lift, roll, spin, to, smile, prop };
+  return { blend, bones, travel, lift, roll, spin, to, smile, prop, seat };
 }
 // the angle of her hand round the circle she draws in the air (rad, from the top, one and a
 // quarter turns), and how much of the circle is drawn by u (0..1): world.js draws the line

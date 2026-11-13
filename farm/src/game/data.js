@@ -212,6 +212,14 @@ export const DWIGHT_BIRD_LINES = [
   'Threat neutralised. You may resume farming.',
 ];
 export const DWIGHT_SAYS_EVERY = 3;
+// v0.27 (the captain, 2026-11-13: "also when all completed and in the bench Dwight can say
+// something like this wouldn't be possible without the help of your Assistant (of the) General
+// Manager. [of the] being much smaller font size"): what he says on the bench in the sunset, once
+// Vanessa has sat down beside him (game/sunset.js `says`). A line is a string, or a list of parts
+// in which { small } is said in much smaller letters (styles.css `#speech .aside`).
+export const DWIGHT_THANKS = Object.freeze(['This wouldn’t be possible without the help of your Assistant ', Object.freeze({ small: '(of the)' }), ' General Manager.']);
+// a line's words in one string (the screen reader's announcement, the tests)
+export const lineText = (line) => (typeof line === 'string' ? line : line.map((p) => (typeof p === 'string' ? p : p.small)).join(''));
 // the line for his n-th deterred bird (n from 1), or null when he says nothing this time
 export const dwightLine = (n) => (Number.isInteger(n) && n >= 1 && (n - 1) % DWIGHT_SAYS_EVERY === 0 ? DWIGHT_BIRD_LINES[((n - 1) / DWIGHT_SAYS_EVERY) % DWIGHT_BIRD_LINES.length] : null);
 // Recommended order of the goal card (§6.3 table order, v0.11: the base crops first).

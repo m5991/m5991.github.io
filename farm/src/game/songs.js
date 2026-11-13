@@ -252,13 +252,33 @@ export const spotsWithEggs = (discoveries = {}) => Object.keys(SPOTS).filter((s)
 // it doesn't look as crowded"): the spots on show now: the first SPOTS_AT_ONCE that still hold a
 // song, in her list's order. Each shows its red circle (the action); the others wait their turn.
 export const SPOTS_AT_ONCE = 3;
-export function visibleSpots(discoveries = {}, n = SPOTS_AT_ONCE) {
+// v0.27 (the captain, 2026-11-13: "is the home sweet home the last song of it was a coinicidence
+// on my playthrough? If the song is always going to play maybe we can consider having a one last
+// song always be, so we choose the most appropiate song, maybe I gave it to the world").
+// It was his order of play. Three circles are out at a time, the first three songs of the list
+// still to find, and a circle left alone stays out to the end: "Home Sweet Home", the 17th of the
+// 24, came last because its circle (the window by the door) was the one he left while he did the
+// seven after it. The song that plays into the sunset is simply the last one found: a found song
+// plays on to its end, and the sunset neither starts nor stops one.
+// Now the last find is always the same song. "I gave it to the world" is held back: its circle
+// ("Show your drawing to the world", at the front of the farm) comes out only when every other
+// song and everything else there is to find (`othersFound`: the keepsakes) is found. So it is
+// found last, it starts as its egg cracks, and a moment after its card is closed the sunset
+// begins under it. A farm that had found it already (an older save) goes on as before.
+export const LAST_SONG = 'E01';
+// every song but the last one is found: the last one's turn has come (or it is found too)
+export const lastSongTurn = (discoveries = {}) => SONG_LIST.every((id) => id === LAST_SONG || !!discoveries?.[id]);
+// the last song is the only one left, and it waits: something else is still to find first
+export const lastSongWaits = (discoveries = {}, othersFound = true) => !discoveries?.[LAST_SONG] && lastSongTurn(discoveries) && !othersFound;
+export function visibleSpots(discoveries = {}, n = SPOTS_AT_ONCE, { othersFound = true } = {}) {
   const out = [];
   for (const id of SONG_LIST) {
+    if (id === LAST_SONG) continue; // (its own turn is below)
     const spot = songSpot(id);
     if (!discoveries?.[id] && spot && !out.includes(spot)) out.push(spot);
     if (out.length >= n) break;
   }
+  if (!out.length && !discoveries?.[LAST_SONG] && othersFound) out.push(songSpot(LAST_SONG));
   return out;
 }
 
@@ -282,13 +302,17 @@ export function lastSpot(discoveries = {}) {
 // The hunt's goal: { text (the sentence, for screen readers), line (one line on screen) }.
 // `egg`: 'coming' while the bird flies, 'landed' while the egg waits on the grass. The count is
 // not here: it is the songs counter in the HUD.
-export function huntGoal({ discoveries = {}, egg = null } = {}) {
+// v0.27: `othersFound`: everything that is not a song (the keepsakes) is found; while it is not,
+// the last song waits and the line says what for.
+export function huntGoal({ discoveries = {}, egg = null, othersFound = true } = {}) {
   const left = SONG_LIST.filter((id) => !discoveries?.[id]);
   const all = SONG_LIST.length;
   if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
   if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
   if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
   if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
+  if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: find the keepsakes that are still hidden on the farm first.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
+  if (left.length === 1 && left[0] === LAST_SONG) return { text: `The last song: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'The last song', tail: 'at the red circle' } };
   if (left.length === 1) return { text: `One song left: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'One song left', tail: 'at the red circle' } };
   return { text: 'Walk to a red circle on the farm and do what it says: a bird brings its song as an egg, in a yellow circle.', line: { icon: 'note', label: 'Walk to a red circle' } };
 }
