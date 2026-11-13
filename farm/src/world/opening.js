@@ -54,6 +54,7 @@ export class Opening {
     h.yaw = 0; h.yawTarget = 0; h.view.rotation.y = 0; // facing out of the page, as drawn
     h.showFinalePose(true); // the drawing's pose, nothing on her head
     w.showHeldTool(false);
+    this.rig.frameRect = null; // (v0.25: not the finale's shots or the end card's picture)
     this.rig.frameK = 1; // v0.21 (audit 9): an upright screen's page shows the drawing's middle, larger
     this.paper.show('waiting');
     this.paper.needsCapture = !this.paper.paint?.(); // v0.22: the page shows the drawing itself
@@ -150,7 +151,10 @@ export class Opening {
     this.apply(openingState(ms, { reducedMotion: this.reduced }), 0);
   }
 
-  // any tap, click or key after the start: the same end state, cross-faded in 200 ms
+  // straight to the same end state, cross-faded in 200 ms. v0.25 (the captain: "Make the start
+  // animation unskipable"): nothing on the page calls this any more; it is kept for the checks
+  // that compare a watched opening's end with this one (test/opening.test.mjs, ?debug=1).
+  // (v0.10-v0.24: any tap, click or key after the start.)
   skip() {
     if (!this.active || this.phase !== 'running') return;
     if (!this.coversCanvas) this.onFreeze(); // hold the live frame on screen for the cross-fade

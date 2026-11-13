@@ -4,9 +4,10 @@
 // from 0 s and the opening runs on the theme's own clock: the page holds while the intro
 // begins, the camera sinks toward the sheet and its flat lines lift into the live world in its
 // start state, the camera eases down to the play camera, Vanessa's ink figure fills with
-// colour, and control passes on the verse downbeat (the theme's loopStart, 12.640 s). Any tap
-// or key after the start skips to the same end state. It plays once per device; Pause replays
-// it. Pure data and arithmetic: unit-tested.
+// colour, and control passes on the verse downbeat (the theme's loopStart, 12.640 s). It plays on a
+// device's first launch and at the start of every new farm, and it cannot be skipped (v0.25; until
+// v0.24 any tap or key after the start skipped to the same end state, and it played once per
+// device). Pure data and arithmetic: unit-tested.
 import { TRACK } from '../audio/track.js';
 
 // the theme's intro: the handoff is the verse downbeat that starts the loop
@@ -92,11 +93,34 @@ export function stepClock(c, dtMs, music = {}) {
 // Whether this launch opens on the page: once per device (the `openingSeen` view setting), and
 // not before a save notice has been answered; `?opening=1` forces it, `?opening=0` and the
 // comparison overlay (`?overlay=1`) skip it.
-export function playsOpening({ seen = false, param = null, overlay = false } = {}) {
+// v0.25 (the captain: "New farm also gets the animation"): and whenever the farm that starts is a
+// brand-new one (`fresh`: nothing done on it yet, freshFarm below), whether this device has seen
+// the opening or not: from Extras -> New farm, a new game after a save notice, a first launch.
+export function playsOpening({ seen = false, param = null, overlay = false, fresh = false } = {}) {
   if (param === '0' || overlay) return false;
   if (param === '1') return true;
-  return !seen;
+  return fresh || !seen;
 }
+// a brand-new farm: no crop chosen, nothing built, no time played (`d`: a save payload)
+export const freshFarm = (d) => !!d?.ledger && d.ledger.crop === null && d.ledger.activeMs === 0 && (d.ledger.paymentEvents?.length ?? 0) === 0;
+// v0.25 (the captain: "Make the start animation unskipable"): once it runs, no tap, key or Escape
+// ends the opening early; it plays to its handoff (12.6 s on the theme's intro; 3.7 s with reduced
+// motion). The page still waits for its first tap, which starts the theme. (v0.10-v0.24: any tap
+// or key after the start skipped to the end state.)
+export const OPENING_SKIPPABLE = false;
+// v0.25 (the captain: "We should add an explanation when we start the game ... You have imagined
+// this house lets make your dreams come true!"): the welcome card, shown once on a new farm as the
+// opening hands over (or at once where no opening plays): who she is and what to do first, a few
+// seconds of reading on one card, in the game's voice. Not a tutorial: the goal line and the
+// first-actions guide teach the rest as before.
+export const WELCOME = Object.freeze({
+  title: 'You have imagined this house. Let’s make your dreams come true!',
+  who: 'You are Vanessa. This farm is your drawing, and you build it yourself, one DIY at a time.',
+  first: 'First, take the rake that leans by the house and clear the weeds from a crop patch. The line at the top always says what comes next.',
+  go: 'Let’s go',
+});
+// the welcome is due: a farm nothing has been done on, that has not shown it yet
+export const welcomeDue = (d) => !!d?.ledger && d.session?.welcomeSeen !== true && d.ledger.crop === null && (d.ledger.paymentEvents?.length ?? 0) === 0;
 
 // The save notice shown as a paper card before play (or before the page), or null:
 // { kind: 'corrupt' | 'newer' | 'sessionOnly', recover (a last good copy exists) }

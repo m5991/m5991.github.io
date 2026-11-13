@@ -31,9 +31,9 @@
 //   the open grass, or on a patch that has not opened yet: ledger.js weedJob) are nobody's job:
 //   anything else in reach comes first, the rake is not kept in hand for one, nor fetched for one.
 // - the DIY button works wherever she is within reach of the next build's own site (`atSite`).
-import { CAPACITY, CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
+import { CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
+  available, canTake, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
 } from './ledger.js';
 import { buildBar, nextStage } from './guide.js';
 
@@ -104,8 +104,8 @@ export function isWorkEligible(l, t, opts = {}) {
   if (t.kind === 'tools') return !!opts.want && opts.want !== l.tool;
   if (SOURCE_KINDS.has(t.kind)) {
     if (t.kind === 'node' && !nodeEstablished(l, t.id)) return false;
-    const res = sourceResource(t.id);
-    return available(l, t.id) > 0 && l.carried[res] < CAPACITY;
+    // (v0.25: a crop is always taken: past what her head holds it goes into the crate)
+    return available(l, t.id) > 0 && canTake(l, sourceResource(t.id));
   }
   return false;
 }

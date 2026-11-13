@@ -29,8 +29,12 @@
 // there from the first moment of a farm and grow straight back when raked (`yardWeeds`, `yardBack`,
 // `yardRaked`). The rake's jobs are still only the weeds the farm asks for (`jobWeeds`, `toolJobs`),
 // so nothing in the route waits on the others.
+// v0.25 (the captain's v0.24 playtest): the weeds of the two expansions stand, and can be raked,
+// from the start too (`weedPresent`); she carries one table's worth of crops at most, what she
+// harvests beyond that goes into the crate beside the tables (`crate`, no limit: `pick`), and the
+// tables fill up again from the crate by themselves (`restock`, one of the ledger's own follow-ups).
 import {
-  ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
+  ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
   STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLE_STAGES, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
   WISH, YARD_MATERIALS, YARD_WEEDS, YARD_WEED_SLOTS, isYardWeed,
@@ -44,6 +48,7 @@ export function createLedger() {
     carried: zeroRes(),
     yard: { W: 0, R: 0 }, // the material pile by the house (v0.11): no cap
     table: zeroCrops(), // v0.12: the crops set out on the yard-sale table, TABLE_CAP at most
+    crate: zeroCrops(), // v0.25: the crops in the crate beside the tables: what her head could not take; no limit
     sales: 0, // v0.12: yard sales held
     crop: null, // her first crop: null until she rakes a crop patch, then 'C', 'S' or 'T' for good
     harvested: false, // her first crop unit is picked: the other two base crops open
@@ -167,6 +172,15 @@ export const tableFull = (l) => tableCount(l) >= tableCap(l);
 // and the room it has; null when every table is full
 export const fillTable = (l) => (tableFull(l) ? null : Math.floor(tableCount(l) / TABLE_CAP));
 export const fillRoom = (l) => (tableFull(l) ? 0 : TABLE_CAP - (tableCount(l) % TABLE_CAP));
+// v0.25: the crops on her head (one table's worth at most), the room left there, and the crate
+export const cropsCarried = (l) => CROPS.reduce((n, c) => n + l.carried[c], 0);
+export const headRoom = (l) => Math.max(0, HEAD_CROPS - cropsCarried(l));
+export const crateCount = (l) => sum(l.crate ?? {});
+// can she take one more unit of this resource now: wood and stone up to CAPACITY each on her head;
+// a crop always (past what her head holds it goes into the crate)
+export const canTake = (l, res) => (CROPS.includes(res) ? true : l.carried[res] < CAPACITY);
+// the tables can be filled from the crate now: something is in it and a table has room
+export const restockReady = (l) => tableAvailable(l) && crateCount(l) > 0 && tableRoom(l) > 0;
 // a yard sale can be held: every table standing is full (v0.13-v0.22: six at least, whatever the
 // number of tables, which left a table empty at most sales)
 export const saleReady = (l) => tableAvailable(l) && tableFull(l);
@@ -260,16 +274,19 @@ export function nodeEstablished(l, id) {
 export const sticksDown = (l) => STICK_SLOTS.filter((id) => l.sticks[id].units > 0);
 
 // ---------- weeds, dig spots and tools (P25-4, P25-4b) ----------
-// A weed is in the world when its plot's stage has unlocked (prerequisites committed); the
-// opening clumps are there from the start. Cleared clumps never come back. v0.12: a regrowth
+// A crop patch's weed is in the world from the start (v0.25: the expansions' too; they waited for
+// their plot's prerequisites). Cleared clumps never come back. v0.12: a regrowth
 // weed (`wr-<node>`) is there while it covers its planted node.
 export function weedPresent(l, id) {
   if (isYardWeed(id)) return l.yardWeeds?.[id] === true; // v0.23: on the finished farm's grass
   const node = regrowNode(id);
   if (node) return l.overgrown[node] !== null;
-  const plot = WEED_PLOT[id];
-  if (!plot || STAGES[plot].base) return true; // the three crop patches' weeds: from the start
-  return prereqsOf(l, plot).every((p) => isCommitted(l, p));
+  // the crop patches' weeds stand from the start: the three base patches' (v0.11) and, v0.25
+  // (the captain: "the extra weeds where you are going to plant the other corn or the sunflowers,
+  // those should be able to be raked from the start as well"), the two expansions' as well. Until
+  // v0.24 those four were drawn from the start but stood, for the rake, only once their plot had
+  // unlocked (the archer hired and the first patch of that crop planted).
+  return WEEDS.includes(id);
 }
 // A patch is hers to work (the goal line asks for its weeds, and its spots can be dug): any crop
 // patch before she has chosen (raking one chooses it), her first crop's patch, another base patch
@@ -347,6 +364,8 @@ export function autoTxs(l) {
   for (const id of STAGE_ORDER) {
     if (isFree(l, id) && stageState(l, id) === 'OPEN') out.push({ t: 'commitFree', stage: id });
   }
+  // v0.25: the tables fill up again from the crate whenever one has room
+  if (restockReady(l)) out.push({ t: 'restock' });
   if (toolIdle(l)) out.push({ t: 'returnTool' });
   return out;
 }
@@ -368,7 +387,7 @@ export function settle(l0) {
 
 // ---------- transactions ----------
 // tx: { t: 'tick', ms, calm? } | { t: 'clearWeed', id } | { t: 'pick', src } | { t: 'drop', r? }
-//   | { t: 'stock' } | { t: 'yardSale' } | { t: 'build', stage } | { t: 'commitFree', stage }
+//   | { t: 'stock' } | { t: 'restock' } | { t: 'yardSale' } | { t: 'build', stage } | { t: 'commitFree', stage }
 //   | { t: 'takeTool', tool, come? } | { t: 'returnTool' } | { t: 'dig', id }
 //   | { t: 'birdTurn' } | { t: 'steal', from: 'node', src } | { t: 'steal', from: 'carried' }
 //   | { t: 'stain' } | { t: 'cleanBench' }
@@ -384,6 +403,7 @@ export function apply(l0, tx) {
     case 'build': return build(l0, tx.stage);
     case 'drop': return drop(l0, tx.r ?? null);
     case 'stock': return stock(l0, tx.max ?? Infinity);
+    case 'restock': return restock(l0);
     case 'yardSale': return yardSale(l0);
     case 'birdTurn': return birdTurn(l0);
     case 'steal': return steal(l0, tx.from, tx.src ?? null);
@@ -660,6 +680,26 @@ function stock(l0, max = Infinity) {
   return { ok: true, l, events: [{ type: 'stocked', n, table: { ...l.table } }] };
 }
 
+// v0.25: the tables fill up again from the crate: as many as they have room for, the dearest crop
+// first (so a sale from the crate never pays less than one she carried over). The ledger's own
+// follow-up (autoTxs), so it happens the moment a table has room: after a sale, as a new table is
+// set up, and as a crop goes into the crate while a table still has room.
+const BY_PRICE = [...CROPS].sort((a, b) => PRICES[b] - PRICES[a]);
+function restock(l0) {
+  if (!tableAvailable(l0)) return fail('noTable');
+  if (tableFull(l0)) return fail('tableFull');
+  if (crateCount(l0) <= 0) return fail('noStock');
+  const l = clone(l0);
+  const n = zeroCrops();
+  for (const c of BY_PRICE) {
+    const k = Math.min(l.crate[c], tableRoom(l));
+    l.crate[c] -= k;
+    l.table[c] += k;
+    n[c] = k;
+  }
+  return { ok: true, l, events: [{ type: 'restocked', n, table: { ...l.table }, crate: { ...l.crate } }] };
+}
+
 // v0.12: the yard sale, once the table is full: every item on it sells at its fixed price (§6.1)
 // (v0.13: once six at least are set out, on however many tables stand)
 function yardSale(l0) {
@@ -732,14 +772,18 @@ function pick(l0, src) {
   if (!res) return fail('unknownSource');
   if (src in NODES && !nodeEstablished(l0, src)) return fail('notEstablished');
   if (available(l0, src) <= 0) return fail('empty');
-  if (l0.carried[res] >= CAPACITY) return fail('full');
+  // v0.25: a crop is never refused: her head holds one table's worth (HEAD_CROPS, all crops
+  // together), and what she picks beyond that goes into the crate beside the tables
+  const crop = CROPS.includes(res);
+  if (!crop && l0.carried[res] >= CAPACITY) return fail('full');
   const l = clone(l0);
   const events = [];
   // v0.23 (Tiffany: "neither in her hand for harvesting ever"): a tool in her hand goes back to its
   // lean as she picks anything up
   // (one she has not used yet stays: it would not come back to her by itself)
   if (l.tool !== null && toolUsed(l, l.tool)) { events.push({ type: 'toolReturned', tool: l.tool }); l.tool = null; }
-  l.carried[res] += 1;
+  const crated = crop && cropsCarried(l) >= HEAD_CROPS;
+  if (crated) l.crate[res] += 1; else l.carried[res] += 1;
   if (src in PILES) l.piles[src] -= 1;
   else if (src in l.sticks) {
     const s = l.sticks[src];
@@ -754,8 +798,13 @@ function pick(l0, src) {
     if (n.remaining === 0) n.readyAt = l.activeMs + NODE_RENEW_MS[res];
     if (!l.harvested) { l.harvested = true; events.push({ type: 'firstHarvest', res }); }
   }
-  events.push({ type: 'picked', src, res });
-  if (l.carried[res] === CAPACITY) events.push({ type: 'full', res });
+  if (crated) events.push({ type: 'crated', src, res, crate: crateCount(l) });
+  else {
+    events.push({ type: 'picked', src, res });
+    if (!crop && l.carried[res] === CAPACITY) events.push({ type: 'full', res });
+    // her head is full of crops: from here on they go into the crate
+    if (crop && cropsCarried(l) === HEAD_CROPS) events.push({ type: 'headFull', res });
+  }
   return { ok: true, l, events };
 }
 
@@ -771,6 +820,9 @@ export function validateLedger(l) {
   if (!sameKeys(l.carried, RESOURCES)) e('carried keys');
   else for (const r of RESOURCES) if (!isInt(l.carried[r], 0, CAPACITY)) e(`carried ${r} outside 0..${CAPACITY}`);
   if (!sameKeys(l.yard, YARD_MATERIALS) || !YARD_MATERIALS.every((r) => isInt(l.yard[r]))) e('yard');
+  // v0.25: one table's worth of crops on her head at most; the rest is in the crate (no limit)
+  if (sameKeys(l.carried, RESOURCES) && CROPS.reduce((n, c) => n + (l.carried[c] || 0), 0) > HEAD_CROPS) e(`more than ${HEAD_CROPS} crops on her head`);
+  if (!sameKeys(l.crate, CROPS) || !CROPS.every((c) => isInt(l.crate[c]))) e('crate');
   if (!sameKeys(l.table, CROPS) || !CROPS.every((c) => isInt(l.table[c]))) e('table');
   else if (l.stages && sum(l.table) > tableCap(l)) e('table holds more than its tables');
   else if (sum(l.table) > 0 && !BASE_STAGES.some((id) => l.stages?.[id]?.committed)) e('table stocked before any crop plot');

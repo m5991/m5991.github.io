@@ -390,6 +390,20 @@ export function tableSlot(res, k, i) {
   const j = layer ? (((i * 37) % 11) / 11 - 0.5) * 0.04 : 0; // a hand-set jitter on the heap
   return [x * narrow + j, 0.62 + lift + layer * LAYER_H, z * narrow - j * 0.5, (i * 0.7) % 1.2 - 0.6];
 }
+// v0.25: the crop crate's heap (crate space; its floor at 0.03 m, its rim at 0.32 m): the first
+// six crops lie on its floor in two rows of three, the next six on top of them, the next four
+// heaped over its rim; CRATE_SHOWN are drawn, and the count beside it says how many there are
+export const CRATE_SHOWN = 16;
+const CRATE_AT = [[-0.18, -0.09], [0, -0.1], [0.18, -0.08], [-0.17, 0.09], [0.01, 0.1], [0.18, 0.09]];
+const CRATE_TOP = [[-0.1, -0.04], [0.09, -0.05], [-0.08, 0.07], [0.1, 0.06]];
+export function crateSlot(res, k, i) {
+  const n = Math.min(i, CRATE_SHOWN - 1);
+  const lift = res === 'S' ? 0.05 : 0.02;
+  const j = (((n * 37) % 11) / 11 - 0.5) * 0.03;
+  if (n >= 12) { const [x, z] = CRATE_TOP[n - 12]; return [x + j, 0.3 + lift, z - j, (n * 0.9) % 1.4 - 0.7]; }
+  const [x, z] = CRATE_AT[n % 6];
+  return [x + (n >= 6 ? j : 0), 0.07 + lift + Math.floor(n / 6) * 0.115, z, (n * 0.7) % 1.2 - 0.6];
+}
 // where the i-th good set out (in table order) lies when `n` tables stand: the table it is on and
 // its place there. Six to a table across all the tables, then (four tables only) the next layer
 // across them again; null when it is past what is drawn

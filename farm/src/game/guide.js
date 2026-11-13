@@ -41,9 +41,9 @@
 //   around the DIY location").
 // - a yard sale is held when every table is full, so the line fills the tables and then sells;
 //   her crops go onto the table that has room.
-import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, STAGES, STICK_SLOTS } from './data.js';
+import { BASE_STAGE, BASE_STAGES, CROPS, NODES, PILES, PRICES, REGROW, RESOURCE_UNIT, STAGES, STICK_SLOTS } from './data.js';
 import {
-  available, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable, plotWeeds,
+  available, cropsCarried, firstStage, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable, plotWeeds,
   regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableRoom, toolComes, undug,
 } from './ledger.js';
 
@@ -86,7 +86,6 @@ function readySource(l, ids, fallback = ids.at(-1)) {
 const planted = (l) => Object.keys(NODES).filter((id) => nodeEstablished(l, id));
 // the value of the crops on her head
 export const cropValue = (l) => CROPS.reduce((n, c) => n + l.carried[c] * PRICES[c], 0);
-const cropsCarried = (l) => CROPS.reduce((n, c) => n + l.carried[c], 0);
 // she must walk to the house for this tool: she does not hold it and has never taken it
 // (`come`: Help me finish brings every tool by itself, P29-7)
 const mustFetch = (l, tool, come = false) => !come && l.tool !== tool && !toolComes(l, tool);
@@ -95,9 +94,10 @@ const outValue = (l) => CROPS.reduce((n, c) => n + l.table[c] * PRICES[c], 0);
 // a sale is the next thing to do: every table is full (v0.23; v0.13-v0.22 sold once six were out)
 const sellNow = (l) => saleReady(l);
 export { outValue };
-// the planted crops she still has room on her head for (v0.13: with more tables, a full head goes
-// to the table even when they would hold more)
-const pickable = (l) => planted(l).filter((id) => l.carried[NODES[id].res] < CAPACITY);
+// the planted crops she can pick: all of them (v0.25: a harvest is never refused; past the one
+// table's worth her head holds, a crop goes into the crate by the tables, which fill from it.
+// v0.13-v0.24: only the crops her head still had room for)
+const pickable = (l) => planted(l);
 // her crops go onto the tables now: what she carries fills them, pays for the build, or nothing
 // more she can pick is ready
 const setOutNow = (l, short, cropReady) => cropsCarried(l) > 0 && tableAvailable(l) && tableRoom(l) > 0

@@ -177,6 +177,23 @@ export function yardTable() {
   return merged;
 }
 
+// v0.25: the crop crate beside the yard-sale tables: what her head cannot take goes into it, and
+// the tables fill up again from it. An open slatted box of the tables' wood, 0.6 x 0.42 m and
+// 0.32 m high: two slats a side with a gap between, corner posts, a board floor.
+export const CRATE = { w: 0.6, d: 0.42, h: 0.32 };
+export function cropCrate() {
+  const g = new THREE.Group();
+  const { w: W, d: D, h: H } = CRATE;
+  const r = rng(33);
+  const slat = (len, along, x, y, z) => at(mesh(along === 'x' ? box(len, 0.1, 0.026) : box(0.026, 0.1, len), r() > 0.5 ? PAL.woodLight : mix(PAL.wood, PAL.woodLight, 0.55), { hatch: 1 }), x, y, z, 0, (r() - 0.5) * 0.012, (r() - 0.5) * 0.012);
+  for (const y of [0.075, 0.215]) {
+    g.add(slat(W, 'x', 0, y, D / 2), slat(W, 'x', 0, y, -D / 2), slat(D - 0.03, 'z', W / 2, y, 0), slat(D - 0.03, 'z', -W / 2, y, 0));
+  }
+  for (const x of [-W / 2, W / 2]) for (const z of [-D / 2, D / 2]) g.add(at(mesh(box(0.045, H, 0.045), mix(PAL.wood, PAL.ink, 0.14)), x, H / 2, z));
+  g.add(at(mesh(box(W - 0.04, 0.02, D - 0.04), mix(PAL.wood, PAL.ink, 0.3)), 0, 0.02, 0)); // the floor, in the shade
+  return mergeByMaterial(g, 'CropCrate');
+}
+
 // the hand-lettered "Yard Sale!" board (in the title's pencil hand, assets/fonts/), redrawn
 // once the font has loaded
 let signTex = null;

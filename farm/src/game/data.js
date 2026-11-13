@@ -2,7 +2,7 @@
 // unplaytested). The ledger reads only this table, so later tuning edits data, ledger tests
 // and saves together (spec §6.4 "Update recipes, ledger, saves and tests together").
 
-export const CAPACITY = 12; // per carried resource, independently (A08-retained)
+export const CAPACITY = 12; // per carried resource, independently (A08-retained); v0.25: wood and stone (her crops: HEAD_CROPS)
 export const MATERIALS = ['W', 'R'];
 export const CROPS = ['C', 'S', 'T'];
 export const RESOURCES = [...MATERIALS, ...CROPS];
@@ -34,6 +34,11 @@ export const TOOLS = ['rake', 'shovel'];
 export const TOOL_NAMES = { rake: 'rake', shovel: 'shovel' };
 
 // Weed clumps. They yield nothing and never come back.
+// v0.25 (the captain's v0.24 playtest: "the extra weeds where you are going to plant the other corn
+// or the sunflowers, those should be able to be raked from the start as well"): the four clumps of
+// the two expansions (C1, S1) stand from the start of a farm and can be raked at any time, like
+// every other weed (ledger.js weedPresent). They were drawn from the start but counted as standing
+// only once their plot had unlocked.
 // v0.11 (captain 2026-11-02: "Weeds should be where the crops are goint to grow"): the opening's
 // weeds sit on the three crop patches, two each, right where the first two plants of each will
 // grow: corn (wC1, wC2), sunflowers (wS0a, wS0b) and the tomatoes in the raised bed (wT0a,
@@ -240,6 +245,15 @@ export const STONE_REQUIRED = ROUTE.reduce((n, id) => n + STAGES[id].R, 0);
 // yard-sale table with crops on her head sets them out on it, up to TABLE_CAP; when it is full a
 // Yard Sale button appears (tapping the stand works too), and the sale pays PRICES per item.
 export const TABLE_CAP = 6; // one table holds six
+// v0.25 (the captain's v0.24 playtest: "you start having so many crops in your head and there is no
+// way to give them away unless you sell"; and "we are also not able to accumulate infinite fruit"):
+// she carries one table's worth of crops on her head at most, all crops together (HEAD_CROPS; it was
+// CAPACITY, twelve of each). What she harvests beyond that goes into the crate beside the yard-sale
+// tables (`crate` in the ledger), which has no limit, and the tables fill up again from the crate by
+// themselves whenever one has room (ledger.js `restock`), the dearest crop first. A yard sale still
+// needs every standing table full. So nothing piles up on her head, a harvest is never refused, and
+// nothing is wasted.
+export const HEAD_CROPS = TABLE_CAP;
 export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her crops go onto it
 // v0.13 (captain's v0.12 playtest: "as your house is growing more people come and more tables
 // appear (the only minimum is 6 produce items always), but the maximum keeps increasing"; answer 3

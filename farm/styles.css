@@ -243,13 +243,7 @@ body.whole #btn-back, body.whole #frame { display: block; }
 #hud, #controls { transition: opacity 0.4s ease-out; }
 body.finale #hud, body.finale #controls, body.finale #progress, body.finale #toast, body.finale #stack-badge { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.4s ease-out, visibility 0s linear 0.4s; }
 body.finale #stick-zone, body.finale .coach { display: none; }
-/* v0.21 (audit 9): an upright phone frames the colour beats on the drawing's middle; the paper
-   above and below it is the frame, its edge a soft pencil line with the sheet's shadow under it */
-#paper-frame { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
-#paper-frame[hidden] { display: none; }
-#paper-frame .band { position: absolute; left: 0; right: 0; background: radial-gradient(ellipse 140% 220% at 50% 50%, #fff9ea 0%, var(--paper) 60%, #f6edd6 100%); }
-#paper-frame .band.top { top: 0; border-bottom: 1.5px solid rgba(80, 85, 94, 0.5); box-shadow: 0 5px 12px -4px rgba(37, 51, 71, 0.22); }
-#paper-frame .band.bottom { bottom: 0; border-top: 1.5px solid rgba(80, 85, 94, 0.5); box-shadow: 0 -5px 12px -4px rgba(37, 51, 71, 0.18); }
+/* (v0.21's paper bands above and below an upright screen's finale are gone: v0.25's shots fill the screen) */
 #btn-skip { position: fixed; right: var(--edge-r); bottom: var(--edge-b); z-index: 5; background: rgba(255, 247, 229, 0.9); }
 #btn-skip[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -318,6 +312,9 @@ body.handoff #hud, body.handoff #controls { transition: opacity 0.2s ease-out; }
 /* "+N" over the yard pile when it holds more than it draws (P27-1, V6) */
 #yard-badge { position: fixed; left: 0; top: 0; margin: -26px 0 0 -20px; min-width: 40px; padding: 1px 7px; background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 999px; font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; opacity: 0.85; }
 #yard-badge[hidden] { display: none; }
+/* v0.25: the count beside the crop crate: a paper tag with the number of crops in it */
+#crate-badge { position: fixed; left: 0; top: 0; margin: -24px 0 0 -15px; min-width: 30px; padding: 1px 7px; background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); border-radius: 999px; font-size: 13px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; opacity: 0.92; }
+#crate-badge[hidden] { display: none; }
 /* the Build card: what is still to get, in plain words, first */
 dialog#card .to-go { display: block; font-size: 16px; font-weight: 600; margin-top: 2px; }
 dialog#card button[disabled] { opacity: 0.45; cursor: default; }
@@ -330,7 +327,7 @@ dialog#card button[disabled] { opacity: 0.45; cursor: default; }
 #diy-ticks { position: fixed; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; z-index: 6; pointer-events: none; display: none; }
 #diy-ticks.on { display: block; }
 #diy-ticks svg { width: 100%; height: 100%; }
-body.whole #diy, body.whole #diy-ticks, body.whole #yard-badge, body.finale #diy, body.finale #yard-badge, body.opening #yard-badge { display: none; }
+body.whole #diy, body.whole #diy-ticks, body.whole #yard-badge, body.finale #diy, body.finale #yard-badge, body.opening #yard-badge, body.whole #crate-badge, body.finale #crate-badge, body.opening #crate-badge { display: none; }
 
 /* ---------- v0.16: songs (the song card and the songbook) ---------- */
 .song-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -443,14 +440,27 @@ body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing,
 #credits .credits-lyrics p { margin: 0; }
 #credits .credits-lyrics .now { font-size: 19px; font-weight: 600; min-height: 1.3em; }
 #credits .credits-lyrics .next { font-size: 15px; opacity: 0.5; min-height: 1.2em; }
-body.credits #hud, body.credits #controls, body.credits #progress, body.credits #toast, body.credits #stack-badge, body.credits #stick-zone, body.credits .coach, body.credits #speech, body.credits #yard-badge { display: none; }
-body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backdrop #toast, body.backdrop #stack-badge, body.backdrop #stick-zone, body.backdrop .coach, body.backdrop #speech, body.backdrop #yard-badge { display: none; }
+body.credits #hud, body.credits #controls, body.credits #progress, body.credits #toast, body.credits #stack-badge, body.credits #stick-zone, body.credits .coach, body.credits #speech, body.credits #yard-badge, body.credits #crate-badge { display: none; }
+body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backdrop #toast, body.backdrop #stack-badge, body.backdrop #stick-zone, body.backdrop .coach, body.backdrop #speech, body.backdrop #yard-badge, body.backdrop #crate-badge { display: none; }
 #completed .paper-card { width: min(380px, 100%); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 20px; background: var(--paper); border-radius: 4px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2), 0 12px 30px -10px rgba(37, 51, 71, 0.35); }
 #completed .paper-card p { margin: 0; }
 /* v0.20: the birds Dwight sent off */
 #completed .paper-card .tally { font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 19px; color: #5b4a2a; }
 #completed .paper-card .tally[hidden] { display: none; }
-#completed { background: rgba(255, 247, 229, 0.55); }
+/* v0.25: the end card stands beside the picture, not over it: under it on an upright screen, to
+   its right on a wide one (world/framing.js endCardFrame frames the drawing in the rest), and no
+   veil lies over the drawing */
+#completed { background: none; pointer-events: none; }
+#completed .paper-card { pointer-events: auto; }
+#completed[data-card="below"] { justify-content: flex-end; padding-bottom: max(18px, var(--edge-b)); }
+#completed[data-card="below"] .paper-card { max-height: 44vh; overflow: auto; padding: 16px 18px; gap: 9px; }
+#completed[data-card="right"] { align-items: flex-end; justify-content: center; }
+#completed[data-card="right"] .paper-card { width: min(380px, 33vw); max-height: 92vh; overflow: auto; }
+@media (max-height: 480px) {
+  #completed[data-card="right"] .paper-card { padding: 12px 14px; gap: 7px; font-size: 14px; }
+  #completed[data-card="right"] .paper-card h2 { font-size: 18px; }
+  #completed[data-card="right"] .paper-card button { min-height: 44px; font-size: 15px; }
+}
 #btn-credits[hidden] { display: none; }
 /* the collection stamp, at every song found (spec §5) */
 .stamp { display: inline-block; margin: 4px 0 8px; padding: 6px 14px; border: 3px double #b53e36; color: #b53e36; border-radius: 8px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 20px; transform: rotate(-4deg); }
@@ -547,6 +557,34 @@ body.whole #btn-back.x-close { display: flex; }
 .share-said:empty { display: none; }
 /* the songbook lists every song; a found one carries a small mark */
 .song-found { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 6px; border-radius: 50%; background: var(--flower, #f6c61a); border: 1.5px solid var(--ink); font-size: 12px; font-weight: 700; vertical-align: 1px; }
+
+/* ---------- v0.25: the welcome card on a new farm ---------- */
+/* the captain's line, pencilled like the title; who she is; what to do first */
+dialog#card.welcome { width: min(92vw, 440px); text-align: center; }
+dialog#card.welcome h2.welcome-line { position: static; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 25px; line-height: 1.22; margin: 4px 6px 12px; background: none; }
+dialog#card.welcome p { margin: 0 0 10px; font-size: 16px; line-height: 1.4; }
+dialog#card.welcome .welcome-first { font-weight: 600; }
+dialog#card.welcome .actions { justify-content: center; margin-top: 14px; }
+dialog#card.welcome .actions button { min-width: 160px; }
+
+/* ---------- v0.25: "Sunset on the bench" (game/sunset.js) ---------- */
+/* the evening's wash shows during the scene (the finale's own rules put the play UI away) */
+body.finale.sunset #evening { display: block; }
+/* "The Farm, complete", pencilled in from its first letter to its last (--sign 0..1), and the gold
+   100% that comes onto the paper beside it (--stamp 0..1). Calm: no glow, no burst (§10.6). */
+#sunset-sign { position: fixed; left: 0; right: 0; bottom: calc(max(var(--edge-b), 12px) + 76px); z-index: 4; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 0 16px; pointer-events: none; transition: opacity 0.6s ease-out; }
+#sunset-sign[hidden] { display: none; }
+#sunset-sign.leaving { opacity: 0; }
+#sunset-sign .line { font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: clamp(27px, 7.6vw, 46px); line-height: 1.15; color: #253347; white-space: nowrap; text-shadow: 0 0 7px rgba(255, 247, 229, 0.95), 0 0 2px rgba(255, 247, 229, 0.95), 0 1px 0 rgba(255, 247, 229, 0.9); clip-path: inset(-20% calc((1 - var(--sign, 0)) * 100%) -20% -4%); transform: rotate(-2deg); }
+.gold-stamp { display: inline-flex; align-items: center; justify-content: center; width: 2.9em; height: 2.9em; border-radius: 50%; border: 3px double #a9781a; background: radial-gradient(circle at 38% 34%, #f6dc82 0%, #e3b53c 58%, #c9972a 100%); color: #5b3f06; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: 17px; letter-spacing: 0.01em; transform: rotate(-9deg); box-shadow: 0 1px 0 rgba(91, 63, 6, 0.35); }
+#sunset-sign .gold-stamp { flex: none; opacity: var(--stamp, 0); transform: rotate(-9deg) scale(calc(0.86 + 0.14 * var(--stamp, 0))); }
+/* a wide screen shows the whole drawing: the line goes on the grass under it, clear of the raised bed */
+@media (min-aspect-ratio: 1/1) and (min-height: 481px) { #sunset-sign { bottom: calc(max(var(--edge-b), 12px) + 2px); } }
+@media (max-height: 480px) { #sunset-sign { bottom: calc(max(var(--edge-b), 8px) + 6px); justify-content: flex-start; padding-left: max(var(--edge), 24px); } }
+/* The drawing, signed and stamped (Extras, once everything is found) */
+figure.keepsake-print.drawing.complete { position: relative; }
+figure.keepsake-print.drawing .signature { position: absolute; right: 4%; bottom: 1.5%; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: clamp(14px, 4.2vw, 23px); color: #2a2760; transform: rotate(-3deg); white-space: nowrap; pointer-events: none; }
+figure.keepsake-print.drawing .gold-stamp { position: absolute; left: 4%; bottom: 5%; font-size: clamp(11px, 3.2vw, 15px); pointer-events: none; }
 
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;

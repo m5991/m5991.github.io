@@ -29,6 +29,8 @@
   <!-- v0.16: what the archer says when he is hired -->
   <div id="speech" role="status" hidden><span class="who">Archer</span><span class="text"></span></div>
   <div id="yard-badge" aria-hidden="true" hidden></div>
+  <!-- v0.25: how many crops are in the crate beside the yard-sale tables -->
+  <div id="crate-badge" aria-hidden="true" hidden></div>
   <!-- "DIY time!" (spec v0.11 §10.10, src/ui/burst.js): Vanessa builds it herself -->
   <div id="diy" aria-hidden="true"></div>
   <div id="diy-ticks" aria-hidden="true"></div>
@@ -48,10 +50,6 @@
     <!-- v0.23 (audit 14): the race clock, only on a farm started as a race -->
     <span id="race-clock" role="timer" aria-label="Race time" hidden></span>
   </header>
-  <!-- v0.21 (audit 9): on an upright phone the finale's colour beats are framed on the drawing's
-       middle; the paper above and below it is the frame (src/world/framing.js) -->
-  <div id="paper-frame" aria-hidden="true" hidden><div class="band top"></div><div class="band bottom"></div></div>
-
   <div id="progress" role="status" hidden></div>
   <!-- v0.13: the lesson note, pinned to the top edge under the HUD; a tap folds it to one line -->
   <button id="toast" type="button" aria-expanded="true" hidden><span class="text" aria-live="polite"></span><span class="fold" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 10.5l4-4 4 4" fill="none" stroke="#253347" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
@@ -108,6 +106,9 @@
   </section>
   <button id="btn-back" type="button" class="x-close" aria-label="Back to Vanessa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
   <button id="btn-skip" type="button" hidden>Skip</button>
+  <!-- v0.25 "Sunset on the bench" (game/sunset.js): with everything found, "The Farm, complete" is
+       pencilled in under the bench, and a gold 100% beside it -->
+  <div id="sunset-sign" aria-hidden="true" hidden><span class="line"></span><span class="gold-stamp"></span></div>
   <div id="live" class="sr-only" aria-live="polite"></div>
   <dialog id="card" aria-labelledby="card-title"></dialog>
 
@@ -153,6 +154,8 @@
     <!-- v0.23 (Tiffany: "Put the slideshow button under the keepsakes. It should be the bottom of
          the list. Above sound"; "Get rid of the credits tab") -->
     <button id="btn-slideshow" type="button">Slideshow</button>
+    <!-- v0.25: once everything is found the farm stays in its evening light; this gives the day back -->
+    <button id="btn-evening" type="button" class="sound-switch" aria-pressed="true" hidden>Evening light: <span class="state">on</span></button>
     <fieldset id="sound-settings" class="sound-settings">
       <legend>Sound</legend>
       <button id="btn-sound-extras" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>
@@ -167,7 +170,8 @@
   </section>
 
   <!-- the opening (spec v0.10 §4.1; src/game/opening.js, src/ui/paper.js): the redrawn drawing on
-       paper, resting until the first tap, click, Enter or Space; after that any tap or key skips -->
+       paper, resting until the first tap, click, Enter or Space; v0.25: once it runs it cannot be
+       skipped, and every new farm plays it -->
   <div id="opening" hidden>
     <div class="stage">
       <div class="sheet"><canvas class="drawing" aria-hidden="true"></canvas></div>

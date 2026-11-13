@@ -9,7 +9,13 @@
 // make her walk/run?"): she walks, or runs when it is far, from where she built the home to D17,
 // around the house, the tree, the bench, the bed and the tables, while the camera eases out; then
 // she turns to the viewer and puts her hands in her pockets. Reduced motion and Skip still place her.
+// v0.25 (the captain's v0.24 playtest: "feels off ... it should be better thought"): the finale is
+// two shots composed for the screen it plays on (framing.js FINALE_SHOTS): the camera eases to the
+// finished house and holds on it while she cheers in front of it; then she runs to her place and
+// the camera goes with her to the second shot, where the colour comes (reveal.js FINALE). No paper
+// bands, and an upright screen never ends on the whole drawing as a small strip.
 import { FINALE, FINALE_END, finaleState } from '../game/reveal.js';
+import { finaleRect } from './framing.js';
 import { planWalk, walkAt, WALK } from './walk.js';
 
 // Her final pose at D17. v0.13-v0.21 turned her 0.8 rad toward the screen's right, hands on her
@@ -22,11 +28,14 @@ export const FINALE_YAW = 0;
 export class Finale {
   // world: World; hero: Hero; rig: CameraRig; at: () => Vector3, D17 on the ground;
   // reducedMotion: () => boolean; onStart / onEnd: the UI around it (main.js)
-  // onFrame(k): the paper frame of the upright framing, 0..1 (main.js; v0.21, audit 9)
-  constructor({ world, hero, rig, at, reducedMotion = () => false, onStart = () => {}, onEnd = () => {}, onFrame = () => {} }) {
-    Object.assign(this, { world, hero, rig, at, reducedMotion, onStart, onEnd, onFrame });
+  // house: () => Vector3, the house she cheers at in the first shot (v0.25)
+  constructor({ world, hero, rig, at, house = () => null, reducedMotion = () => false, onStart = () => {}, onEnd = () => {} }) {
+    Object.assign(this, { world, hero, rig, at, house, reducedMotion, onStart, onEnd });
     this.active = false;
     this.t = 0;
+    this.shotK = 1; // the camera's travel between the two shots (0 the house, 1 her place)
+    // the drawing camera's framing while the finale plays and while it eases back to play
+    this.frame = (w, h) => finaleRect(w, h, this.shotK);
   }
 
   start() {
@@ -42,6 +51,10 @@ export class Finale {
     const from = this.hero.position.clone();
     this.walk = this.reduced ? null : planWalk(from, this.centre, obstaclesOf(w, this.hero));
     this.walkPhase = 0;
+    this.cheered = false;
+    this.shotK = this.reduced ? 1 : 0;
+    this.rig.frameRect = this.frame;
+    this.rig.frameK = 0;
     w.finaleActive = true; // the blueprint is always hidden in the finale
     w.setBlueprint(w.blueprint);
     w.setFinished(false, this.centre); // a replay colours the drawing again from paper
@@ -55,9 +68,29 @@ export class Finale {
     if (!this.active || this.held) return;
     this.t += dtMs;
     const st = finaleState(this.t, { reducedMotion: this.reduced });
+    this.stepCheer(dtMs);
     this.stepWalk(dtMs);
     this.apply(st);
     if (st.done) this.end();
+  }
+
+  // v0.25: the first shot. Before she sets off she turns to the house she has just finished and
+  // cheers at it (her own cheer, feet planted), her back to the viewer, as the camera eases to it.
+  // The world loop is paused, so her clips are moved on here.
+  stepCheer(dtMs) {
+    if (this.reduced || this.settled || this.t >= WALK.start) return;
+    const h = this.hero;
+    const at = this.house();
+    if (at) {
+      const want = Math.atan2(at.x - h.position.x, at.z - h.position.z);
+      const d = Math.atan2(Math.sin(want - h.yaw), Math.cos(want - h.yaw));
+      h.yaw += d * (1 - Math.exp(-dtMs / 110));
+      h.yawTarget = h.yaw;
+      h.view.rotation.y = h.yaw;
+    }
+    if (!this.cheered && this.t >= FINALE.cheer[0]) { this.cheered = true; h.anim.play('celebrate', 0.15); }
+    else if (!this.cheered) h.anim.play('idle', 0.2);
+    h.anim.update(dtMs / 1000);
   }
 
   apply(st) {
@@ -65,10 +98,8 @@ export class Finale {
     w.setPlayHidden(st.hide);
     this.hero.stack.root.scale.setScalar(Math.max(0.01, 1 - st.hide)); // nothing on her head (V9)
     this.rig.wholeBlend = st.camera;
-    // v0.21 (audit 9): an upright screen frames the colour beats on the drawing's middle, with the
-    // paper above and below as the frame; both ease away as the sky rises (reveal.js `frame`)
-    this.rig.frameK = st.frame ?? 0;
-    this.onFrame((st.frame ?? 0) * st.camera);
+    // v0.25: the camera's travel from the first shot (the house) to the second (her place)
+    this.shotK = st.shot ?? 1;
     if (st.settled && !this.settled && (!this.walk || this.walkDone(this.t))) {
       this.settled = true;
       const p = this.centre;
@@ -114,6 +145,7 @@ export class Finale {
     if (!this.active) return;
     const dt = Math.max(0, ms - this.t);
     this.t = ms;
+    this.stepCheer(dt);
     this.stepWalk(dt);
     this.apply(finaleState(ms, { reducedMotion: this.reduced }));
   }
@@ -123,6 +155,7 @@ export class Finale {
     if (!this.active) return;
     this.t = FINALE.total;
     this.walk = null; // straight to her place
+    this.settled = false; // (a skip before she has settled places her)
     this.apply(FINALE_END);
     this.end();
   }
@@ -138,8 +171,7 @@ export class Finale {
     this.hero.stack.root.scale.setScalar(1);
     this.hero.showFinalePose(false);
     w.setPlayHidden(0);
-    this.rig.frameK = 0;
-    this.onFrame(0);
+    this.shotK = 1; // (the framing holds while the camera eases back to her: main.js)
     this.onEnd();
   }
 }

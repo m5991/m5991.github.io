@@ -19,6 +19,10 @@ export class CameraRig {
     // 0 the whole drawing, 1 its middle, larger, on an upright screen; other screens: no change).
     // The finale and the opening set it; the whole-farm view is always the whole drawing.
     this.frameK = 0;
+    // v0.25: a framing of its own for the drawing camera, (w, h) -> where the whole drawing lands
+    // (framing.js finaleRect, endCardFrame); null: the framing above. The finale sets it for its
+    // shots and the end card for its picture; it holds while the camera eases back to play.
+    this.frameRect = null;
   }
 
   // Vanessa's on-screen height in gameplay, CSS px (P; tuned for 390x844 / 844x390 phones)
@@ -61,7 +65,7 @@ export class CameraRig {
     const b = Math.max(0, Math.min(1, this.wholeBlend));
     if (b > 0) {
       const t = this.blendCam ??= p.makeViewportCamera();
-      const r = drawingFrame(w, h, this.frameK).rect;
+      const r = this.frameRect ? this.frameRect(w, h) : drawingFrame(w, h, this.frameK).rect;
       p.frameViewport(t, w, h, r);
       c.position.lerp(t.position, b);
       c.quaternion.slerp(t.quaternion, b);

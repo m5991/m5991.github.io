@@ -73,14 +73,21 @@
 // share one site, and the nearest of them was taken to be the roof's); the tree's trunk fades with
 // its canopy; every weed that stands can be raked from the start, and the ones on the open grass
 // grow straight back; Pause has the sound switch and the two volumes.
+// v0.25 (the captain's v0.24 playtest, 2026-11-13): the finale is shot for the screen it plays on
+// (the house, then her place, each filling an upright screen; a closer start and the whole drawing
+// on a wide one: world/framing.js finaleShots); the opening cannot be skipped and a new farm plays
+// it; a welcome card opens every new farm; the weeds of the later corn and sunflower plots can be
+// raked from the start; she carries one table's worth of crops and the rest goes into the crate
+// beside the tables, which fill from it; with every song and keepsake found the day turns to a
+// lasting golden evening on the bench (game/sunset.js) and The drawing is signed and stamped.
 import * as THREE from 'three';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
-import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
+import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HEAD_CROPS, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, saleReady, saleWish,
+  apply, autoTxs, available, canTake, crateCount, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, restockReady, saleReady, saleWish,
   tableCap, tables, toolIdle,
 } from './game/ledger.js';
 import { createBirds } from './game/birds.js';
@@ -103,8 +110,10 @@ import { applyTheme } from './ui/theme.js';
 import * as G from './world/greybox.js';
 import { createPrefs } from './game/prefs.js';
 import { Finale, FINALE_YAW } from './world/finale.js';
+import { Sunset } from './world/sunset.js';
+import { eveningLight, everythingFound, SIGNATURE, STAMP, SUNSET_AFTER_MS, sunsetDue } from './game/sunset.js';
 import { Opening } from './world/opening.js';
-import { playsOpening, saveNotice } from './game/opening.js';
+import { freshFarm, playsOpening, saveNotice, WELCOME, welcomeDue } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
 import { createSaveData, createSaveManager } from './game/save.js';
 import {
@@ -113,7 +122,7 @@ import {
 import { nextGoal } from './game/guide.js';
 import { coachPrompt, dropLesson, guideTargets, kindOf, learned, LINGER_MS, MOVED_M, routineGather, tutorialStep } from './game/tutorial.js';
 import { fitRect, PRESETS, Projection, projectedExtent } from './world/projection.js';
-import { drawingFrame } from './world/framing.js';
+import { endCardFrame } from './world/framing.js';
 import { World } from './world/world.js';
 import { Hero, RUN_SPEED } from './world/hero.js';
 import { CameraRig } from './world/camera.js';
@@ -251,7 +260,9 @@ async function boot() {
   // song starts playing and its card opens. Session-only state; nothing in the ledger.
   const hunt = { busy: false, egg: null, id: null, restMs: 0, eggs: 0, at: new THREE.Vector3(), moment: null };
   // (v0.22: not in the moment between the home's last hammer blow and its finale: `finaleDue`)
-  const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !finaleDue && !opening.active && rig.mode !== 'whole';
+  const inHunt = () => eggPhase(data.ledger) && session.playing && !finale.active && !sunset.active && !finaleDue && !opening.active && rig.mode !== 'whole';
+  // v0.25: every song and every keepsake is found (every action with them: a song is found by its action)
+  const allFound = () => everythingFound(data, songsFor(), KEEPSAKE_IDS);
   function spotHere(heroXZ) {
     // (v0.23: only the few spots on show have their action)
     for (const id of visibleSpots(data.discoveries)) {
@@ -361,6 +372,7 @@ async function boot() {
     ledger: data.ledger, session: data.session,
     songsFound: foundCount(data.discoveries), songsTotal: songsFor().length,
     keepsakesFound: foundKeepsakes(data.keepsakes ?? {}).length, keepsakesTotal: KEEPSAKE_IDS.length,
+    complete: allFound(), // v0.25: the signature and the gold stamp
   });
   function showDrawing() {
     const stats = farmStats();
@@ -373,6 +385,8 @@ async function boot() {
       save: 'Download the drawing',
       stats: statsItems(stats),
       statsText: statsLine(stats),
+      // v0.25: with everything found the drawing is signed "The Farm, complete" and stamped 100%
+      ...(stats.complete ? { signature: SIGNATURE, stamp: STAMP } : {}),
       share: 'Share',
       onShare: async (img, say) => {
         const canvas = drawPostcard(document.createElement('canvas'), img, stats);
@@ -533,7 +547,7 @@ async function boot() {
   const toScreen = (v) => ({ x: ((v.x + 1) / 2) * view.w, y: ((1 - v.y) / 2) * view.h, front: v.z < 1 });
   function placeSpeech() {
     if (speech.el.hidden) return;
-    if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active) { speech.el.hidden = true; return; }
+    if (performance.now() > speech.until || !world.archers?.[speech.id]?.root.visible || rig.mode === 'whole' || finale.active || sunset.active) { speech.el.hidden = true; return; }
     const head = toScreen(world.archerHead(tmpP, speech.id).project(rig.camera));
     const avoid = [];
     const flock = world.objects.D21;
@@ -683,7 +697,8 @@ async function boot() {
   const rakingGrass = () => data.ledger.tool === 'rake' && !!ix.working && idleWeed(data.ledger, ix.working);
   function settleLedger() {
     for (let guard = 0, next = autoTxs(data.ledger); next.length && guard < 20; next = autoTxs(data.ledger), guard++) {
-      const tx = next.find((t) => !(t.t === 'returnTool' && rakingGrass()));
+      // (v0.25: the tables fill from the crate once the buyers have gone: `saleShowing`)
+      const tx = next.find((t) => !(t.t === 'returnTool' && rakingGrass()) && !(t.t === 'restock' && saleShowing));
       if (!tx || !commit(tx).ok) break;
     }
   }
@@ -713,8 +728,44 @@ async function boot() {
           // the cap is told at the refusal moment, never on the counter (captain, 2026-11-01)
           hud.announce(`${cap(RESOURCE_NAMES[e.res])} full`);
           // (v0.21: the note the first time for crops and for materials; after that the status pill says it)
-          notes.once(`full-${['C', 'S', 'T'].includes(e.res) ? 'crop' : 'mat'}`, `${cap(RESOURCE_NAMES[e.res])} full: Vanessa carries ${CAPACITY} at most.${['C', 'S', 'T'].includes(e.res) ? ' Walk past the yard-sale table to set them out.' : ' Walk past the pile by the house to drop it.'}`, 3200);
+          // (v0.25: only wood and stone fill up; a crop past her head's six goes into the crate)
+          notes.once('full-mat', `${cap(RESOURCE_NAMES[e.res])} full: Vanessa carries ${CAPACITY} at most. Walk past the pile by the house to drop it.`, 3200);
           break;
+        case 'headFull':
+          // v0.25: her head holds one table's worth of crops; told once, the first time it is full
+          hud.announce(`${HEAD_CROPS} crops on her head: the rest goes into the crate`);
+          notes.once('crate', `Vanessa carries ${HEAD_CROPS} crops. What she picks now goes into the crate by the yard-sale tables, and the tables fill up from it.`, 5200);
+          break;
+        case 'crated': {
+          // v0.25: past what her head holds, the crop flies from its plant to the crate by the tables
+          const from = stationPos(e.src).setY(0.5);
+          const to = world.crateTopWorld();
+          const ms = Math.round(Math.min(900, 380 + from.distanceTo(to) * 45));
+          world.expect('crate', e.res);
+          world.pulse(e.src);
+          const landing = world.flight(e.res, from, to, ms).then(() => { world.landed('crate', e.res); sfx.cue('pop'); });
+          crateLanding = Promise.all([crateLanding, landing]);
+          hud.announce(`${cap(RESOURCE_UNIT[e.res])} into the crate: ${e.crate}`);
+          break;
+        }
+        case 'restocked': {
+          // v0.25: the tables fill up again from the crate, one crop every 70 ms, once whatever was
+          // on its way into the crate has landed there
+          const before = l.table.C + l.table.S + l.table.T - (e.n.C + e.n.S + e.n.T);
+          const order = [];
+          for (const c of ['T', 'S', 'C']) for (let k = 0; k < e.n[c]; k++) order.push(c);
+          order.forEach((c) => world.expect('table', c));
+          const total = order.length;
+          crateLanding.then(() => {
+            order.forEach((c, i) => {
+              world.tweens.wait(i * 70).then(() => world.flight(c, world.crateTopWorld(), world.tableSlotWorld(c, before + i), 300)).then(() => { world.landed('table', c); if (i % 2 === 0) sfx.cue('sell'); });
+            });
+          });
+          const n = l.table.C + l.table.S + l.table.T;
+          hud.announce(n >= tableCap(l) ? `${total} from the crate: every table is full, time for a yard sale` : `${total} from the crate onto the table${tables(l) > 1 ? 's' : ''}: ${n} of ${tableCap(l)}`);
+          tellWish();
+          break;
+        }
         case 'weedCleared':
           hud.announce('Weeds cleared');
           break;
@@ -789,7 +840,7 @@ async function boot() {
             onCoins: (res, from) => {
               world.flight('coin', from.clone().setY(from.y + 0.2), hero.position.clone().setY(1.2), 380).then(() => { sfx.cue('coin'); hud.bump('coins'); });
             },
-          }).then(() => { saleShowing = false; });
+          }).then(() => { saleShowing = false; settleLedger(); }); // (v0.25: now the tables fill up from the crate)
           if (!data.session.firstSaleSeen) {
             data.session.firstSaleSeen = true;
             persist();
@@ -1023,6 +1074,7 @@ async function boot() {
     else hud.toast(r.reason === 'short' ? 'Not everything is here yet.' : 'This cannot be built yet.');
   }
   let saleShowing = false;
+  let crateLanding = Promise.resolve(); // v0.25: the crops still flying into the crate (a restock waits for them)
   let finaleDue = false; // the home is built and its finale has not played yet (it follows the DIY)
   // v0.15: she sells from behind the tables, their north side (interaction.js atSellingSide)
   function atTheTable() {
@@ -1054,7 +1106,7 @@ async function boot() {
       else if (hud.diyShown) hud.triggerDiy(); // away from the part: show the way
     },
     onTap: (x, y) => tapWorld(x, y),
-    onEscape: () => { if (cards.isOpen) return; if (credits.active) { credits.skip(); return; } if (!completedEl.hidden) { keepExploring(); return; } if (!extrasEl.hidden) { closeExtras(); return; } if (!pauseEl.hidden) { closePause(); return; } if (opening.active) { if (opening.phase === 'running') opening.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) { if (atTheEnd()) openExtras(); else openPause(); } },
+    onEscape: () => { if (cards.isOpen) return; if (credits.active) { credits.skip(); return; } if (!completedEl.hidden) { keepExploring(); return; } if (!extrasEl.hidden) { closeExtras(); return; } if (!pauseEl.hidden) { closePause(); return; } if (opening.active) return; if (sunset.active) { sunset.skip(); return; } if (finale.active) { finale.skip(); return; } if (rig.mode === 'whole') { leaveWhole(); return; } if (session.playing) { if (atTheEnd()) openExtras(); else openPause(); } },
     onBlueprint: () => toggleBlueprint(),
     isBlocked: () => cards.isOpen || loop.paused,
   });
@@ -1083,6 +1135,8 @@ async function boot() {
     const building = hammering.active || !!roofClimb;
     const evs = building || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
+    // (v0.25: a table has room and the crate holds crops, e.g. after a sale's show was cut short)
+    if (!saleShowing && restockReady(data.ledger)) settleLedger();
     // (v0.24: she walked off from a weed nobody asked for before raking it: the rake goes back)
     if (data.ledger.tool !== null && !ix.working && toolIdle(data.ledger)) settleLedger();
     const working = hunt.moment ? null : ix.working;
@@ -1133,6 +1187,13 @@ async function boot() {
     updateBirds(dt, heroXZ);
     updateCleaning(dt);
     updateWhoKnows(dt, heroXZ);
+    // v0.25: everything is found: a moment later, "Sunset on the bench" (once per farm)
+    // (asked only on a finished farm that has not seen it: nothing is counted on a farm under way)
+    if (!data.session.sunsetSeen && mainComplete(data.ledger) && sunsetDue(data, { finished: true, complete: allFound() })
+      && inHunt() && !hunt.egg && !hunt.busy && !hunt.moment && !saleShowing && !hammering.active && !cleaning && !birds.busy) {
+      sunsetWait += dt;
+      if (sunsetWait >= SUNSET_AFTER_MS) { sunsetWait = 0; sunset.start(); }
+    } else sunsetWait = 0;
     // v0.17c: with every song found, the goal line counts the keepsakes and gives the next hint
     const allSongs = foundCount(data.discoveries) >= songsFor().length;
     const nextKeep = keepsakesLeft(data.keepsakes ?? {})[0];
@@ -1153,6 +1214,7 @@ async function boot() {
     if (pill.status !== lastProgress) { hud.setProgress(pill.status); lastProgress = pill.status; }
   }
   const HUNT_TAPS = { onSongs: () => openSongbook({ fromPlay: true }), onKeepsakes: () => openKeepsakes({ fromPlay: true }) };
+  let sunsetWait = 0; // v0.25: play time with everything found, before the sunset starts
   let diyTime = false; // she has everything for the next build (the goal line says DIY)
   let lastBite = null; // the tool stroke last seen (a puff as each one bites)
   // is a circle already on the ground at this target: one of the guide's (`ids`), an action's
@@ -1228,12 +1290,12 @@ async function boot() {
     // v0.12: the build line (the site she stands at, or the goal line's next build) and its DIY
     // (v0.24: she is at the next build when she is within reach of its own site: the house's five
     // stages share one, and the nearest of them was not always the one the goal line was on)
-    const bar = finale.active || opening.active ? null : buildBarAt(data.ledger, heroXZ, ctxTargets);
+    const bar = finale.active || sunset.active || opening.active ? null : buildBarAt(data.ledger, heroXZ, ctxTargets);
     diyState = diyHint.update(dt, bar && !hammering.active ? bar : null);
     hud.setBuild(bar, bar?.ready ? (bar.here ? () => doDiy(bar.stage) : () => diyAway(bar)) : null);
     // v0.14: yellow at the tables. v0.23 (Tiffany: "when she fills them the yard sale button is
     // highlighted"): yellow from the moment every table is full, wherever she stands
-    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active, doYardSale, true);
+    hud.setSale(saleReady(data.ledger) && !saleShowing && !finale.active && !sunset.active, doYardSale, true);
     // at the tools: the explicit way to take the one the next job needs (P25-4)
     const tools = ctxTargets.find((x) => x.kind === 'tools');
     if (tools && toolCtx.want && inReach(heroXZ, tools)) {
@@ -1250,7 +1312,7 @@ async function boot() {
       if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}…`;
       else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed… it grows straight back' : 'Clearing weeds…';
       else if (w.kind === 'dig') text = 'Digging…';
-      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}`;
+      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}${crateCount(data.ledger) && ['C', 'S', 'T'].includes(sourceResource(w.id)) ? ` · crate ${crateCount(data.ledger)}` : ''}`;
     } else if (roofClimb && !hammering.active) {
       text = 'Up onto the roof…';
     } else if (hammering.active) {
@@ -1276,6 +1338,9 @@ async function boot() {
         // (v0.23: a sale is held when every table is full, so the count is against all of them)
         text = saleShowing ? 'Yard sale!' : n >= capN ? '' : `Yard-sale table${tables(data.ledger) > 1 ? 's' : ''} · ${n}${of}`;
       }
+      // v0.25: the crop crate, inspected
+      const crate = !text && ctxTargets.find((x) => x.kind === 'crate' && inReach(heroXZ, x, 0.9));
+      if (crate) { const n = crateCount(data.ledger); text = n ? `Crate · ${n} crop${n === 1 ? '' : 's'}. The tables fill up from it.` : 'Crate · empty. What her head cannot take goes in here.'; }
       // v0.17: beside the raised bed's scribble, its name (§10.5: never a botanical one)
       const wk = !text && world.whoKnowsPos(tmpS);
       if (wk && Math.hypot(wk.x - heroXZ.x, wk.z - heroXZ.z) < 0.9) text = 'Who-Knows plant';
@@ -1284,7 +1349,7 @@ async function boot() {
         if (text) break;
         const res = sourceResource(n.id);
         if (n.hold) { text = 'A stick is coming down from the tree'; break; }
-        if (available(data.ledger, n.id) > 0 && data.ledger.carried[res] >= CAPACITY) { text = `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
+        if (available(data.ledger, n.id) > 0 && !canTake(data.ledger, res)) { text = `Can't carry more ${RESOURCE_NAMES[res]}: ${CAPACITY} is the most`; break; }
         // v0.20 (audit 2): a spot that is not planted yet is not "Growing" (guide.js spotStatus)
         if (available(data.ledger, n.id) === 0 && n.kind === 'node') { text = spotStatus(data.ledger, n.id) ?? ''; if (text) break; }
       }
@@ -1355,10 +1420,12 @@ async function boot() {
       if (d === r.data && r.recoveryRock) later(() => hud.toast(recoveryNote(r.recoveryRock), 6000));
       // (v0.17 opened a finished farm on the completed menu; v0.22: it opens on the farm, with
       // Extras where Pause was. The slideshow's offer comes once, at the end of the finale.)
-      if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), overlay })) {
+      // (v0.25: a brand-new farm always opens on the page, seen before or not)
+      if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), overlay, fresh: freshFarm(d) })) {
         paper.place(view.w, view.h);
         opening.prepare();
       } else {
+        welcome(); // v0.25: a new farm with no opening before it (?opening=0) is welcomed at once
         paper.hide();
         // v0.23 ("Sound automatically starts with the game"): asked for at once, with no gesture;
         // where the browser will not have that, the first touch starts it, with no prompt in
@@ -1376,6 +1443,7 @@ async function boot() {
   const recoveryNote = (n) => `A rock with ${n} stone has appeared by the house, so the farm can still be finished.`;
   function start(d) {
     document.body.classList.remove('booting');
+    if (sunset.active) sunset.skip(); // (v0.25: a scene of the farm before this one ends with that farm)
     data = structuredClone(d);
     // v0.20: a farm finished before the evening had its own clock starts its day now
     if (mainComplete(data.ledger) && !Number.isFinite(data.session.finishedAt)) data.session.finishedAt = data.ledger.activeMs;
@@ -1395,13 +1463,15 @@ async function boot() {
     // v0.23: on a finished farm Dwight is on the bench; otherwise at his post
     world.archerReset();
     if (mainComplete(data.ledger)) world.archerToBench('A1', { instant: true });
-    roofClimb = null; goalBeat = null; wishTold = -1; lastBite = null;
+    roofClimb = null; goalBeat = null; wishTold = -1; lastBite = null; sunsetWait = 0;
+    showSign(null);
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
     diyHint.reset();
     burst.hide();
     world.endSale();
     saleShowing = false;
+    crateLanding = Promise.resolve();
     world.clearEggs();
     Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null });
     songs.stop(); // a new farm, or another save: no song of the last one plays on
@@ -1466,11 +1536,22 @@ async function boot() {
     holdWorld();
     $('btn-songs').textContent = `Songs (${foundCount(data.discoveries)}/${songsFor().length} found)`;
     $('btn-keepsakes').textContent = `Keepsakes (${foundKeepsakes(data.keepsakes ?? {}).length}/${KEEPSAKE_IDS.length})`;
+    showEvening();
     extrasEl.hidden = false;
     extrasEl.scrollTop = 0;
     $('btn-extras-back').focus({ preventScroll: true });
   }
   function closeExtras() { extrasEl.hidden = true; releaseWorld(); $('btn-extras').focus({ preventScroll: true }); }
+  // v0.25: once the sunset has played the farm stays in its evening light; this switch in Extras
+  // gives the day back (with its own evening now and then, as before), and the evening again
+  function showEvening() {
+    const b = $('btn-evening');
+    b.hidden = !data.session.sunsetSeen;
+    const on = !data.session.dayLight;
+    b.setAttribute('aria-pressed', String(on));
+    b.querySelector('.state').textContent = on ? 'on' : 'off';
+  }
+  $('btn-evening').onclick = () => { data.session.dayLight = !data.session.dayLight; persist(); showEvening(); hud.announce(data.session.dayLight ? 'The day is back on the farm' : 'The evening light stays on the farm'); };
   $('btn-extras').onclick = openExtras;
   $('btn-extras-back').onclick = closeExtras;
   // (v0.23, Tiffany: "Get rid of the credits tab": Extras has no Credits)
@@ -1515,7 +1596,7 @@ async function boot() {
     }
   }
   function toggleBlueprint() {
-    if (cards.isOpen || finale.active || opening.active || !session.playing) return;
+    if (cards.isOpen || finale.active || sunset.active || opening.active || !session.playing) return;
     world.setBlueprint(prefs.toggleBlueprint());
     showBlueprint();
     hud.announce(`Blueprint ${prefs.blueprint ? 'on' : 'off'}`);
@@ -1527,8 +1608,8 @@ async function boot() {
   const finale = new Finale({
     world, hero, rig,
     at: () => proj.groundAt(VANESSA_START.u, VANESSA_START.v), // D17
+    house: () => world.objects.D01.position, // v0.25: she cheers at it in the first shot
     reducedMotion,
-    onFrame: (k) => paperFrame(k),
     onStart: () => {
       ix.reset();
       world.endSale();
@@ -1562,33 +1643,68 @@ async function boot() {
       menuButton().focus();
     },
   });
-  $('btn-skip').onclick = () => finale.skip();
-  // v0.21 (audit 9): the paper above and below the drawing while an upright screen frames its
-  // middle (k 0..1; world/framing.js). Other screens have no frame.
-  function paperFrame(k) {
-    const el = $('paper-frame');
-    const f = drawingFrame(view.w, view.h, 1);
-    if (!(k > 0.001) || f.zoom === 1) { el.hidden = true; return; }
-    el.hidden = false;
-    // the two sheets of paper slide in from the top and the bottom, and apart again as the
-    // camera eases back to the whole drawing (reduced motion has no framing: reveal.js)
-    const e = Math.min(1, k);
-    el.style.opacity = String(Math.min(1, e * 3).toFixed(3));
-    const top = el.querySelector('.top'); const bottom = el.querySelector('.bottom');
-    top.style.height = `${Math.max(0, f.window.y).toFixed(1)}px`;
-    bottom.style.height = `${Math.max(0, view.h - f.window.y - f.window.h).toFixed(1)}px`;
-    top.style.transform = `translateY(${(-(1 - e) * 100).toFixed(2)}%)`;
-    bottom.style.transform = `translateY(${((1 - e) * 100).toFixed(2)}%)`;
+  $('btn-skip').onclick = () => { if (sunset.active) sunset.skip(); else finale.skip(); };
+
+  // ---------- v0.25: "Sunset on the bench", when everything is found (game/sunset.js) ----------
+  // The captain's pick for the end of the postgame: the day turns to golden evening, Vanessa and
+  // Dwight sit on the bench, fireflies over the corn, and "The Farm, complete" is pencilled in with
+  // a gold 100%. Presentation only (world/sunset.js); it plays once per farm, can be skipped like
+  // the finale, and afterwards the evening stays (Extras has the switch for the day).
+  const signEl = $('sunset-sign');
+  signEl.querySelector('.line').textContent = SIGNATURE;
+  signEl.querySelector('.gold-stamp').textContent = STAMP;
+  // st: the scene's state (or null: put the signature away)
+  function showSign(st) {
+    if (!st || !(st.sign > 0)) { signEl.hidden = true; return; }
+    signEl.hidden = false;
+    signEl.style.setProperty('--sign', st.sign.toFixed(3));
+    signEl.style.setProperty('--stamp', st.stamp.toFixed(3));
   }
+  const sunset = new Sunset({
+    world, hero, rig, reducedMotion,
+    onStart: () => {
+      ix.reset();
+      input.release();
+      hero.halt();
+      world.showHeldTool(false);
+      loop.pause('sunset');
+      document.body.classList.add('finale', 'sunset'); // the play UI away, as in the finale; the evening shows
+      $('btn-skip').hidden = false;
+      $('btn-skip').focus({ preventScroll: true });
+      burst.hide();
+      hud.announce('Everything is found. The day turns to a golden evening, and Vanessa sits down on the bench beside Dwight.');
+    },
+    onState: (st) => showSign(st),
+    onEnd: () => {
+      document.body.classList.remove('finale', 'sunset');
+      $('btn-skip').hidden = true;
+      world.showHeldTool(true);
+      data.session.sunsetSeen = true;
+      persist(); // seen for good before anything else
+      loop.resume('sunset'); // the camera eases back to Vanessa (renderStep)
+      setTimeout(() => showSign(null), 600);
+      signEl.classList.add('leaving');
+      setTimeout(() => signEl.classList.remove('leaving'), 700);
+      hud.announce(`${SIGNATURE}. The evening stays on the farm.`);
+      hud.toast(`${SIGNATURE}: every song and every keepsake found. The evening stays on the farm; Extras has a switch for the day, and The drawing is signed.`, 7000);
+      menuButton().focus({ preventScroll: true });
+    },
+  });
+  // (v0.21's paper bands above and below an upright screen's framing are gone: v0.25's finale
+  // shots fill the screen, world/framing.js)
 
   // ---------- v0.17: the end credits (§5.1) and the completed menu (§5) ----------
   // Both sit over the coloured drawing at the finale camera: the play elements away, Vanessa at
   // D17 in the drawing's pose, nothing on her head; the world is paused behind them.
   const completedEl = $('completed');
   let backdrop = false;
-  function holdBackdrop(on) {
+  // v0.25: `card`: the end card's backdrop. The whole drawing is framed in the part of the screen
+  // the card leaves free (above it on an upright screen, left of it on a wide one: framing.js
+  // endCardFrame), so the card no longer lies over the picture. The slideshow keeps the centred frame.
+  function holdBackdrop(on, { card = false } = {}) {
     backdrop = on;
     document.body.classList.toggle('backdrop', on); // no HUD over the drawing
+    if (on) rig.frameRect = card ? (w, h) => endCardFrame(w, h).rect : null;
     if (on) {
       ix.reset(); input.release(); hero.halt();
       const p = proj.groundAt(VANESSA_START.u, VANESSA_START.v);
@@ -1632,7 +1748,8 @@ async function boot() {
   // "Watch the slideshow" plays it; "Keep playing" goes on to the egg hunt. Either way the offer
   // is not made again (`creditsSeen`): the slideshow is in Extras from here on.
   function showCompleted() {
-    holdBackdrop(true);
+    holdBackdrop(true, { card: true });
+    completedEl.dataset.card = endCardFrame(view.w, view.h).card;
     loop.pause('done');
     const all = songsFor().length;
     $('completed-note').textContent = `The house is a home, and the whole drawing is in colour. Would you like to see the slideshow of the drawing over the years? It is in Extras any time. And ${all} songs wait on the farm, a few red circles at a time.`;
@@ -1697,26 +1814,47 @@ async function boot() {
       prefs.setOpeningSeen(true);
       menuButton().focus({ preventScroll: true });
       for (const fn of afterOpening.splice(0)) fn();
+      welcome(); // v0.25: a new farm is welcomed as the opening hands over
     },
   });
   // The page's first tap, click, Enter or Space starts (a gesture, so the theme starts with
-  // it); after that any tap or key skips, except the gesture that resumes the theme after a
-  // hidden tab. Escape skips through the input layer's onEscape. Taps on the page never reach
-  // the stick, which is beneath it.
+  // it). Taps on the page never reach the stick, which is beneath it.
+  // v0.25 (the captain: "Make the start animation unskipable"): once it runs nothing ends it
+  // early: a tap, a key or Escape does nothing (v0.10-v0.24: any of them skipped to the end
+  // state), except that a gesture still brings the theme back after a hidden tab, as everywhere.
   let resuming = false; // read before the audio owner handles the same gesture
   for (const t of ['pointerup', 'keydown']) window.addEventListener(t, () => { resuming = opening.active && audio.prompt === 'resume'; }, true);
   const tapOpening = () => {
     if (!opening.active || resuming) return;
-    if (opening.phase === 'waiting') opening.begin(); else opening.skip();
+    if (opening.phase === 'waiting') opening.begin();
   };
   paper.onStart(tapOpening);
   $('opening-start').onclick = () => opening.begin(); // Enter or Space on the focused Start control
   window.addEventListener('keydown', (e) => {
     if (!opening.active || e.repeat || cards.isOpen || e.key === 'Escape') return;
-    if (opening.phase === 'waiting' && ![' ', 'Enter'].includes(e.key)) return;
+    if (opening.phase !== 'waiting' || ![' ', 'Enter'].includes(e.key)) return;
     e.preventDefault();
     tapOpening();
   });
+  // v0.25 (the captain: "We should add an explanation when we start the game"): the welcome card,
+  // once on a new farm, as the opening hands over (or at once where none plays). The world waits
+  // behind it; closing it is the start of play.
+  function welcome() {
+    if (!welcomeDue(data) || !session.playing) return;
+    if (cards.isOpen || !titleEl.hidden) { setTimeout(welcome, 600); return; }
+    input.release(); hero.halt();
+    loop.pause('card');
+    cards.welcome({
+      ...WELCOME,
+      onClose: () => {
+        data.session.welcomeSeen = true;
+        persist();
+        loop.resume('card');
+        menuButton().focus({ preventScroll: true });
+      },
+    });
+    hud.announce(`${WELCOME.title} ${WELCOME.who} ${WELCOME.first}`);
+  }
   // every button answers with a light tap, unless its own handler just played a cue (Confirm)
   document.addEventListener('click', (ev) => { if (ev.target.closest?.('button')) sfx.cue('tap'); });
   $('btn-pause').onclick = openPause;
@@ -1734,7 +1872,20 @@ async function boot() {
   // New farm: the first thing in Extras, behind its confirmation
   $('btn-reset').onclick = () => {
     // v0.23 (audit 14): a new farm can be a race: a clock on the way to the finished farm
-    const fresh = (race) => { extrasEl.hidden = true; releaseWorld(); const d = saves.reset(data.settings); d.session.race = race; lastRace = null; start(d); };
+    // v0.25 (the captain: "New farm also gets the animation"): the opening plays over the new
+    // farm, from its page, on the theme started again from its top; her tap on the button is the
+    // gesture, so it runs at once
+    const fresh = (race) => {
+      extrasEl.hidden = true; releaseWorld();
+      const d = saves.reset(data.settings); d.session.race = race; lastRace = null;
+      start(d);
+      if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), fresh: true })) {
+        paper.place(view.w, view.h);
+        opening.prepare();
+        audio.restartMusic();
+        opening.begin();
+      } else setTimeout(welcome, 80); // (once the confirmation card has closed for good)
+    };
     cards.message({
       title: 'Start a new farm?',
       text: `This erases the farm: every build, ${data.ledger.purse} coins, the songs and the keepsakes found. The sound settings are kept.`,
@@ -1829,6 +1980,7 @@ async function boot() {
     Object.assign($('overlay').style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     Object.assign($('frame').style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     if (opening?.active) paper.place(w, h); // the sheet for the new screen, and a new still
+    if (!completedEl.hidden) completedEl.dataset.card = endCardFrame(w, h).card; // (the end card's side follows the screen)
   }
   window.addEventListener('resize', () => { layout(); });
   layout();
@@ -1903,12 +2055,24 @@ async function boot() {
   const yardBadge = $('yard-badge');
   function placeYardBadge() {
     const n = world.yardHidden ?? 0;
-    const show = n > 0 && session.playing && !finale.active && !opening.active && rig.mode !== 'whole';
+    const show = n > 0 && session.playing && !finale.active && !sunset.active && !opening.active && rig.mode !== 'whole';
     yardBadge.hidden = !show;
     if (!show) return;
     tmpP.copy(world.stations.yard.pos).setY(0.75).project(rig.camera);
     yardBadge.textContent = `+${n}`;
     yardBadge.style.transform = `translate(${(((tmpP.x + 1) / 2) * view.w).toFixed(1)}px, ${(((1 - tmpP.y) / 2) * view.h).toFixed(1)}px)`;
+  }
+
+  // v0.25: the count beside the crop crate, while it holds anything
+  const crateBadge = $('crate-badge');
+  function placeCrateBadge() {
+    const n = world.crateTotal ?? 0;
+    const show = n > 0 && session.playing && !finale.active && !sunset.active && !opening.active && rig.mode !== 'whole' && !backdrop && !world.playHidden;
+    crateBadge.hidden = !show;
+    if (!show) return;
+    tmpP.copy(world.stations.crate.obj.position).setY(0.95).project(rig.camera);
+    crateBadge.textContent = String(n);
+    crateBadge.style.transform = `translate(${(((tmpP.x + 1) / 2) * view.w).toFixed(1)}px, ${(((1 - tmpP.y) / 2) * view.h).toFixed(1)}px)`;
   }
 
   function updateCoach() {
@@ -1953,12 +2117,13 @@ async function boot() {
   const wakeLock = createWakeLock();
   document.addEventListener('pointerdown', () => wakeLock.refresh(), { passive: true });
   function renderStep(dt) {
-    wakeLock.setActive(session.playing && !document.hidden && (credits.active ? !credits.paused : finale.active || (opening.active && opening.phase === 'running') || !loop.paused));
+    wakeLock.setActive(session.playing && !document.hidden && (credits.active ? !credits.paused : finale.active || sunset.active || (opening.active && opening.phase === 'running') || !loop.paused));
     opening.update(dt);
     finale.update(dt);
+    sunset.update(dt);
     credits.update(dt);
     if (backdrop) rig.wholeBlend = 1; // the credits and the completed menu: the drawing's frame
-    else if (!finale.active && !opening.active && rig.wholeBlend > 0) rig.wholeBlend = Math.max(0, rig.wholeBlend - dt / 900); // back to Vanessa
+    else if (!finale.active && !sunset.active && !opening.active && rig.wholeBlend > 0) rig.wholeBlend = Math.max(0, rig.wholeBlend - dt / 900); // back to Vanessa
     rig.update(dt, hero.position, view);
     const f = rig.focus;
     // the sun light follows what the camera frames, so shadows stay sharp in the drawing frame
@@ -1975,17 +2140,23 @@ async function boot() {
     updateDance(dt);
     // v0.17c: the finished farm's evening and its fireflies
     // (v0.20: on a clock that starts when the farm is finished, so the hunt opens by day)
-    const ev = session.playing && !finale.active && !credits.active && !backdrop ? eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)) : 0;
-    world.updateFireflies(dt, ev);
+    // v0.25: once everything is found the evening stays ("Sunset on the bench", game/sunset.js);
+    // while that scene plays the light and the fireflies are the scene's
+    const dusk = sunset.active ? sunset.state : null;
+    const ev = session.playing && !finale.active && !credits.active && !backdrop
+      ? eveningLight({ cycle: eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)), scene: dusk ? dusk.evening : null, seen: data.session.sunsetSeen && mainComplete(data.ledger), dayLight: data.session.dayLight })
+      : 0;
+    world.updateFireflies(dt, dusk ? Math.min(ev, dusk.fireflies) : ev);
     $('evening').style.opacity = String(ev.toFixed(3));
     world.updateSky(rig.camera);
-    if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints(), { solidTrunk: hero.moment?.kind === 'hug' }); updateStackCap(performance.now()); }
+    if (rig.mode === 'whole' || !session.playing || finale.active || sunset.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints(), { solidTrunk: hero.moment?.kind === 'hug' }); updateStackCap(performance.now()); }
     updateCoach();
     if (burst.active || burst.ticking || hammering.active) {
       tmpP.copy(hero.position).setY(1.75).project(rig.camera);
       burst.update(burstHeld ? 0 : dt, { x: ((tmpP.x + 1) / 2) * view.w, y: ((1 - tmpP.y) / 2) * view.h }, { w: view.w, top: live.hudBottom, bottom: live.ctlTop || view.h }, reducedMotion());
     }
     placeYardBadge();
+    placeCrateBadge();
     placeSpeech();
     // under the opening's paper nothing 3D is seen (v0.22: the page shows the drawing itself;
     // the world is drawn under it only until that picture is on the page)
@@ -2110,7 +2281,7 @@ async function boot() {
         for (const st of stages.length ? stages : STAGE_ORDER) one(st);
         return done;
       },
-      finale, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
+      finale, sunset, prefs, toggleBlueprint, opening, paper, hammering, burst, hud, get diyState() { return diyState; }, diyHint,
       hunt, openSongbook, notes, songCard, archerSays, race, holdGoal, get diyTime() { return diyTime; }, get roofClimb() { return roofClimb; }, get goal() { return goal; }, placeSpeech, birds, doWave, credits, showCompleted, keepExploring, songs, pickEgg, startMoment, findKeepsake, openKeepsakes, showDrawing, openExtras, closeExtras, closePause, resetHunt() { world.clearEggs(); Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); },
       holdBurst(on = true) { burstHeld = on; },
       looks: () => world.looks(),

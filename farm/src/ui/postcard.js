@@ -6,9 +6,14 @@
 // farm's own title are written on it.
 import { fmtRace } from '../game/race.js';
 
-// -> { timeMs (null while the farm is not finished), sales, birds, songs: [found, all], keepsakes: [found, all] }
-export function postcardStats({ ledger, session = {}, songsFound = 0, songsTotal = 0, keepsakesFound = 0, keepsakesTotal = 0 }) {
+// -> { timeMs (null while the farm is not finished), sales, birds, songs: [found, all], keepsakes: [found, all], complete }
+// v0.25: `complete`: every song and every keepsake is found. The postcard then carries the
+// pencilled signature "The Farm, complete" in the drawing's corner and a gold 100% stamp.
+export const POSTCARD_SIGNATURE = 'The Farm, complete';
+export const POSTCARD_STAMP = '100%';
+export function postcardStats({ ledger, session = {}, songsFound = 0, songsTotal = 0, keepsakesFound = 0, keepsakesTotal = 0, complete = null }) {
   return {
+    complete: complete ?? (songsTotal > 0 && songsFound >= songsTotal && keepsakesFound >= keepsakesTotal),
     timeMs: Number.isFinite(session.finishedAt) ? session.finishedAt : null,
     sales: ledger?.sales ?? 0,
     birds: session.dwightDeterred ?? 0,
@@ -62,6 +67,34 @@ export function drawPostcard(canvas, img, stats, { width = 1400 } = {}) {
     g.fillText(label, x, top + strip * 0.86);
     g.globalAlpha = 1;
   });
+  if (stats.complete) {
+    // v0.25: the signature, pencilled in the drawing's lower right corner in her pen's colour...
+    g.save();
+    g.translate(pad + iw - Math.round(width * 0.03), pad + ih - Math.round(width * 0.02)); // under the raised bed, on the drawing's lowest strip of paper
+    g.rotate(-0.05);
+    g.textAlign = 'right'; g.textBaseline = 'alphabetic';
+    g.fillStyle = '#2a2760';
+    g.font = `italic 700 ${Math.round(width * 0.042)}px "Pencil Title", "Comic Sans MS", cursive`;
+    g.fillText(POSTCARD_SIGNATURE, 0, 0);
+    g.restore();
+    // ...and the gold 100% stamp, on the strip beside the title
+    const r = Math.round(strip * 0.27);
+    const cx = pad + Math.round(width * 0.25); const cy = top + Math.round(strip * 0.3);
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(-0.16);
+    const gold = g.createRadialGradient?.(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r);
+    if (gold) { gold.addColorStop(0, '#f6dc82'); gold.addColorStop(0.6, '#e3b53c'); gold.addColorStop(1, '#c9972a'); }
+    g.fillStyle = gold ?? '#e3b53c';
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#a9781a'; g.lineWidth = Math.max(2, width / 420);
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, 0, r * 0.84, 0, Math.PI * 2); g.lineWidth = Math.max(1, width / 900); g.stroke();
+    g.fillStyle = '#5b3f06'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `700 ${Math.round(r * 0.72)}px "Pencil Title", "Comic Sans MS", cursive`;
+    g.fillText(POSTCARD_STAMP, 0, r * 0.04);
+    g.restore();
+  }
   return canvas;
 }
 

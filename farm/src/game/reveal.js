@@ -117,15 +117,30 @@ export const ritualGate = (eggId) => (BENCH_RITUALS.includes(eggId) ? BENCH_STAG
 export const ritualOpen = (l, eggId) => { const g = ritualGate(eggId); return g === null || isCommitted(l, g); };
 
 // ---------- P25-2: the colour finale, inside the approved 15 s ----------
-// times in ms from the start of the finale (the home, H5, is already saved)
+// times in ms from the start of the finale (the last build is already saved)
+// v0.25 (the captain's v0.24 playtest: "The animation when the house is finished feels off ...
+// it should be better thought"): the finale has two shots, composed for the screen it plays on
+// (world/framing.js FINALE_SHOTS), and what happens is where the camera is looking:
+//   1. `home`: the camera eases from play to the finished house, large, and holds on it while
+//      Vanessa, in front of it, cheers at what she has built;
+//   2. `travel`: she runs to her place in the drawing and the camera goes with her to the second
+//      shot (an upright screen: one screen to the right, to the sun's half of the drawing; a wide
+//      one: out to the whole drawing);
+//   3. there she turns to the viewer, and the colour comes: what is still in outline, the grass
+//      from her feet, the sky from the horizon and, last, the sun; then a hold.
+// (v0.9-v0.24: the camera eased to the whole drawing in the first 2 s, she ran to her place under
+// it, and everything was coloured in that one frame; v0.21 framed an upright screen's colour beats
+// on the drawing's middle between two bands of paper and then eased back to the whole.)
 export const FINALE = {
-  hide: [0, 2000], // HUD, mats, piles, crate, head stack, leftover rocks, blueprint and ring hide (V9); camera eases to the drawing
-  settle: [2000, 3500], // Vanessa settles at D17, hands on hips
-  outlines: [3500, 4500], // anything still in outline takes its colour
-  grass: [4500, 8500], // the ground animates into grass, spreading from her feet
-  sky: [8500, 10500], // the sky turns blue, rising from the horizon
-  sun: [10500, 11500], // last, the sun turns yellow
-  hold: [11500, 15000], // hold on the coloured drawing
+  hide: [0, 2000], // HUD, mats, piles, crate, head stack, leftover rocks, blueprint and ring hide (V9); the camera eases to the first shot, the house
+  cheer: [300, 2000], // she cheers at the house she has finished, in front of it
+  travel: [2100, 4700], // she runs to D17 (from 2000: walk.js WALK) and the camera goes with her to the second shot
+  settle: [4700, 5400], // Vanessa settles at D17, facing the viewer, hands in her pockets
+  outlines: [5200, 6000], // anything still in outline takes its colour
+  grass: [6000, 9500], // the ground animates into grass, spreading from her feet
+  sky: [9500, 11300], // the sky turns blue, rising from the horizon
+  sun: [11300, 12300], // last, the sun turns yellow
+  hold: [12300, 15000], // hold on the coloured drawing
   total: 15000,
 };
 // Finale colours (§10.9): light steps of the leaf and tool-blue swatches, within §10.6 item 6;
@@ -140,21 +155,20 @@ export const FINALE_COLOURS = { grass: 0x86c754, grassStroke: 0x559a34, sky: 0x8
 
 const ramp = ([a, b], t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
 const smooth = (x) => x * x * (3 - 2 * x);
-// The finale's state at time t (ms). Every value is 0..1 and only rises (but `frame`, v0.21, which
-// is 1 and falls to 0 as the camera eases back to the whole drawing). Reduced motion goes
-// straight to the coloured composition with a short fade (REDUCED_FADE_MS) and then holds.
+// The finale's state at time t (ms). Every value is 0..1 and only rises. `shot` (v0.25) is the
+// camera's travel from the first shot to the second (framing.js finaleRect). Reduced motion goes
+// straight to the coloured composition in the second shot with a short fade (REDUCED_FADE_MS) and
+// then holds: no camera move.
+const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 export function finaleState(t, { reducedMotion = false } = {}) {
   if (reducedMotion) {
     const k = Math.max(0, Math.min(1, t / REDUCED_FADE_MS));
-    return { hide: 1, camera: 1, frame: 0, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
+    return { hide: 1, camera: 1, shot: 1, settled: true, outlines: k, grass: k, sky: k, sun: k, done: t >= FINALE.total };
   }
   return {
     hide: smooth(ramp([0, 400], t)), // play elements shrink away in the first 0.4 s
     camera: smooth(ramp(FINALE.hide, t)),
-    // v0.21 (audit 9): on an upright screen the drawing framing is its middle, larger (1), while
-    // she settles, the outlines take their colour and the grass spreads; as the sky rises the
-    // camera eases back to the whole drawing (0), so the sky, the sun and the hold show all of it
-    frame: 1 - smooth(ramp(FINALE.sky, t)),
+    shot: easeInOut(ramp(FINALE.travel, t)),
     settled: t >= FINALE.settle[0],
     outlines: ramp(FINALE.outlines, t),
     grass: ramp(FINALE.grass, t),

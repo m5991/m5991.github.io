@@ -30,7 +30,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { BIRDS, HOUSE_STAGES, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, YARD_SHOWN } from '../game/data.js';
-import { digOpen, fillTable, isCommitted, mainComplete, plantSize, saleReady, tableAvailable, tables, weedPresent } from '../game/ledger.js';
+import { crateCount, digOpen, fillTable, isCommitted, mainComplete, plantSize, saleReady, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
 import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
 import { ribbonDistance } from './pathgeom.js';
@@ -41,7 +41,7 @@ import { ease } from '../core/tween.js';
 import { SPOTS } from '../game/songs.js';
 import { drawnShare, hopSpans } from './moments.js';
 import { KEEPSAKES, KEEPSAKE_NEAR_M } from '../game/keepsakes.js';
-import { tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
+import { CRATE_SHOWN, crateSlot, tableDrawn, tableSlot, tableSpot, UnitPile, yardSlot } from './carry.js';
 import { fader, groundMaterial, PAL, paintable, paperBackdrop } from './look.js';
 import { TREE_TRUNK_R } from './hand.js';
 import { routeAround, routeAt, routeLength } from './walk.js';
@@ -66,6 +66,7 @@ export function stationScale(def) {
   if (def.bed) return 0.8;
   if (def.kind === 'yard') return 1.25;
   if (def.kind === 'stick') return 0.85;
+  if (def.kind === 'crate') return CRATE_SCALE;
   return 1;
 }
 
@@ -85,6 +86,8 @@ export const SALE_MS = { sign: 320, walkIn: 1250, take: 240, pause: 160, walkOut
 const BUYER_IN = { out: 2.4, lane: 0.5, speed: 3.2, maxMs: 1600, fade: 0.2 };
 const BUYER_AT = [[-1.6, 2.4], [0.3, 2.8], [2.1, 2.3]];
 const SELL_BEHIND_M = 0.95; // her selling spot, this far north of the first table's centre
+export const CRATE_SCALE = 1.3; // drawn a little large, so the heap in it reads at phone size
+export const CRATE_GAP_M = 1.02; // v0.25: the crop crate's centre, this far past the last table's along the row
 export const TABLE_FRONT_M = 0.85; // v0.23: where she sets her crops out, this far south of the table that has room
 // v0.16: the sign on its stick, three times the v0.15 sign (props.js saleSign), north of the
 // tables between the first two, `SIGN_AT` metres behind (north of) the first table's centre and
@@ -481,6 +484,7 @@ export class World {
     this.buildRegrowth();
     this.buildYardWeeds();
     this.buildSale();
+    this.buildCrate();
     this.marker = { obj: G.marker(), id: null, alpha: 0, t: 0, pop: 0, popAmp: 0, scale: 1 };
     this.marker.obj.visible = false;
     this.root.add(this.marker.obj);
@@ -887,6 +891,38 @@ export class World {
     this.sale = { sign, buyers, active: false, goods: null, token: 0, table: t };
     // v0.16: no neighbours' stalls any more (the captain: "Remove the extra sellers")
   }
+  // v0.25 (the captain: "you start having so many crops in your head and there is no way to give
+  // them away unless you sell"): the crop crate. It stands at the end of the row of tables, just
+  // past the last one standing (so it is beside them whether one, two or three stand, and hops
+  // along as a table is set up), with the crops in it heaped in sight (carry.js crateSlot) and a
+  // count beside it (main.js). A station of its own kind: nothing is worked at it.
+  buildCrate() {
+    const obj = G.cropCrate();
+    obj.name = 'crate:crate';
+    obj.visible = false;
+    this.root.add(obj);
+    const pos = this.crateAt(1);
+    obj.position.copy(pos);
+    obj.rotation.y = 0.12;
+    obj.scale.setScalar(CRATE_SCALE);
+    const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.39, 0.3, 0.28)) });
+    body.position.set(pos.x, 0.3, pos.z);
+    this.stations.crate = { def: { id: 'crate', kind: 'crate', r: 0.35, label: 'crop crate' }, obj, pos, body };
+    this.piles.crate = new UnitPile(obj, crateSlot, 1.15 / CRATE_SCALE * 1.12);
+    this.crateTables = 1;
+    this.crateShown = 0;
+  }
+  // where the crate stands when `n` tables do: past the last one, along the row
+  crateAt(n, out = new THREE.Vector3()) {
+    const list = this.tableStations();
+    const last = list[Math.max(0, Math.min(list.length, n) - 1)].pos;
+    const along = new THREE.Vector3().subVectors(list[1].pos, list[0].pos).setY(0).normalize();
+    return out.copy(last).addScaledVector(along, CRATE_GAP_M).setY(0);
+  }
+  // the top of the crate's heap: where a crop flies to, and where one leaves it for a table
+  crateTopWorld(out = new THREE.Vector3()) {
+    return out.copy(this.stations.crate.pos).setY(0.5 + Math.min(0.26, 0.022 * (this.crateShown ?? 0)));
+  }
   // v0.15: where she holds a sale from: behind (north of) her first table, the buyers' far side
   sellSpot(out = new THREE.Vector3()) { return out.copy(this.stations.table.pos).add(new THREE.Vector3(0, 0, -SELL_BEHIND_M)); }
   // v0.13: her tables, first to last
@@ -897,6 +933,7 @@ export class World {
     const out = [];
     for (const [id, s] of Object.entries(this.stations)) {
       if (s.def.kind === 'table' && (!tableAvailable(l) || s.def.table >= tables(l))) continue;
+      if (s.def.kind === 'crate' && !tableAvailable(l)) continue; // v0.25: it comes with the first table
       if (s.def.kind === 'site' && isCommitted(l, id)) continue; // built
       if (s.def.kind === 'node' && !this.nodeViews[id]) continue;
       if (s.def.kind === 'rock' && id === 'RX' && !l.rocks.RX) continue; // the recovery rock only when needed
@@ -970,6 +1007,7 @@ export class World {
           if (want && !st.body.world) this.physics.addBody(st.body);
           if (!want && st.body.world) this.physics.removeBody(st.body);
         }
+        this.syncCrate(l, n, animate);
       }
     }
     this.lastLedger = l;
@@ -987,6 +1025,37 @@ export class World {
     this.syncArcher(l, animate);
     this.syncStain(l);
     this.applyParts(l);
+  }
+
+  // v0.25: the crop crate, by the ledger: there once the first table is, past the last of the `n`
+  // tables standing (it hops along when a table is set up), its heap what the ledger's crate
+  // holds less what is still flying to it (CRATE_SHOWN drawn; `crateTotal` is the count shown)
+  syncCrate(l, n, animate = false) {
+    const st = this.stations.crate;
+    if (!st) return;
+    const want = n > 0;
+    const o = st.obj;
+    if (!this.revealing?.has('crate')) o.visible = want && !(this.playHidden >= 1);
+    if (want && !st.body.world) this.physics.addBody(st.body);
+    if (!want && st.body.world) this.physics.removeBody(st.body);
+    const list = [];
+    for (const c of ['C', 'S', 'T']) for (let i = (l.crate?.[c] ?? 0) - this.inFlight('crate', c); i > 0; i--) list.push(c);
+    this.crateTotal = want ? crateCount(l) : 0;
+    this.crateShown = Math.min(CRATE_SHOWN, list.length);
+    this.piles.crate.set(want ? list.slice(0, CRATE_SHOWN) : [], { pop: animate });
+    if (!want || n === this.crateTables) return;
+    // a table more (or fewer, on another farm): the crate's place moves along the row
+    const from = st.pos.clone();
+    const to = this.crateAt(n);
+    this.crateTables = n;
+    st.pos.copy(to);
+    st.body.position.set(to.x, 0.3, to.z);
+    if (!animate || this.reducedMotion() || this.playHidden) { o.position.copy(to); return; }
+    const token = (this.crateHop = (this.crateHop ?? 0) + 1);
+    this.tweens.run(420, (t) => {
+      if (this.crateHop !== token) return;
+      o.position.lerpVectors(from, to, ease.inOut(t)).setY(Math.sin(Math.PI * t) * 0.28);
+    }).then(() => { if (this.crateHop === token) o.position.copy(to); });
   }
 
   // ---------- the colour-reveal rule and the blueprint (spec v0.9 §10.9) ----------
@@ -1178,7 +1247,7 @@ export class World {
   setPlayHidden(k) {
     this.playHidden = k;
     for (const s of Object.values(this.stations)) {
-      if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard'].includes(s.def.kind)) continue;
+      if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard', 'crate'].includes(s.def.kind)) continue;
       if (k >= 1) s.obj.visible = false;
       s.obj.scale.setScalar(stationScale(s.def) * Math.max(0.01, 1 - k));
     }
@@ -1194,7 +1263,7 @@ export class World {
     }
     if (k === 0) {
       for (const s of Object.values(this.stations)) {
-        if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard'].includes(s.def.kind)) continue;
+        if (!['weed', 'pile', 'stick', 'table', 'rock', 'yard', 'crate'].includes(s.def.kind)) continue;
         s.obj.scale.setScalar(stationScale(s.def));
         if (['pile', 'yard'].includes(s.def.kind)) s.obj.visible = true; // sync shows their units
       }
@@ -1918,7 +1987,8 @@ export class World {
   archerToBench(id = 'A1', { instant = false } = {}) {
     const a = this.archers?.[id];
     if (!a || !this.lastLedger || !isCommitted(this.lastLedger, a.id) || !isCommitted(this.lastLedger, 'G2')) return;
-    if (a.mode === 'seated' || (a.mode === 'walk' && a.walk?.then === 'seated')) return;
+    // (v0.25: `instant` seats him even while he is on his way there: the sunset's scene opens with him seated)
+    if (a.mode === 'seated' || (a.mode === 'walk' && a.walk?.then === 'seated' && !instant)) return;
     const seat = this.archerSeatPos();
     const sit = () => {
       a.mode = 'seated'; a.walk = null; a.aim = null;
@@ -2452,7 +2522,10 @@ export class World {
   saleBoxes(nTables) {
     const room = 0.1;
     const box = (x, z, hx, hz) => ({ lo: [x - hx - room, z - hz - room], hi: [x + hx + room, z + hz + room] });
-    return this.tableStations().filter((st) => st.def.table < nTables).map((st) => box(st.pos.x, st.pos.z, 0.5, 0.28));
+    const out = this.tableStations().filter((st) => st.def.table < nTables).map((st) => box(st.pos.x, st.pos.z, 0.5, 0.28));
+    const crate = this.stations.crate; // v0.25: the crate at the row's end is part of the wall
+    if (crate && nTables > 0) out.push(box(crate.pos.x, crate.pos.z, 0.42, 0.3));
+    return out;
   }
   // the farm's fixed footprints on the ground ({ lo, hi } boxes, grown by `room`): measured from
   // the built models, so they follow the fit

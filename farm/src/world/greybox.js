@@ -359,6 +359,7 @@ export function hammer() {
 // that puffs up when she builds (props.js)
 export function yardTable() { return shadows(addOutline(P.yardTable())); }
 export function saleSign() { return shadows(addOutline(P.saleSign(), 0.012)); }
+export function cropCrate() { return shadows(addOutline(P.cropCrate(), 0.012)); } // v0.25
 export function flyingBird() { return shadows(addOutline(P.flyingBird(), 0.012)); }
 export function easterEgg(seed) { return shadows(addOutline(P.easterEgg(seed), 0.01)); }
 export const sparkleStar = P.sparkleStar;

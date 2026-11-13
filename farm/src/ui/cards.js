@@ -71,7 +71,7 @@ export function createCards(dialog, { player = null } = {}) {
       if (!dragging) time.textContent = `${fmtTime(st.t)} / ${fmtTime(st.duration)}`;
     }));
   }
-  dialog.addEventListener('close', () => { for (const u of unsubs) u(); unsubs = []; });
+  dialog.addEventListener('close', () => { for (const u of unsubs) u(); unsubs = []; dialog.classList.remove('welcome'); });
 
   return {
     get isOpen() { return dialog.open; },
@@ -111,9 +111,12 @@ export function createCards(dialog, { player = null } = {}) {
     // v0.23 (audit 12, the postcard): `stats` ([[label, value]]) is a strip of this farm's numbers
     // under the picture (`statsText` reads it out), and `share` a button that hands the picture
     // with that strip to `onShare(img, say)`: `say` puts a word under the buttons.
+    // v0.25: `signature` ("The Farm, complete", pencilled in the drawing's corner) and `stamp` (a
+    // gold "100%"), once everything on the farm is found
     picture(o) {
+      const signed = o.signature ? `<span class="signature">${esc(o.signature)}</span>${o.stamp ? `<span class="gold-stamp" role="img" aria-label="${esc(o.stamp)} complete">${esc(o.stamp)}</span>` : ''}` : '';
       const strip = o.stats?.length ? `<dl class="stats-strip" aria-label="${esc(o.statsText ?? '')}">${o.stats.map(([k, v]) => `<div><dd>${esc(v)}</dd><dt>${esc(k)}</dt></div>`).join('')}</dl>` : '';
-      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}"></figure>${strip}<div class="actions">${o.share ? `<button type="button" class="primary" data-act="share"><span aria-hidden="true">↗</span> ${esc(o.share)}</button>` : ''}<a class="button${o.share ? '' : ' primary'}" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div><p class="small share-said" role="status"></p>`, {
+      open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing${o.signature ? ' complete' : ''}"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}">${signed}</figure>${strip}<div class="actions">${o.share ? `<button type="button" class="primary" data-act="share"><span aria-hidden="true">↗</span> ${esc(o.share)}</button>` : ''}<a class="button${o.share ? '' : ' primary'}" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div><p class="small share-said" role="status"></p>`, {
         '[data-act="share"]': async (b) => {
           const img = dialog.querySelector('figure img');
           const said = dialog.querySelector('.share-said');
@@ -122,6 +125,11 @@ export function createCards(dialog, { player = null } = {}) {
           b.disabled = false;
         },
       }, o.onClose);
+    },
+    // v0.25 the welcome, once on a new farm: { title (the captain's line, pencilled), who, first, go, onClose }
+    welcome(o) {
+      open(`<h2 id="card-title" class="welcome-line">${esc(o.title)}</h2><p>${esc(o.who)}</p><p class="welcome-first">${esc(o.first)}</p><div class="actions"><button type="button" class="primary" data-close autofocus>${esc(o.go)}</button></div>`, {}, o.onClose);
+      dialog.classList.add('welcome');
     },
     // (v0.23, Tiffany: "Get rid of the credits tab": the Credits card of v0.22 is gone)
     close(v = 'close') { if (dialog.open) dialog.close(v); },

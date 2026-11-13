@@ -4,10 +4,12 @@
 // times it: from standing (v0.14: from the finale's first frame), her 5.0 m/s run, slowing to a
 // walk over the last metre, all of it before the colour beats start at 3.5 s. From more than 13 m away (a replay) she starts 13 m out along her line.
 // `walkAt` gives her place, heading and gait along it.
+// v0.25: the finale holds on the finished house first, and she cheers at it; she sets off at 2 s,
+// as the camera starts for the second shot, and is at her place by 4.7 s (reveal.js FINALE).
 export const WALK = {
-  start: 0, // ms into the finale: she sets off at once, while the play elements shrink away (v0.14)
+  start: 2000, // ms into the finale: she sets off as the camera leaves the house (v0.14-v0.24: at once, 0)
   accelMs: 250, // from standing to the full run
-  latest: 3300, // she is at D17 by then (the outlines take their colour from 3.5 s)
+  latest: 4700, // she is at D17 by then (the outlines take their colour from 5.2 s; v0.13-v0.24: 3300, before 3.5 s)
   walkSpeed: 1.6, // m/s, the last metre ends at this
   runSpeed: 5.0, // m/s (P24-1)
   slowM: 1, // the last metre is a walk
@@ -17,10 +19,11 @@ export const WALK = {
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 // from, to: { x, z }; obstacles: [{ x, z, r }] -> { pts: [{x, z}], len, ms, gait, rate }
-export function planWalk(from0, to, obstacles = [], n = 48) {
+// (v0.25: `maxM`: the farthest she starts from; the sunset's walk to the bench has no such jump)
+export function planWalk(from0, to, obstacles = [], n = 48, maxM = WALK.maxM) {
   let from = from0;
   const d0 = dist(from0, to);
-  if (d0 > WALK.maxM) from = { x: to.x + ((from0.x - to.x) * WALK.maxM) / d0, z: to.z + ((from0.z - to.z) * WALK.maxM) / d0 };
+  if (d0 > maxM) from = { x: to.x + ((from0.x - to.x) * maxM) / d0, z: to.z + ((from0.z - to.z) * maxM) / d0 };
   const pts = [];
   for (let i = 0; i <= n; i++) pts.push({ x: from.x + ((to.x - from.x) * i) / n, z: from.z + ((to.z - from.z) * i) / n });
   // obstacles that hold an end point itself are left out (she starts beside the house)
