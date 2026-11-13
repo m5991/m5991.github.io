@@ -344,10 +344,27 @@ export function toonMaterial({ color = 0xffffff, vertexColors = false, hatch = 0
 
 // cached toon materials by colour and options (static meshes share them)
 const toonCache = new Map();
+// (v0.26: each remembers the options it was made with, so parts that differ only in colour can
+// be drawn as one mesh: hand.js mergeByMaterial)
 export function toon(color, opts = {}) {
   const key = `${color}|${JSON.stringify(opts)}`;
-  if (!toonCache.has(key)) toonCache.set(key, toonMaterial({ color, ...opts }));
+  if (!toonCache.has(key)) {
+    const m = toonMaterial({ color, ...opts });
+    m.userData.look = opts;
+    m.userData.lookKey = key;
+    toonCache.set(key, m);
+  }
   return toonCache.get(key);
+}
+// The look of a cached toon material without its colour, as the options to make its
+// vertex-coloured twin with; null for any other material (a clone, a basic one) and for one
+// changed since it was made in a way a twin would not carry (see-through, no depth).
+export function sharedLook(mat) {
+  if (!mat?.userData?.lookKey || toonCache.get(mat.userData.lookKey) !== mat) return null;
+  const look = { ...mat.userData.look, vertexColors: true };
+  if (mat.transparent !== !!look.transparent || mat.opacity !== (look.opacity ?? 1) || !mat.depthWrite || !mat.depthTest) return null;
+  if (mat.side !== (look.side ?? THREE.FrontSide)) look.side = mat.side; // (a side set after it was made: the archer's collar)
+  return look;
 }
 
 // ---------------- screen-space ink outline (inverted hull) ----------------

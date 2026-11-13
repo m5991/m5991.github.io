@@ -33,6 +33,7 @@
 // from the start too (`weedPresent`); she carries one table's worth of crops at most, what she
 // harvests beyond that goes into the crate beside the tables (`crate`, no limit: `pick`), and the
 // tables fill up again from the crate by themselves (`restock`, one of the ledger's own follow-ups).
+import { PERF } from '../core/perf.js';
 import {
   ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
@@ -413,12 +414,49 @@ export function apply(l0, tx) {
   }
 }
 
+// v0.26: would a tick to `now` change nothing but the clock? It asks, in `tick`'s own order, each
+// thing `tick` may do: a crop coming ready, a stick going or falling, the stick and weed clocks
+// being set, a weed over a crop being cleared, giving one of its warnings or wilting its plant,
+// a weed coming up on the grass. Whenever one of them would, the answer is no and the full tick
+// runs. (test/v026.test.mjs plays whole farms both ways and compares every ledger.)
+export function tickQuiet(l, now, calm = false) {
+  for (const n of Object.values(l.nodes)) if (n.readyAt !== null && n.remaining === 0 && now >= n.readyAt) return false;
+  let down = 0;
+  for (const id of STICK_SLOTS) {
+    const s = l.sticks[id];
+    if (s.units <= 0) continue;
+    if (calm || now >= s.at + STICK.lifeMs) return false; // its clock is pushed on, or it goes
+    down++;
+  }
+  if (l.stickNext === null) { if (isCommitted(l, STICK.after)) return false; } else if (now >= l.stickNext && down < STICK.max) return false;
+  const done = mainComplete(l);
+  let over = false; // a weed stands over a crop, and nothing about it changes in this tick
+  for (const id of Object.keys(NODES)) {
+    const since = l.overgrown[id];
+    if (since === null) continue;
+    if (calm || done || now >= since + REGROW.wiltMs) return false; // it is cleared, or its plant wilts
+    for (const at of [REGROW.warnMs, REGROW.growMs]) if (l.activeMs < since + at && now >= since + at) return false; // one of its two warnings
+    over = true;
+  }
+  if (calm || done || over || !isCommitted(l, REGROW.after)) { if (l.regrowAt !== null) return false; } else if (l.regrowAt === null || now >= l.regrowAt) return false;
+  if (l.yardWeedAt !== null || l.yardBack.some((t) => now >= t)) return false;
+  let standing = 0;
+  for (const id of YARD_WEED_SLOTS) if (l.yardWeeds[id]) standing++;
+  if (YARD_WEEDS.max - standing - l.yardBack.length > 0 && (mainComplete(l) ? YARD_WEED_SLOTS : YARD_WEEDS.early).some((id) => !l.yardWeeds[id])) return false;
+  return true;
+}
+
 // Active-time clock: only advanced while the world runs (pause, menus, hidden tabs add nothing).
 // It also drops the sticks, lets a stick left too long go, and lets weeds creep over her crops.
 // `calm` (Help me finish): no weed creeps in and nothing is lost: a lying stick or a weed's wilt
 // clock simply waits.
 function tick(l0, ms, calm = false) {
   if (!(Number.isFinite(ms) && ms >= 0)) return fail('badTime');
+  // v0.26: nearly every tick moves the clock and nothing else. Such a tick gives back a ledger
+  // that shares everything but the clock with the one before, in place of a copy of the whole
+  // ledger made 60 times a second (the S26 audit: the copy was among the dearest things a frame
+  // did). No reducer writes into the ledger it is given, so the shared parts are safe.
+  if (PERF.cache && tickQuiet(l0, l0.activeMs + ms, calm)) return { ok: true, l: { ...l0, activeMs: l0.activeMs + ms }, events: [] };
   const l = clone(l0);
   const events = [];
   l.activeMs += ms;

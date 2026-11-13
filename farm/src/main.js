@@ -80,11 +80,19 @@
 // raked from the start; she carries one table's worth of crops and the rest goes into the crate
 // beside the tables, which fill from it; with every song and keepsake found the day turns to a
 // lasting golden evening on the bench (game/sunset.js) and The drawing is signed and stamped.
+// v0.26 (the captain, on the S26 in Firefox: "i can feel how the phone starts heating"; the audit
+// found the farm drawn 108-119 times a second, also while nothing happened): the farm is drawn 60
+// times a second at most, 30 while nothing but its own small motion moves, and not at all behind
+// Pause, Extras, a card or in a hidden tab (core/loop.js, `framePlan` below); a prop's parts of
+// one look are one mesh with one ink hull (world/hand.js mergeByMaterial); what a frame works out
+// again is kept until it changes. Each fix has a switch on the address (core/perf.js). Nothing
+// looks or runs differently.
 // v0.27 (the captain's v0.25 playtest, 2026-11-13: "maybe we should simply show the whole farm"):
 // the finale is one shot on every screen, the whole farm (world/framing.js WHOLE_FARM), and the
 // picture slides into the room the end card leaves; on the bench in the sunset Dwight says his
 // line, "(of the)" in much smaller letters (game/data.js DWIGHT_THANKS).
 import * as THREE from 'three';
+import { PERF } from './core/perf.js';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
 import { ModelRegistry } from './core/models.js';
@@ -161,14 +169,14 @@ async function boot() {
   // ---------- renderer, scene, lights ----------
   const canvas = $('world');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  renderer.shadowMap.enabled = params.get('shadows') !== '0';
+  renderer.setPixelRatio(Math.min(PERF.dpr, window.devicePixelRatio || 1)); // v0.26: ?dpr= (2, as before)
+  renderer.shadowMap.enabled = params.get('shadows') !== '0' && PERF.shadow > 0;
   // the shared look (world/look.js): toon bands lit by one soft sun from the upper left, soft
   // ink-blue PCF shadows, a paper sky drawn by the world (no clear colour shows)
   const scene = new THREE.Scene();
   const sunLight = new THREE.DirectionalLight(0xffffff, 1);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(1024, 1024);
+  sunLight.shadow.mapSize.set(PERF.shadow || 1024, PERF.shadow || 1024); // v0.26: ?shadow= (1024, as before)
   Object.assign(sunLight.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 60 });
   configureShadows(renderer, sunLight);
   scene.add(sunLight, sunLight.target);
@@ -240,6 +248,9 @@ async function boot() {
     if (r.sessionOnly && !persist.warned) { persist.warned = true; later(() => hud.toast('Saving is unavailable here: progress lasts for this session only.', 5000)); }
   }
 
+  // v0.26: counts the ledger's changes other than its clock, so that what the world step works
+  // out from the ledger (world.targets) is worked out once per change and not once per frame
+  let ledgerRev = 0;
   // every accepted transaction is saved before its presentation (spec §12); then the ledger's own
   // follow-ups (C0 committing free as its weeds clear, an idle tool going back) go the same way
   function commit(tx) {
@@ -247,6 +258,7 @@ async function boot() {
     if (!r.ok) return r;
     data.ledger = r.l;
     if (tx.t !== 'tick' || r.events.length) {
+      ledgerRev++; // v0.26: something other than the clock changed (what is kept per frame is asked again)
       persist();
       present(tx, r.events); // books unit flights first, so their piles fill only as they land
       world.sync(data.ledger, true);
@@ -586,6 +598,7 @@ async function boot() {
   // ---------- v0.17: the birds (spec §7; game/birds.js decides, the ledger takes) ----------
   // Session-only: the visit's clock is not saved (the kinds' rotation and every take are).
   const birds = createBirds();
+  const waveBtn = $('btn-wave');
   const birdAt = new THREE.Vector3();
   let cleaning = null; // { ms } while she wipes the bench, standing still
   const benchSpot = () => world.benchSeat(new THREE.Vector3());
@@ -642,7 +655,7 @@ async function boot() {
     }
     const st = birds.state;
     world.updateBird(dt, st, birdTarget(st.target));
-    $('btn-wave').hidden = !birds.wavable;
+    if (waveBtn.hidden === birds.wavable) waveBtn.hidden = !birds.wavable;
   }
   // a free Wave (the Wave button, E / Space while a bird threatens, or a tap on the bird)
   function doWave() {
@@ -1114,7 +1127,9 @@ async function boot() {
 
   // ---------- loop with the world-pause gate ----------
   let frozen = false; // test hook (?debug=1): hold world time while the page keeps rendering
-  const loop = createLoop({ world: (dt) => { if (!frozen) worldStep(dt); }, render: renderStep });
+  // v0.26: the frame budget (core/loop.js): 60 frames a second at most, 30 while the farm idles,
+  // none while nothing on the canvas can change (`framePlan`, below the render step)
+  const loop = createLoop({ world: (dt) => { if (!frozen) worldStep(dt); }, render: renderStep, plan: (t) => framePlan(t), fps: () => PERF.fps, idleFps: () => PERF.idleFps });
   const input = createInput({
     zone: $('stick-zone'), base: $('stick-base'), knob: $('stick-knob'),
     onAction: () => {
@@ -1139,13 +1154,22 @@ async function boot() {
   // first-actions coach: session-only facts (the rest derives from the ledger, tutorial.js)
   const tut = { moved: false, movedM: 0, lingerMs: 0, lingerHold: 0, phase: null, dropNoted: false };
   let coachState = null; // decided in the world step, drawn in the render step
+  let ledgerSeen = null; // v0.26: the ledger as the last world step left it
   function worldStep(dt) {
+    if (data.ledger !== ledgerSeen) ledgerRev++; // (a ledger put in place by anything but `commit`: a check's cheat)
     hero.setInput(debugSteer ?? input.read());
     hero.preStep(dt);
     world.physics.step(1 / 60, dt / 1000, 5);
-    commit({ t: 'tick', ms: Math.round(dt), calm: data.settings.helpMeFinish });
+    // v0.26: the ledger's clock takes whole milliseconds; what a frame's time leaves over is
+    // carried to the next, so the clock keeps real time at any frame rate (v0.25 rounded each
+    // frame: 17 for 16.7 at 60 a second, 8 for 8.3 at 120, so the farm's clock ran 2% fast on one
+    // screen and 4% slow on another)
+    tickCarry += dt;
+    const tickMs = Math.floor(tickCarry);
+    tickCarry -= tickMs;
+    commit({ t: 'tick', ms: tickMs, calm: data.settings.helpMeFinish });
     world.updateBranch(dt);
-    ctxTargets = world.targets(data.ledger);
+    ctxTargets = world.targets(data.ledger, ledgerRev);
     const heroXZ = { x: hero.body.position.x, z: hero.body.position.z };
     goal = goalFor(data.ledger, heroXZ);
     toolCtx = { want: wantedTool(data.ledger, goal, heroXZ, ctxTargets), toolsComeToMe: data.settings.helpMeFinish }; // Help me finish brings every tool (P29-7)
@@ -1233,9 +1257,12 @@ async function boot() {
     const pill = onePill(coachState?.prompt ?? null, statusWant);
     if (coachState) coachState.prompt = pill.coach;
     if (pill.status !== lastProgress) { hud.setProgress(pill.status); lastProgress = pill.status; }
+    ledgerSeen = data.ledger;
+    if (worldBusy()) activeAt = performance.now(); // v0.26: something moves: the full frame budget
   }
   const HUNT_TAPS = { onSongs: () => openSongbook({ fromPlay: true }), onKeepsakes: () => openKeepsakes({ fromPlay: true }) };
   let sunsetWait = 0; // v0.25: play time with everything found, before the sunset starts
+  let tickCarry = 0; // v0.26: the part of a millisecond the ledger's clock has not had yet
   let diyTime = false; // she has everything for the next build (the goal line says DIY)
   let lastBite = null; // the tool stroke last seen (a puff as each one bites)
   // is a circle already on the ground at this target: one of the guide's (`ids`), an action's
@@ -1484,7 +1511,8 @@ async function boot() {
     // v0.23: on a finished farm Dwight is on the bench; otherwise at his post
     world.archerReset();
     if (mainComplete(data.ledger)) world.archerToBench('A1', { instant: true });
-    roofClimb = null; goalBeat = null; wishTold = -1; lastBite = null; sunsetWait = 0;
+    roofClimb = null; goalBeat = null; wishTold = -1; lastBite = null; sunsetWait = 0; tickCarry = 0;
+    ledgerRev++; // (v0.26: another farm: nothing kept from the last one)
     showSign(null);
     applyTheme(data.ledger.crop); // her first crop's theme; a new farm starts on plain paper
     if (hammering.active) hammering.stop();
@@ -2158,6 +2186,7 @@ async function boot() {
     coach.pointAt(point === 'sale' ? $('btn-sale') : null);
   }
 
+  let eveningShown = null; // the evening wash's opacity as last written
   const wakeLock = createWakeLock();
   document.addEventListener('pointerdown', () => wakeLock.refresh(), { passive: true });
   function renderStep(dt) {
@@ -2191,7 +2220,11 @@ async function boot() {
       ? eveningLight({ cycle: eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)), scene: dusk ? dusk.evening : null, seen: data.session.sunsetSeen && mainComplete(data.ledger), dayLight: data.session.dayLight })
       : 0;
     world.updateFireflies(dt, dusk ? Math.min(ev, dusk.fireflies) : ev);
-    $('evening').style.opacity = String(ev.toFixed(3));
+    // (v0.26: written when it changes)
+    if (ev !== eveningShown) {
+      eveningShown = ev;
+      $('evening').style.opacity = String(ev.toFixed(3));
+    }
     world.updateSky(rig.camera);
     if (rig.mode === 'whole' || !session.playing || finale.active || sunset.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints(), { solidTrunk: hero.moment?.kind === 'hug' }); updateStackCap(performance.now()); }
     updateCoach();
@@ -2206,8 +2239,59 @@ async function boot() {
     // the world is drawn under it only until that picture is on the page)
     if (opening.coversCanvas && !paper.needsCapture) { if (DEBUG) debugReadout(); return; }
     renderer.render(scene, rig.camera);
+    draws++;
     if (DEBUG) debugReadout();
   }
+
+  // ---------- v0.26: the frame budget (core/loop.js asks on every callback of the screen) ----------
+  // 'full': something on the farm moves, or is about to (she walks or works, a flight, a build, a
+  //   sale, a bird, a cinematic, the camera on its way), and for a second after it stops;
+  // 'idle': the world runs and only its own small motion shows (the smoke, the sun, the sky's
+  //   birds, a circle breathing, Dwight looking about), and the drawing behind the slideshow and
+  //   the end card: half the frames;
+  // 'hold': nothing on the canvas can change: a hidden tab, the page of the opening before its
+  //   tap, and the world waiting behind Pause, Extras, a card or a notice. The picture is drawn
+  //   once and stays. Whatever does move behind a card is given its frames: the farm dancing to
+  //   a song behind its card, the blueprint fading in, the camera settling, Dwight's words
+  //   running out. Behind Pause and Extras, which cover the farm with paper, nothing is.
+  // A tap, a key or a resize always gets its frames at once (`stir`).
+  const ACTIVE_GRACE_MS = 1000; // the full budget for this long after the last thing moved
+  let activeAt = -Infinity;
+  let draws = 0; // scene draws submitted (checks)
+  const cinematic = () => finale.active || sunset.active || (opening.active && (opening.phase === 'running' || paper.needsCapture));
+  const cameraMoving = () => !rig.settled || (rig.wholeBlend > 0 && rig.wholeBlend < 1);
+  // v0.27's end card has just come up and the picture is on its way to its place beside it
+  const cardSliding = () => backdrop && performance.now() - cardAt < CARD_SLIDE_MS + 100;
+  // the world runs and something in it is on the move
+  function worldBusy() {
+    return hero.moving || hero.groundSpeed > 0.02 || !!hero.moment || !!hero.rise || hero.celebrateMs > 0 || !!ix.working || hammering.active || !!roofClimb
+      || tweens.list.length > 0 || saleShowing || hunt.busy || !!hunt.moment || birds.busy || !!cleaning || world.busy || hero.stack.busy
+      || burst.active || burst.ticking || songs.state.playing || cameraMoving();
+  }
+  // a sheet of paper over the whole screen: Pause, Extras or a save notice (styles.css `.screen`, 95% paper)
+  const covered = () => !pauseEl.hidden || !extrasEl.hidden || !titleEl.hidden;
+  // the world waits behind a card, and still something shows
+  const pausedMotion = () => songs.state.playing || (world.danceState?.k ?? 0) > 0.001 || world.looksMoving || cameraMoving() || burst.active || burst.ticking || !speech.el.hidden;
+  function framePlan(t) {
+    if (document.hidden) return PERF.still ? 'hold' : 'full';
+    if (cinematic()) return 'full';
+    if (opening.active) return PERF.still ? 'hold' : 'full'; // its page rests, over the whole canvas, until the first tap
+    if (loop.paused) {
+      // the drawing is the picture there (v0.27: and it slides into its place beside the end card)
+      if (credits.active || backdrop || rig.mode === 'whole') return cameraMoving() || cardSliding() ? 'full' : 'idle';
+      if (!PERF.still) return 'full';
+      if (covered()) return 'hold'; // Pause, Extras or a notice lies over the whole farm (also while a song plays in Extras)
+      return pausedMotion() ? 'full' : 'hold';
+    }
+    return t - activeAt < ACTIVE_GRACE_MS ? 'full' : 'idle';
+  }
+  // the player did something, or the page changed: frames now, whatever the plan was
+  const stir = () => { activeAt = performance.now(); loop.request(); };
+  for (const t of ['pointerdown', 'pointerup', 'keydown', 'click', 'input', 'change']) window.addEventListener(t, stir, { capture: true, passive: true });
+  window.addEventListener('resize', stir);
+  document.addEventListener('visibilitychange', stir);
+  songs.subscribe(() => loop.request()); // a song starts or stops: the farm's dance with it
+  THREE.DefaultLoadingManager.onLoad = () => loop.request(); // a picture that arrives late is drawn, also on a held frame
 
   // ---------- measurement (step 3) and debug hooks ----------
   function measure() {
@@ -2267,6 +2351,9 @@ async function boot() {
       place(x, z) { hero.place(x, z); rig.snap = true; },
       enterWhole, leaveWhole, start, openPause, doDiy, doYardSale, tapWorld,
       fps: () => loop.fps,
+      // v0.26: the frame budget now ('full' | 'idle' | 'hold'), the screen's callbacks, the frames
+      // worked and the scene draws submitted since the start, and the switches (core/perf.js)
+      perf: () => ({ mode: loop.mode, asleep: loop.asleep, ...loop.counts, draws, fps: +loop.fps.toFixed(1), switches: { ...PERF } }),
       // deterministic world time for automated checks: runs the same world step the loop runs
       advance(ms, frame = 50) { for (let t = 0; t < ms; t += frame) if (!loop.paused) worldStep(frame); },
       walkTo(u, v, { maxMs = 30000, tol = 0.2 } = {}) {

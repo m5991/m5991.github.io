@@ -8,7 +8,8 @@
 // edges stay crisp. Static parts are merged per material so a model costs a few draw calls.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PAL, toon } from './look.js';
+import { addInkNormals, PAL, sharedLook, toon } from './look.js';
+import { PERF } from '../core/perf.js';
 
 export const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
 export function mesh(geo, color, { hatch = 0, ink = true, shadow = true, noLight = 0, ...look } = {}) {
@@ -74,15 +75,29 @@ export function taperTube(curve, r0, r1, segs = 16, radial = 9) {
 // ---------------- merging static parts per material ----------------
 // Bakes every mesh under `root` into one mesh per (material, ink, shadow) group, keeping names
 // of the groups' first meshes for debugging. Returns a new Group with the same transform.
-export function mergeByMaterial(root, name = root.name) {
+// v0.26 (the S26 audit: a frame was some 300 separate draws, and each one costs the phone time):
+// with `colours`, parts in the same toon look that differ only in colour become one mesh, each
+// part's colour written on its vertices and the shared material white (the toon shader multiplies
+// the two, so every pixel is the colour it was). A bench of four browns is then one draw, one ink
+// hull and one shadow draw in place of four of each. `colours` false keeps a mesh per colour: the
+// tree's leaves and bark fade apart, and the house's blueprint ghosts are told from its drawn
+// strokes by colour (greybox.js), so those two ask for it. ?batch=0 turns it off everywhere.
+export function mergeByMaterial(root, name = root.name, { colours = true, inkFirst = false } = {}) {
+  const byLook = colours && PERF.batch;
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  // first, as ever: one geometry per (material, ink, shadow)
   const buckets = new Map();
   root.traverse((m) => {
     if (!m.isMesh) return;
     const mats = Array.isArray(m.material) ? m.material : [m.material];
+    // `inkFirst`: each part's ink normals are worked out on the part as it was modelled, before
+    // the bake, and turned with it (plants that stood each in its own space: greybox cornStalks)
+    if (inkFirst && !m.userData.noOutline) addInkNormals(m.geometry);
     let g = m.geometry.clone();
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+    const to = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+    g.applyMatrix4(to);
+    if (inkFirst && g.attributes.inkNormal) g.attributes.inkNormal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(to));
     g.deleteAttribute('uv');
     if (!g.attributes.normal) g.computeVertexNormals();
     if (!g.index) g = mergeVertices(g, 1e-6);
@@ -95,17 +110,94 @@ export function mergeByMaterial(root, name = root.name) {
       buckets.get(key).geos.push(geo);
     }
   });
+  for (const b of buckets.values()) b.geo = mergeGeometries(b.geos.map((g) => { g.clearGroups(); return g; }), false);
+  // then (v0.26) the ones of one look become one, each with its colour on its vertices. Their ink
+  // normals are worked out first, on the geometry v0.25 drew by itself, so the joined mesh's ink
+  // hull is the hulls of its parts, point for point (look.js addInkNormals joins the normals of
+  // points that coincide: parts of different colours that touch must not be joined there).
+  // A look that only one of them has stays that one mesh with its own material, untouched.
+  const looks = new Map();
+  const made = [];
+  for (const b of buckets.values()) {
+    const look = byLook && (b.geo.attributes.color?.itemSize ?? 3) === 3 ? sharedLook(b.mat) : null;
+    if (!look) { made.push(b); continue; }
+    const key = `${JSON.stringify(look)}|${b.noOutline}|${b.cast}`;
+    if (!looks.has(key)) { const joined = { look, noOutline: b.noOutline, cast: b.cast, parts: [] }; looks.set(key, joined); made.push(joined); }
+    looks.get(key).parts.push(b);
+  }
+  for (const j of looks.values()) {
+    if (j.parts.length === 1) { Object.assign(j, { mat: j.parts[0].mat, geo: j.parts[0].geo }); continue; }
+    j.mat = toon(0xffffff, j.look);
+    j.colours = new Set();
+    for (const b of j.parts) {
+      if (!b.noOutline) addInkNormals(b.geo); else b.geo.deleteAttribute('inkNormal');
+      const own = !!b.mat.userData.look.vertexColors;
+      tinted(b.geo, b.mat.color, own);
+      if (!own) j.colours.add(b.mat.color.getHex());
+    }
+    j.geo = mergeGeometries(j.parts.map((b) => b.geo), false);
+  }
   const out = new THREE.Group();
   out.name = name;
   out.position.copy(root.position); out.quaternion.copy(root.quaternion); out.scale.copy(root.scale);
-  for (const b of buckets.values()) {
-    const m = new THREE.Mesh(mergeGeometries(b.geos.map((g) => { g.clearGroups(); return g; }), false), b.mat);
+  for (const b of made) {
+    const m = new THREE.Mesh(b.geo, b.mat);
     m.castShadow = b.cast; m.receiveShadow = true;
     if (b.noOutline) m.userData.noOutline = true;
+    if (b.colours?.size) m.userData.colours = [...b.colours]; // the colours it is drawn in (drawnColours)
     out.add(m);
   }
   Object.assign(out.userData, root.userData);
   return out;
+}
+// The colours a model is drawn in, as hex numbers: each mesh's own, or the ones baked onto its
+// vertices by mergeByMaterial (checks ask this in place of reading a material's colour).
+export function drawnColours(root) {
+  const out = new Set();
+  root.traverse((m) => {
+    if (!m.isMesh || m.userData.outline) return;
+    if (m.userData.colours) for (const c of m.userData.colours) out.add(c);
+    else { const c = m.material.uniforms?.uColor?.value ?? m.material.color; if (c) out.add(c.getHex()); }
+  });
+  return out;
+}
+// v0.26: a group whose parts never move against each other (a head, the arms with what they
+// hold), as a few meshes: its solid parts baked per look, and what cannot be (a see-through lens,
+// a line) or must stay findable (`kept`: its named children) left as they are, in place.
+// ?batch=0: the group as it was built.
+export function rigid(g, kept = []) {
+  if (!PERF.batch) return g;
+  const solid = new THREE.Group();
+  const rest = [];
+  for (const c of [...g.children]) { if (kept.includes(c)) rest.push(c); else solid.add(c); }
+  solid.updateMatrixWorld(true);
+  const loose = [];
+  solid.traverse((m) => { if (m.isLine || m.isPoints || m.isSprite || (m.isMesh && !sharedLook(m.material))) loose.push(m); });
+  for (const m of loose) {
+    const at = m.matrixWorld.clone();
+    m.removeFromParent();
+    at.decompose(m.position, m.quaternion, m.scale);
+    rest.push(m);
+  }
+  const out = mergeByMaterial(solid, g.name);
+  out.position.copy(g.position); out.quaternion.copy(g.quaternion); out.scale.copy(g.scale);
+  for (const r of rest) out.add(r);
+  Object.assign(out.userData, g.userData);
+  return out;
+}
+// the geometry with a material's colour on its vertices (times its own vertex colours, if its
+// material drew them)
+function tinted(geo, colour, own) {
+  const n = geo.attributes.position.count;
+  const had = own ? geo.attributes.color : null;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = colour.r * (had ? had.getX(i) : 1);
+    col[i * 3 + 1] = colour.g * (had ? had.getY(i) : 1);
+    col[i * 3 + 2] = colour.b * (had ? had.getZ(i) : 1);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
 }
 function subGeometry(g, gr) {
   const s = new THREE.BufferGeometry();
@@ -221,14 +313,17 @@ export function cottage() {
   chimney.add(at(mesh(new THREE.BoxGeometry(0.58, 0.12, 0.58), mix(PAL.red, PAL.ink, 0.35)), cx, roofY + 1.24, cz));
 
   const g = new THREE.Group();
-  const detailsNode = mergeByMaterial(details);
+  // (v0.26: a mesh per colour, as before: the blueprint's ghosts tell the drawn strokes by their
+  // colour, and the see-through house keeps the order its parts are drawn in)
+  const perColour = { colours: false };
+  const detailsNode = mergeByMaterial(details, details.name, perColour);
   const hinge = new THREE.Group(); hinge.name = 'D01_House_Door';
   hinge.position.set(0.55 - 0.43, P, front + 0.03);
-  const leaf = mergeByMaterial(door, 'D07_Door');
+  const leaf = mergeByMaterial(door, 'D07_Door', perColour);
   leaf.position.x = 0.43;
   hinge.add(leaf);
   detailsNode.add(hinge);
-  g.add(mergeByMaterial(plinth), mergeByMaterial(walls), mergeByMaterial(roof), mergeByMaterial(chimney), detailsNode);
+  g.add(...[plinth, walls, roof, chimney].map((part) => mergeByMaterial(part, part.name, perColour)), detailsNode);
   g.userData.chimneyTop = new THREE.Vector3(cx, roofY + 1.35, cz);
   g.userData.doorStep = new THREE.Vector3(0.55, 0, front + 0.3 + 0.225); // the door step's front edge
   return g;
@@ -291,7 +386,7 @@ export function broadTree() {
     geo.scale(1, 0.86, 1);
     g.add(at(mesh(geo, i % 3 === 0 ? PAL.leafLight : PAL.leaf, { hatch: 1, noLight: 0.6 }), x, y, z));
   });
-  return mergeByMaterial(g, 'D09_Tree');
+  return mergeByMaterial(g, 'D09_Tree', { colours: false }); // its leaves and its bark fade apart, told by colour (world.js)
 }
 export const TREE_TRUNK_R = 0.32;
 

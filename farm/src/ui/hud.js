@@ -162,6 +162,9 @@ export function createHud(root = document) {
   let diyHandler = null;
   let saleHandler = null;
   let buildKey = '';
+  let contextKey = null; // v0.26: what the context button, the Yard Sale button and the race clock
+  let saleKey = null; //   last showed: main.js asks on every frame, the page is written on a change
+  let raceKey = null;
   let goalKey = '';
   let goalStep = null;
   let huntKey = '';
@@ -269,8 +272,12 @@ export function createHud(root = document) {
     get countersUp() { return [...HUD_ORDER, ...HUNT_COUNTERS].filter((k) => !cells[k].hidden); },
     // `kind` 'act' (v0.23): an action to do at a place (a red circle's, the bench's), in the
     // actions' red; anything else is the plain button
+    // (v0.26: asked on every frame, written when it changes)
     setContext(label, handler, kind = null) {
       contextHandler = handler;
+      const key = label ? `${kind === 'act' ? 'act' : ''}|${label}` : '';
+      if (key === contextKey) return;
+      contextKey = key;
       if (!label) { context.hidden = true; return; }
       if (context.textContent !== label) context.textContent = label;
       context.classList.toggle('act', kind === 'act');
@@ -279,6 +286,9 @@ export function createHud(root = document) {
     // v0.23 (audit 14): the race clock beside the menu button ("4:12"), or null for none; `done`
     // holds it still at the finish
     setRace(text, done = false) {
+      const key = text ? `${done ? 1 : 0}|${text}` : '';
+      if (key === raceKey) return; // (v0.26: asked on every frame, written when it changes)
+      raceKey = key;
       const el = $('race-clock');
       if (!el) return;
       el.parentElement?.classList?.toggle('racing', !!text); // the goal line makes room for it
@@ -320,7 +330,15 @@ export function createHud(root = document) {
     // v0.14 (captain: "yard sale button should also go yellow"): like the DIY button, flower
     // yellow and pulsing once a tap sells (six out and she is at the tables); away from them it
     // keeps the paper-and-ink look, and a tap says where to go (main.js)
-    setSale(on, handler = null, here = true) { saleHandler = handler; sale.hidden = !on; sale.classList.toggle('away', on && !here); },
+    // (v0.26: asked on every frame, written when it changes)
+    setSale(on, handler = null, here = true) {
+      saleHandler = handler;
+      const key = `${on ? 1 : 0}${here ? 1 : 0}`;
+      if (key === saleKey) return;
+      saleKey = key;
+      sale.hidden = !on;
+      sale.classList.toggle('away', on && !here);
+    },
     get saleShown() { return !sale.hidden; },
     triggerSale() { if (!sale.hidden) saleHandler?.(); },
     setProgress(text) {

@@ -38,6 +38,7 @@ import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
 import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START, YARD_WEED_PLACES } from './layout.js';
 import { ease } from '../core/tween.js';
+import { PERF } from '../core/perf.js';
 import { SPOTS } from '../game/songs.js';
 import { drawnShare, hopSpans } from './moments.js';
 import { KEEPSAKES, KEEPSAKE_NEAR_M } from '../game/keepsakes.js';
@@ -383,7 +384,8 @@ export class World {
     const cornScale = probe.scale.x;
     this.fits.D15 = { scale: +cornScale.toFixed(3), heightM: +(1.95 * cornScale).toFixed(2), extent: roundExt(projectedExtent(p, probe)), target: FITS.D15 };
     this.corn = {};
-    const cornRest = new THREE.Group(); cornRest.name = 'D15_Corn_Rest'; // the 11 plants that are never nodes
+    let cornRest = new THREE.Group(); cornRest.name = 'D15_Corn_Rest'; // the 11 plants that are never nodes
+    const stalks = []; // v0.26: the same 11, to be drawn as one (?batch=0: each by itself, as before)
     CORN_PLANTS.forEach((c, i) => {
       const holder = new THREE.Group();
       holder.position.copy(p.groundAt(c.u, c.v));
@@ -405,11 +407,14 @@ export class World {
         this.stations[c.node] = { def: { id: c.node, kind: 'node', r: 0.3, label: 'corn' }, obj: holder, pos: holder.position.clone() };
         this.root.add(holder);
         this.addPart(c.node, { model: live, before: [outline] });
+      } else if (PERF.batch) {
+        stalks.push({ pos: holder.position, scale: cornScale, yaw: holder.rotation.y, variant });
       } else {
         holder.add(G.cornStalk(variant)); // in colour at C1, when the patch is complete
         cornRest.add(holder);
       }
     });
+    if (stalks.length) cornRest = G.cornStalks(stalks);
     this.root.add(cornRest);
     this.addPart('cornRest', { model: cornRest, outlineBefore: true });
     this.corn.patch = this.addOutlineQuad([[49, 50.5], [84, 50.5], [84, 38], [49, 38]], 'D15_Corn_Footprint');
@@ -497,6 +502,24 @@ export class World {
     this.stations.G2.pos.copy(benchSite.localToWorld(new THREE.Vector3(0, 0, 0.85))).setY(0);
     this.boundsQuad = [[BOUNDS.uMin, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMax], [BOUNDS.uMin, BOUNDS.vMax]]
       .map(([u, v]) => p.groundAt(u, v));
+    this.built = true; // v0.26: every station stands where it stays (eggSpotPos keeps its answers from here on)
+  }
+  // v0.26: something of the world's own is on the move that should be seen at the full frame
+  // budget (main.js worldBusy): a stick falling, the bird that comes for the crops, Dwight
+  // walking or aiming, an arrow in the air, a unit popping onto a pile, a blueprint fade, a part
+  // going together. Its small standing motion (smoke, sun, the sky's birds, a circle breathing)
+  // is not: that is the idle budget's.
+  get busy() {
+    if (this.looksMoving || this.revealing?.size) return true;
+    if (this.branch && this.branch.state !== 'idle') return true;
+    if (this.nuisance?.bird.visible) return true;
+    if (this.arrows?.length) return true;
+    for (const a of Object.values(this.archers ?? {})) if (a.root.visible && (a.walking || a.aim)) return true;
+    for (const pile of Object.values(this.piles)) if (pile.busy) return true;
+    const k = this.marker;
+    if (k && k.obj.visible && k.pop > 0) return true;
+    for (const ks of Object.values(this.keepsakes ?? {})) if (ks.picking || ks.popMs !== undefined) return true;
+    return false;
   }
 
   // v0.22: stand a tool against the house's right wall. It keeps its fitted size; it turns with
@@ -929,7 +952,14 @@ export class World {
   tableStations() { return STATIONS.filter((d) => d.kind === 'table').map((d) => this.stations[d.id]); }
 
   // targets for the interaction controller (positions in metres on the ground)
-  targets(l) {
+  // v0.26: `rev` (main.js) counts the ledger's changes other than its clock. The list depends on
+  // nothing else of the ledger (ledger.js tick: a tick that changes more than the clock has an
+  // event), so with the same `rev`, the same finished state and the same falling stick it is the
+  // list of the frame before, kept. Callers read it; none writes to it.
+  targets(l, rev = null) {
+    const falling = this.branch.state !== 'idle' ? this.branch.id : null;
+    const c = this.targetsKept;
+    if (PERF.cache && rev !== null && c && c.rev === rev && c.finished === this.finished && c.falling === falling) return c.out;
     const out = [];
     for (const [id, s] of Object.entries(this.stations)) {
       if (s.def.kind === 'table' && (!tableAvailable(l) || s.def.table >= tables(l))) continue;
@@ -945,6 +975,7 @@ export class World {
       if (s.def.kind === 'stick' && this.branch.state !== 'idle' && this.branch.id === id) t.hold = true; // still falling
       out.push(t);
     }
+    if (PERF.cache && rev !== null) this.targetsKept = { rev, finished: this.finished, falling, out };
     return out;
   }
 
@@ -1125,8 +1156,10 @@ export class World {
   updateLooks(dtMs) {
     const ms = this.reducedMotion() ? Math.min(REDUCED_FADE_MS, BLUEPRINT_FADE_MS) : BLUEPRINT_FADE_MS;
     let moved = false;
+    this.looksMoving = false; // v0.26: a blueprint fade is under way (main.js: frames for it behind Pause too)
     for (const part of Object.values(this.parts)) {
       if (part.alpha === part.target || this.revealing?.has(part.id)) continue;
+      this.looksMoving = true;
       const step = dtMs / ms;
       part.alpha = part.target > part.alpha ? Math.min(part.target, part.alpha + step) : Math.max(part.target, part.alpha - step);
       const done = this.lastLedger && this.partDone(part, this.lastLedger);
@@ -1521,6 +1554,23 @@ export class World {
   // shows a sparkle over it. When she reaches one, a bird flies across and drops that spot's egg
   // near her (`eggDrop`); she picks it up (`popEgg`). Presentation only: main.js owns the hunt.
   eggSpotPos(id, out = new THREE.Vector3()) {
+    // v0.26: a spot is a fixed place on the farm (the house, the stations and the drawing do not
+    // move once the world is built), so it is worked out once. v0.25 worked each one out again on
+    // every frame it was shown, with the house's whole matrix tree. Only a spot with no place of
+    // its own (it is where she stands) is asked each time.
+    const kept = PERF.cache && this.built ? (this.spotsKept ??= new Map()) : null;
+    const hit = kept?.get(id);
+    if (hit) return out.copy(hit);
+    const at = this.eggSpotAt(id, out);
+    if (kept && this.spotFixed(id)) kept.set(id, at.clone());
+    return at;
+  }
+  // has this spot a place of its own (not "where she stands")
+  spotFixed(id) {
+    const spec = SPOTS[id];
+    return !!spec?.uv || ['door', 'chimney', 'window', 'bench', 'tree', 'tools', 'stones', 'bed', 'sunflowers', 'corn', 'table', 'pose', 'sun', 'birds'].includes(spec?.anchor ?? id);
+  }
+  eggSpotAt(id, out = new THREE.Vector3()) {
     const spec = SPOTS[id];
     const anchor = spec?.anchor ?? id;
     const offset = spec?.offset ?? [0, 0];
@@ -1766,7 +1816,7 @@ export class World {
       sp.visible = shown && sp.userData.in > 0;
       if (!sp.visible) { if (!shown) sp.userData.in = 0; continue; }
       const at = this.eggSpotPos(id);
-      if (id === 'bed') at.y = this.bedHeight(at); // on the bed's soil, where she steps up
+      if (id === 'bed') at.y = PERF.cache && this.built ? (this.bedSpotY ??= this.bedHeight(at)) : this.bedHeight(at); // on the bed's soil, where she steps up
       const ready = !!hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= this.spotReach(id);
       this.updateStandMarker(sp, at, dtMs, ready, { chimney: id === 'chimney' });
       const k = ease.out(sp.userData.in);
@@ -2075,6 +2125,7 @@ export class World {
       if (!still) a.t += dtMs;
       // v0.23: his legs walk while he moves, and his body bobs with the steps
       const walking = this.stepArcher(a, dtMs);
+      a.walking = walking; // (v0.26: `busy`)
       const swing = walking ? Math.sin(a.stride * Math.PI * 2) : 0;
       if (a.legL && a.legL.visible) { a.legL.rotation.x += (swing * ARCHER_WALK.swing - a.legL.rotation.x) * Math.min(1, dtMs / 90); a.legR.rotation.x += (-swing * ARCHER_WALK.swing - a.legR.rotation.x) * Math.min(1, dtMs / 90); }
       if (a.mode !== 'seated') a.root.position.y = walking ? Math.abs(Math.cos(a.stride * Math.PI * 2)) * 0.022 : 0;
@@ -3421,7 +3472,25 @@ export class World {
       this.houseFade.meshes = [];
       for (const id of HOUSE_STAGES) if (this.lastLedger && isCommitted(this.lastLedger, id)) this.parts[id].model.root.traverse((m) => { if (m.isMesh && !m.userData.outline) this.houseFade.meshes.push(m); });
     }
+    // v0.26: while the camera and every point are where they were a frame ago (she stands still)
+    // and nothing on the farm is going together, what hides what is the same too: the rays
+    // against the tree's and the house's triangles (the tree has 29,000) are not cast again; the
+    // fade still eases on its clock. While a build goes up, or for the two frames after anything
+    // moved on a tween, they are cast afresh, on the meshes as they are now: a part is put
+    // together from other meshes than the ones it ends as.
+    const quiet = !this.tweens.list.length && !this.revealing?.size;
+    this.fadeQuiet = quiet ? (this.fadeQuiet ?? 0) + 1 : 0;
+    let sig = `${this.houseFade?.meshes.length ?? 0}|${solidTrunk ? 1 : 0}|${camera.position.x.toFixed(3)},${camera.position.y.toFixed(3)},${camera.position.z.toFixed(3)}`;
+    for (const p of points) sig += `|${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`;
+    const same = PERF.cache && this.fadeQuiet > 2 && this.fadeKept?.sig === sig;
+    const kept = same ? this.fadeKept : (this.fadeKept = { sig, hidden: new Map() });
     const hides = (f) => {
+      if (kept.hidden.has(f)) return kept.hidden.get(f);
+      const h = cast(f);
+      kept.hidden.set(f, h);
+      return h;
+    };
+    const cast = (f) => {
       for (const p of points) {
         tmpV.subVectors(p, camera.position);
         const len = tmpV.length();

@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gravelMaterial, PAL, toon, toonMaterial } from './look.js';
-import { at, hash3, log, lumpy, mergeByMaterial, mesh, mix, noise3, stone, stoneGeometry, taperTube } from './hand.js';
+import { at, hash3, log, lumpy, mergeByMaterial, mesh, mix, noise3, rigid, stone, stoneGeometry, taperTube } from './hand.js';
 import { bake, blade, cobGeometry, paint, rng, sunflowerHeadGeometry, vmesh } from './flora.js';
 import { LOOKS } from '../game/crowd.js';
 
@@ -490,8 +490,9 @@ export function archer() {
     head.add(at(mesh(box(headR * 0.03, headR * 0.03, headR * 1.0), A.frame, { ink: false, shadow: false }), sd * headR * 0.7, headR * 0.16, headR * 0.45));
   }
   head.add(at(mesh(box(headR * 0.16, headR * 0.035, headR * 0.03), A.frame, { ink: false, shadow: false }), 0, headR * 0.17, headR * 1.0));
-  head.add(dwightHair(headR, A.hair, A.skin));
-  root.add(head);
+  const hair = dwightHair(headR, A.hair, A.skin);
+  head.add(hair);
+  root.add(rigid(head, [hair])); // (v0.26: his face and glasses as three meshes; the lenses and the hair as they were)
   // arms forward, holding the crossbow level at the chest (the `arms` group is raised to aim)
   const arms = new THREE.Group(); arms.name = 'arms';
   arms.position.set(0, shoulderY - 0.05, 0);
@@ -514,8 +515,9 @@ export function archer() {
   bow.add(at(mesh(new THREE.ConeGeometry(0.016, 0.05, 6), PAL.charcoal), 0, 0.034, 0.5, Math.PI / 2, 0, 0)); // its head
   bow.add(at(mesh(new THREE.TorusGeometry(0.05, 0.008, 5, 12, Math.PI), PAL.charcoal), 0, -0.02, 0.47, 0, 0, Math.PI)); // the stirrup
   bow.position.set(0.02, -0.27, 0.14);
-  arms.add(bow);
-  root.add(arms);
+  const crossbow = rigid(bow); // (v0.26: the crossbow is two meshes and its string; the arms one)
+  arms.add(crossbow);
+  root.add(rigid(arms, [crossbow]));
   // legs in slacks, black shoes
   for (const sd of [-1, 1]) {
     const legG = new THREE.Group(); legG.name = sd < 0 ? 'legL' : 'legR';

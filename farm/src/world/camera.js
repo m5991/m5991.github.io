@@ -23,6 +23,9 @@ export class CameraRig {
     // (framing.js finaleRect, endCardFrame); null: the framing above. The finale sets it for its
     // shots and the end card for its picture; it holds while the camera eases back to play.
     this.frameRect = null;
+    // v0.26: the camera has come to rest on what it follows (main.js: while it has not, the farm
+    // is drawn at the full frame budget)
+    this.settled = false;
   }
 
   // Vanessa's on-screen height in gameplay, CSS px (P; tuned for 390x844 / 844x390 phones)
@@ -33,6 +36,7 @@ export class CameraRig {
     const p = this.proj;
     if (this.mode === 'whole') {
       p.frameViewport(this.camera, w, h, drawingFrame(w, h, 0).rect);
+      this.settled = true;
       return;
     }
     const target = new THREE.Vector3(heroPos.x, 0.8 + (heroPos.y ?? 0), heroPos.z);
@@ -60,6 +64,7 @@ export class CameraRig {
     if (this.offsetY === undefined || snapped) this.offsetY = want;
     else this.offsetY += (want - this.offsetY) * (1 - Math.exp(-dtMs / 180));
     if (Math.abs(this.offsetY - want) < 0.05) this.offsetY = want;
+    this.settled = this.offsetY === want && this.focus.distanceToSquared(target) < 1e-6; // within a millimetre
     let offsetY = this.offsetY;
     let offsetX = 0;
     const b = Math.max(0, Math.min(1, this.wholeBlend));

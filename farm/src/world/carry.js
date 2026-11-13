@@ -107,6 +107,8 @@ export class CarryStack {
   }
 
   get count() { return this.units.length; }
+  // v0.26: a unit is flying to or from the stack, or popping as it lands (main.js: the full frame budget)
+  get busy() { return this.outgoing.length > 0 || this.units.some((u) => u.fly || u.pop >= 0); }
   countOf(res) { let n = 0; for (const u of this.units) if (u.res === res) n++; return n; }
 
   // insert a unit of `res` above the others of its kind, keeping the bottom-to-top order
@@ -336,6 +338,8 @@ export class UnitPile {
     return this.group.localToWorld(target.set(x, y, z));
   }
 
+  // v0.26: a unit that has just landed is still popping
+  get busy() { return this.slots.some((s) => s && s.pop >= 0); }
   update(dtMs, reducedMotion = false) {
     for (const s of this.slots) {
       if (!s || s.pop < 0) continue;

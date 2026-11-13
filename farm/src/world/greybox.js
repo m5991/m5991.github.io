@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 
 import { ink, LOOK, PAL, toon, toonMaterial } from './look.js';
-import { branchPieces, broadTree, cottage, COTTAGE, shard } from './hand.js';
+import { branchPieces, broadTree, cottage, COTTAGE, mergeByMaterial, shard } from './hand.js';
 import * as F from './flora.js';
 import * as P from './props.js';
 
@@ -134,6 +134,18 @@ export function cornPlant({ live, variant = 0 }) {
 // One of the 11 corn plants that are never nodes: the stalk without cobs, inked and in colour;
 // the world gives it its outline look until C1 completes the patch (spec v0.9 §10.9).
 export function cornStalk(variant = 0) { return shadows(ink(F.cornPlant({ live: false, variant }), FOLIAGE_INK)); }
+// v0.26: all of them as one mesh with one ink hull (they stand still and take their colour
+// together, so nothing tells them apart but the number of draws: 2 in place of 22, and 1 in the
+// shadow map in place of 11). plants: [{ pos, scale, yaw, variant }], in the patch's own space.
+export function cornStalks(plants, name = 'D15_Corn_Rest') {
+  const g = new THREE.Group();
+  for (const pl of plants) {
+    const one = F.cornPlant({ live: false, variant: pl.variant });
+    one.position.copy(pl.pos); one.scale.setScalar(pl.scale); one.rotation.y = pl.yaw;
+    g.add(one);
+  }
+  return shadows(ink(mergeByMaterial(g, name, { inkFirst: true }), FOLIAGE_INK));
+}
 
 // ---------- D16 sunflowers (outline until S0 / S1) ----------
 export function sunflower(variant = 0, { live = false } = {}) {
