@@ -24,6 +24,11 @@
 // moment she picks anything up (`pick`); on the finished farm weeds come up on the grass and are
 // raked like any other (`yardWeeds`), and nothing takes or harms a crop; now and then a buyer has
 // a wish and tips a coin for it (`saleWish`).
+// v0.24 (the captain's v0.23 playtest): every weed that stands can be raked from the start (a crop
+// patch's weeds no longer wait for the patch to open: `weedOpen`); the weeds on the open grass are
+// there from the first moment of a farm and grow straight back when raked (`yardWeeds`, `yardBack`,
+// `yardRaked`). The rake's jobs are still only the weeds the farm asks for (`jobWeeds`, `toolJobs`),
+// so nothing in the route waits on the others.
 import {
   ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
@@ -73,9 +78,14 @@ export function createLedger() {
     theft: { rotation: 0, log: [], totalBeforeH4: 0, stain: false },
     // v0.23: the weeds that come up on the finished farm's grass (true = one stands at that slot),
     // the active time the next one comes, and how many have come (the seed of the next slot)
+    // v0.24: they stand from the start of a farm (the first tick brings them up), and a raked one
+    // is up again soon: `yardBack` holds the active time each raked weed comes back, `yardRaked`
+    // how many she has raked (`yardWeedAt`, the v0.23 clock of the next one, is no longer used)
     yardWeeds: Object.fromEntries(YARD_WEED_SLOTS.map((id) => [id, false])),
     yardWeedAt: null,
     yardWeedSeq: 0,
+    yardBack: [],
+    yardRaked: 0,
   };
 }
 
@@ -261,19 +271,35 @@ export function weedPresent(l, id) {
   if (!plot || STAGES[plot].base) return true; // the three crop patches' weeds: from the start
   return prereqsOf(l, plot).every((p) => isCommitted(l, p));
 }
-// A patch's weeds can be raked when the patch is hers to work: any crop patch before she has
-// chosen (raking one chooses it), her first crop's patch, another base patch after her first
-// harvest (the tomatoes' bed may still be unbuilt), and C1 and S1 after their prerequisites.
-// Weeds on a patch that is not open yet just wait there.
+// A patch is hers to work (the goal line asks for its weeds, and its spots can be dug): any crop
+// patch before she has chosen (raking one chooses it), her first crop's patch, another base patch
+// after her first harvest (the tomatoes' bed may still be unbuilt), and C1 and S1 after their
+// prerequisites.
 export function patchWorkable(l, stage) {
   if (STAGES[stage].base) return l.crop === null || isFirstCrop(l, stage) || l.harvested;
   return !missingPrereqs(l, stage).length;
 }
+// v0.24 (the captain: "I would like the weeds to be removable from the start. All the weeds should
+// be able to be removed"): a weed that stands can be raked, whatever its patch is waiting for.
+// (v0.11-v0.23: the weeds of a patch that was not open yet, the other two crops' before her first
+// harvest, just waited there: "Opens after your first harvest".) Raked early they are gone for
+// good, as ever: the patch still opens, and costs, when it did.
 export const weedOpen = (l, id) => {
   if (regrowNode(id) || isYardWeed(id)) return weedPresent(l, id);
-  return l.weeds[id] === false && weedPresent(l, id) && patchWorkable(l, WEED_PLOT[id]);
+  return l.weeds[id] === false && weedPresent(l, id);
 };
 export const openWeeds = (l) => [...WEEDS, ...REGROW_WEEDS, ...YARD_WEED_SLOTS].filter((id) => weedOpen(l, id));
+// v0.24: the weeds the farm asks her to rake, which are the rake's jobs: a weed over a crop, and
+// the weeds of a patch that is hers to work (v0.11-v0.23's "open" weeds). Not the weeds of a patch
+// that has not opened yet, and not the ones on the open grass: those can be raked, but nothing
+// waits on them, so the rake is not fetched for them, kept in hand for them, or held back from its
+// lean by them.
+export const weedJob = (l, id) => {
+  if (isYardWeed(id)) return false;
+  if (regrowNode(id)) return weedPresent(l, id);
+  return weedOpen(l, id) && patchWorkable(l, WEED_PLOT[id]);
+};
+export const jobWeeds = (l) => [...WEEDS, ...REGROW_WEEDS].filter((id) => weedJob(l, id));
 // v0.23: the weeds standing on the finished farm's grass
 export const yardWeeds = (l) => YARD_WEED_SLOTS.filter((id) => l.yardWeeds?.[id]);
 // the regrowth weeds over her crops now
@@ -290,7 +316,9 @@ export const openDigSpots = (l) => Object.keys(NODES).filter((id) => digOpen(l, 
 // a spot dug or waiting to be dug (committed stage), even if its weeds still stand
 export const undug = (l) => Object.keys(NODES).filter((id) => isCommitted(l, NODES[id].stage) && !l.nodes[id].dug);
 // which tool each open job needs: { rake: [weed ids], shovel: [node ids] }
-export const toolJobs = (l) => ({ rake: openWeeds(l), shovel: openDigSpots(l) });
+// (v0.24: the rake's jobs are the weeds the farm asks for, `jobWeeds`; any other weed that stands
+// can be raked too, and the rake comes to her hand when she stands by one, interaction.js)
+export const toolJobs = (l) => ({ rake: jobWeeds(l), shovel: openDigSpots(l) });
 // the held tool has nothing left to do: it goes back to its lean by itself
 export function toolIdle(l) {
   return l.tool !== null && toolJobs(l)[l.tool].length === 0;
@@ -439,21 +467,28 @@ function tick(l0, ms, calm = false) {
       } else l.regrowAt = now + REGROW.everyMs;
     }
   }
-  // v0.23: on the finished farm a weed comes up somewhere on the grass now and then (never over a
-  // crop: nothing wilts here); raked, it is gone, and another comes in its time
-  if (mainComplete(l)) {
-    const standing = YARD_WEED_SLOTS.filter((id) => l.yardWeeds[id]);
-    if (l.yardWeedAt === null) l.yardWeedAt = now + YARD_WEEDS.firstMs;
-    else if (now >= l.yardWeedAt) {
-      if (standing.length < YARD_WEEDS.max) {
-        const free = YARD_WEED_SLOTS.filter((id) => !l.yardWeeds[id]);
-        const id = free[Math.floor(seeded(l.yardWeedSeq + 101) * free.length)];
-        l.yardWeeds[id] = true;
-        l.yardWeedSeq += 1;
-        events.push({ type: 'yardWeedSprouted', id });
-      }
-      l.yardWeedAt = now + YARD_WEEDS.everyMs;
+  // v0.23: on the finished farm weeds come up on the grass (never over a crop: nothing wilts here).
+  // v0.24 (the captain: "removable from the start ... the ones that aren't going to be possible to
+  // plant something on should be able to grow really fast"): from the first moment of a farm
+  // YARD_WEEDS.max of them stand, and a raked one is up again YARD_WEEDS.backMs later (`back`).
+  // While the farm is being built they keep to the places clear of her work (YARD_WEEDS.early);
+  // on the finished farm they come up at any free one of the ten. Help me finish changes nothing
+  // here: they take nothing and nothing waits on them.
+  {
+    const back = l.yardBack.filter((t) => now >= t).length;
+    if (back) l.yardBack = l.yardBack.filter((t) => now < t);
+    const places = mainComplete(l) ? YARD_WEED_SLOTS : YARD_WEEDS.early;
+    const standing = YARD_WEED_SLOTS.filter((id) => l.yardWeeds[id]).length;
+    const want = Math.max(back, YARD_WEEDS.max - standing - l.yardBack.length);
+    for (let k = 0; k < want; k++) {
+      const free = places.filter((id) => !l.yardWeeds[id]);
+      if (!free.length) break;
+      const id = free[Math.floor(seeded(l.yardWeedSeq + 101) * free.length)];
+      l.yardWeeds[id] = true;
+      l.yardWeedSeq += 1;
+      events.push({ type: 'yardWeedSprouted', id, ...(k < back ? { back: true } : {}) });
     }
+    l.yardWeedAt = null;
   }
   return { ok: true, l, events };
 }
@@ -464,14 +499,17 @@ function clearWeed(l0, id) {
     if (!weedPresent(l0, id)) return fail('notPresent');
     if (l0.tool !== 'rake') return fail('needRake');
     const l = clone(l0);
+    // v0.24: gone, and up again in a moment (tick)
     l.yardWeeds[id] = false;
-    return { ok: true, l, events: [{ type: 'weedCleared', id, yard: true }] };
+    l.yardBack = [...l.yardBack, l.activeMs + YARD_WEEDS.backMs];
+    l.yardRaked += 1;
+    return { ok: true, l, events: [{ type: 'weedCleared', id, yard: true, backMs: YARD_WEEDS.backMs }] };
   }
   const node = regrowNode(id);
   if (!node && !(id in l0.weeds)) return fail('unknownWeed');
   if (node ? !weedPresent(l0, id) : l0.weeds[id]) return fail('alreadyCleared');
   if (!weedPresent(l0, id)) return fail('notPresent');
-  if (!node && !patchWorkable(l0, WEED_PLOT[id])) return fail('patchLocked');
+  // (v0.24: no 'patchLocked' any more: a weed that stands can be raked)
   if (l0.tool !== 'rake') return fail('needRake');
   const l = clone(l0);
   if (node) {
@@ -512,7 +550,9 @@ export function toolComes(l, tool) {
 // to her hand by itself. A tool she has only just fetched, and not yet used, stays in her hand
 // whatever she picks up on the way: sent back, she would have to walk to the house for it again.
 export function toolUsed(l, tool) {
-  if (tool === 'rake') return Object.values(l.weeds ?? {}).some((w) => w === true) || (l.yardWeedSeq ?? 0) > 0 || (l.regrowSeq ?? 0) > 0;
+  // (v0.24: a weed raked on the open grass counts; that one has come up there no longer does,
+  // since they stand from the start)
+  if (tool === 'rake') return Object.values(l.weeds ?? {}).some((w) => w === true) || (l.yardRaked ?? 0) > 0 || (l.regrowSeq ?? 0) > 0;
   if (tool === 'shovel') return Object.values(l.nodes ?? {}).some((n) => n?.dug) || Object.values(l.wilted ?? {}).some(Boolean);
   return false;
 }
@@ -802,8 +842,9 @@ export function validateLedger(l) {
   if (!th || !isInt(th.rotation) || !Array.isArray(th.log) || th.log.length > THEFT_SAVED_MAX || !th.log.every((t) => isInt(t))
     || !isInt(th.totalBeforeH4, 0, THEFT_SAVED_MAX) || typeof th.stain !== 'boolean') e('theft');
   else if (th.stain && !l.stages?.G2?.committed) e('a stain on a bench that is not restored');
+  // (v0.24: they stand on a farm still being built too)
   if (!sameKeys(l.yardWeeds, YARD_WEED_SLOTS) || !YARD_WEED_SLOTS.every((id) => typeof l.yardWeeds[id] === 'boolean')) e('yard weeds');
-  else if (YARD_WEED_SLOTS.some((id) => l.yardWeeds[id]) && l.stages && !ROUTE.every((id) => l.stages[id]?.committed)) e('a yard weed on a farm that is not finished');
   if (!isTime(l.yardWeedAt) || !isInt(l.yardWeedSeq)) e('yard weed clock');
+  if (!Array.isArray(l.yardBack) || l.yardBack.length > YARD_WEED_SLOTS.length || !l.yardBack.every((t) => isInt(t)) || !isInt(l.yardRaked)) e('yard weeds coming back');
   return errors;
 }

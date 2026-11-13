@@ -68,6 +68,11 @@
 // yellow ones, the keepsakes bounce, a few show at a time and no arrow points at them; weeds come
 // up on the grass and birds visit, harming nothing; Dwight walks out of the picture before the
 // final image and sits on the bench afterwards; Extras lists every song, and has no Credits.
+// v0.24 (the captain's v0.23 playtest, 2026-11-12): the DIY button works wherever she is within
+// reach of the next build's own site (at "DIY · Windows & doors" it never came: the house's stages
+// share one site, and the nearest of them was taken to be the roof's); the tree's trunk fades with
+// its canopy; every weed that stands can be raked from the start, and the ones on the open grass
+// grow straight back; Pause has the sound switch and the two volumes.
 import * as THREE from 'three';
 import { createWakeLock } from './core/wake-lock.js';
 import { createLoop } from './core/loop.js';
@@ -75,8 +80,8 @@ import { ModelRegistry } from './core/models.js';
 import { Tweens } from './core/tween.js';
 import { ARCHER_LINES, BASE_STAGE, BIRDS, CAPACITY, dwightLine, HAMMERED, HOUSE_STAGES, isYardWeed, NODES, TABLE_STAGES, RESOURCE_NAMES, RESOURCE_UNIT, ROCKS, STAGES, STAGE_ORDER } from './game/data.js';
 import {
-  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, weedPresent, weedOpen, isFirstCrop, recipe, saleReady, saleWish,
-  tableCap, tables,
+  apply, autoTxs, available, sourceResource, mainComplete, plotWeeds, isFirstCrop, recipe, saleReady, saleWish,
+  tableCap, tables, toolIdle,
 } from './game/ledger.js';
 import { createBirds } from './game/birds.js';
 import { createCredits } from './ui/credits.js';
@@ -88,7 +93,7 @@ import { bubblePlace } from './ui/bubble.js';
 import { createRace, fmtRace, raceClock } from './game/race.js';
 import { drawPostcard, postcardStats, sharePostcard, statsItems, statsLine } from './ui/postcard.js';
 import { createDiyHint } from './game/hints.js';
-import { buildBar, PATCH_NAME, PLACE_LABEL, SHORT_LABEL, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
+import { PATCH_NAME, PLACE_LABEL, SHORT_LABEL, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
 import { eggPhase, found, foundCount, foundSongs, huntGoal, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink, visibleSpots } from './game/songs.js';
 import { createNotes, onePill, quietCoach } from './ui/voices.js';
 import { Hammering } from './world/build.js';
@@ -103,7 +108,7 @@ import { playsOpening, saveNotice } from './game/opening.js';
 import { createPaper } from './ui/paper.js';
 import { createSaveData, createSaveManager } from './game/save.js';
 import {
-  atSellingSide, atSite, createInteraction, HIGHLIGHT_RANGE_M, inReach, isMoving, pickHighlight, SALE_REACH_M, toolBlocked, wantedTool,
+  atSellingSide, buildBarAt, createInteraction, HIGHLIGHT_RANGE_M, idleWeed, inReach, isMoving, pickHighlight, SALE_REACH_M, toolBlocked, wantedTool,
 } from './game/interaction.js';
 import { nextGoal } from './game/guide.js';
 import { coachPrompt, dropLesson, guideTargets, kindOf, learned, LINGER_MS, MOVED_M, routineGather, tutorialStep } from './game/tutorial.js';
@@ -672,9 +677,14 @@ async function boot() {
     if (cleaning.ms >= BIRDS.cleanMs) { cleaning = null; commit({ t: 'cleanBench' }); }
   }
 
+  // (v0.24: the rake that has come to her hand for a weed the farm does not ask for, on the open
+  // grass or on a patch not open yet, stays until that weed is raked: the ledger's "idle tool goes
+  // back" waits)
+  const rakingGrass = () => data.ledger.tool === 'rake' && !!ix.working && idleWeed(data.ledger, ix.working);
   function settleLedger() {
     for (let guard = 0, next = autoTxs(data.ledger); next.length && guard < 20; next = autoTxs(data.ledger), guard++) {
-      if (!commit(next[0]).ok) break;
+      const tx = next.find((t) => !(t.t === 'returnTool' && rakingGrass()));
+      if (!tx || !commit(tx).ok) break;
     }
   }
 
@@ -709,9 +719,13 @@ async function boot() {
           hud.announce('Weeds cleared');
           break;
         case 'yardWeedSprouted':
-          // v0.23: the finished farm's weeds: told once, as news; nothing depends on them
-          notes.once('yardweed', 'A weed has come up on the grass. Rake it if you like: nothing harms the crops now.', 4200);
-          hud.announce('A weed has come up on the grass');
+          // v0.24: the weeds on the open grass stand from the start and grow straight back when
+          // raked. That is news once, the first time one comes back; nothing depends on them.
+          // (v0.23 told of each new one on the finished farm.)
+          if (e.back) {
+            notes.once('yardweed', 'The weeds on the open grass grow straight back. Rake them if you like: they harm nothing.', 4600);
+            hud.announce('The weed on the grass has grown back');
+          }
           break;
         case 'ready':
           world.regrowCrop(e.src); // a crop a bird took is back on its plant (v0.23)
@@ -1069,6 +1083,8 @@ async function boot() {
     const building = hammering.active || !!roofClimb;
     const evs = building || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
+    // (v0.24: she walked off from a weed nobody asked for before raking it: the rake goes back)
+    if (data.ledger.tool !== null && !ix.working && toolIdle(data.ledger)) settleLedger();
     const working = hunt.moment ? null : ix.working;
     if (hammering.active && hero.moving) hammering.stop(); // moving away never undoes the build
     const faceTo = working ? working : hammering.active ? hammering.faceTo : null;
@@ -1210,8 +1226,9 @@ async function boot() {
 
   function updateContext(heroXZ, dt = 0) {
     // v0.12: the build line (the site she stands at, or the goal line's next build) and its DIY
-    const site = atSite(heroXZ, ctxTargets);
-    const bar = finale.active || opening.active ? null : buildBar(data.ledger, site?.id ?? null);
+    // (v0.24: she is at the next build when she is within reach of its own site: the house's five
+    // stages share one, and the nearest of them was not always the one the goal line was on)
+    const bar = finale.active || opening.active ? null : buildBarAt(data.ledger, heroXZ, ctxTargets);
     diyState = diyHint.update(dt, bar && !hammering.active ? bar : null);
     hud.setBuild(bar, bar?.ready ? (bar.here ? () => doDiy(bar.stage) : () => diyAway(bar)) : null);
     // v0.14: yellow at the tables. v0.23 (Tiffany: "when she fills them the yard sale button is
@@ -1231,7 +1248,7 @@ async function boot() {
     if (w) {
       const doing = ix.workDoing;
       if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}…`;
-      else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed…' : 'Clearing weeds…';
+      else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed… it grows straight back' : 'Clearing weeds…';
       else if (w.kind === 'dig') text = 'Digging…';
       else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}`;
     } else if (roofClimb && !hammering.active) {
@@ -1243,9 +1260,7 @@ async function boot() {
     } else {
       const need = toolBlocked(data.ledger, heroXZ, ctxTargets, toolCtx);
       if (need && goal.tool !== need) text = `You need the ${need}. It leans by the house.`; // (v0.21: not when the goal line is "Take the rake")
-      // a weed on a patch that is not open yet (P27-4)
-      const waiting = !text && ctxTargets.find((x) => x.kind === 'weed' && inReach(heroXZ, x) && !data.ledger.weeds[x.id] && weedPresent(data.ledger, x.id) && !weedOpen(data.ledger, x.id));
-      if (waiting) text = 'Opens after your first harvest';
+      // (v0.24: no weed waits for its patch to open any more: every weed that stands can be raked)
       // the yard pile, inspected (P27-1)
       const yard = !text && ctxTargets.find((x) => x.kind === 'yard' && inReach(heroXZ, x, 1.2));
       if (yard) text = `Yard pile · ${data.ledger.yard.W} wood, ${data.ledger.yard.R} stone. Build takes from here.`;
@@ -1751,7 +1766,12 @@ async function boot() {
   // list. Sound automatically starts with the game"): no Sound button on the HUD or on the opening's
   // page. Sound on or off is a switch in the two lists there are: Pause, and Extras (with the two
   // volumes). The sound starts by itself (audio.autostart, called as the game starts: launch).
+  // v0.24 (the captain: "were sound effects removed? ... can we add them to the pause menu?
+  // Because I only see music"): Pause has the same three controls as Extras: the switch, the music
+  // volume and the effects volume. Still no volume control on the play screen.
   const soundSwitches = [$('btn-sound-pause'), $('btn-sound-extras')];
+  const volMusic = [$('vol-music-pause'), $('vol-music')];
+  const volEffects = [$('vol-effects-pause'), $('vol-effects')];
   const promptBtn = $('audio-prompt');
   const PROMPTS = { enable: 'Tap to enable audio', resume: 'Tap to resume audio' };
   function showAudio() {
@@ -1761,16 +1781,20 @@ async function boot() {
       b.querySelector('.state').textContent = audio.state === 'unsupported' ? 'unavailable' : s.soundEnabled ? 'on' : 'off';
       b.disabled = audio.state === 'unsupported';
     }
-    $('vol-music').value = String(Math.round(s.musicVolume * 100));
-    $('vol-effects').value = String(Math.round(s.effectsVolume * 100));
+    for (const el of volMusic) el.value = String(Math.round(s.musicVolume * 100));
+    for (const el of volEffects) el.value = String(Math.round(s.effectsVolume * 100));
     const p = audio.prompt;
     promptBtn.hidden = !p;
     if (p) promptBtn.textContent = PROMPTS[p];
   }
   for (const b of soundSwitches) b.onclick = () => { audio.toggleSound(); credits.setSound(audio.settings.soundEnabled); songs.setMuted(!audio.settings.soundEnabled); };
-  $('vol-music').oninput = (e) => audio.setMusicVolume(Number(e.target.value) / 100);
-  $('vol-effects').oninput = (e) => audio.setEffectsVolume(Number(e.target.value) / 100);
-  $('vol-effects').onchange = () => sfx.cue('tick'); // hear the new level on release
+  // (the theme rests while a menu is open; moving its slider lets it play there, so the level is
+  // heard as it is set. A found song playing in its place keeps its own hold and plays on.)
+  for (const el of volMusic) el.oninput = (e) => { audio.setMusicVolume(Number(e.target.value) / 100); audio.releaseMusic('menu'); };
+  for (const el of volEffects) {
+    el.oninput = (e) => audio.setEffectsVolume(Number(e.target.value) / 100);
+    el.onchange = () => sfx.cue('tick'); // hear the new level on release
+  }
   promptBtn.onclick = () => audio.gesture();
   // every tap, click or key is an explicit gesture: it starts audio, retries a refused start
   // and resumes after a hidden tab
@@ -1811,7 +1835,9 @@ async function boot() {
 
   // points the tree must not hide: Vanessa's legs, body and head, the marked collectible and
   // the coach's target
-  const fadePts = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
+  // (v0.24: and the circle of the build it is DIY time for, so the place to stand is never behind
+  // the tree; the trunk goes see-through with the canopy, world.updateFade)
+  const fadePts = [0, 1, 2, 3, 4, 5, 6].map(() => new THREE.Vector3());
   function fadePoints() {
     const p = hero.position;
     // (v0.23: on the roof she is in plain sight above the house: nothing fades for her there)
@@ -1821,6 +1847,8 @@ async function boot() {
     if (st) pts.push(fadePts[4].copy(st.pos).setY(0.3));
     const br = world.branchPoint(fadePts[5]); // the falling branch (P25-5)
     if (br) pts.push(br);
+    const spot = diyTime && goal.diy ? world.standPoint(goal.diy, fadePts[6]) : null;
+    if (spot) pts.push(spot.setY(spot.y + 0.15));
     return pts;
   }
 
@@ -1951,7 +1979,7 @@ async function boot() {
     world.updateFireflies(dt, ev);
     $('evening').style.opacity = String(ev.toFixed(3));
     world.updateSky(rig.camera);
-    if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints()); updateStackCap(performance.now()); }
+    if (rig.mode === 'whole' || !session.playing || finale.active || opening.active || rig.wholeBlend > 0) world.resetFade(); else { world.updateFade(dt, rig.camera, fadePoints(), { solidTrunk: hero.moment?.kind === 'hug' }); updateStackCap(performance.now()); }
     updateCoach();
     if (burst.active || burst.ticking || hammering.active) {
       tmpP.copy(hero.position).setY(1.75).project(rig.camera);

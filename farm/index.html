@@ -129,7 +129,17 @@
     <h2 id="pause-h">Paused</h2>
     <button id="btn-resume" type="button" class="primary">Resume</button>
     <!-- v0.23: with no Sound button on the screen, its switch is here (and in Extras, with the volumes) -->
-    <button id="btn-sound-pause" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>
+    <!-- v0.24 (the captain: "were sound effects removed? ... can we add them to the pause menu?
+         Because I only see music"): the same three controls as Extras, so the music and the
+         effects can each be set during the game -->
+    <fieldset id="sound-pause" class="sound-settings">
+      <legend>Sound</legend>
+      <button id="btn-sound-pause" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>
+      <label for="vol-music-pause">Music volume</label>
+      <input id="vol-music-pause" type="range" min="0" max="100" step="5">
+      <label for="vol-effects-pause">Effects volume</label>
+      <input id="vol-effects-pause" type="range" min="0" max="100" step="5">
+    </fieldset>
   </section>
 
   <!-- v0.22 Extras: only at the end, once the farm is finished and she is just exploring; New farm
@@ -143,7 +153,7 @@
     <!-- v0.23 (Tiffany: "Put the slideshow button under the keepsakes. It should be the bottom of
          the list. Above sound"; "Get rid of the credits tab") -->
     <button id="btn-slideshow" type="button">Slideshow</button>
-    <fieldset id="sound-settings">
+    <fieldset id="sound-settings" class="sound-settings">
       <legend>Sound</legend>
       <button id="btn-sound-extras" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>
       <label for="vol-music">Music volume</label>

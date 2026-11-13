@@ -24,10 +24,18 @@
 //   after weeding even if she is staying to collect the crop after": the tool goes back the moment
 //   its job is done unless another job for it is close by (KEEP_TOOL_M), and at once when she
 //   starts on anything else (gathering, harvesting).
+// v0.24 (the captain's v0.23 playtest):
+// - "All the weeds should be able to be removed ... the ones that aren't going to be possible to
+//   plant something on should be able to grow really fast": every weed that stands is worked like
+//   any weed (stand still beside one and the rake comes). The ones the farm does not ask for (on
+//   the open grass, or on a patch that has not opened yet: ledger.js weedJob) are nobody's job:
+//   anything else in reach comes first, the rake is not kept in hand for one, nor fetched for one.
+// - the DIY button works wherever she is within reach of the next build's own site (`atSite`).
 import { CAPACITY, CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedOpen,
+  available, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
 } from './ledger.js';
+import { buildBar, nextStage } from './guide.js';
 
 export const REACH_M = 0.9; // 1.5 Vanessa collision diameters with the 0.6 m base hero sphere
 export const STILL_SPEED_MS = 0.05; // m/s: the stillness clock runs only below this (P23-6.12)
@@ -127,12 +135,18 @@ export function workTx(l, t, want = null) {
   return { t: 'pick', src: t.id };
 }
 
+// v0.24: a weed that can be raked but that the farm does not ask for (on the open grass, or on a
+// patch that has not opened yet)
+export const idleWeed = (l, t) => t.kind === 'weed' && !weedJob(l, t.id);
 // nearest eligible work target in reach; the selected one first; ties by stable ID
+// (v0.24: a weed nobody asked for only when nothing else is in reach: it is never in the way of a
+// crop, a stick or a stone beside it)
 export function pickWorkTarget(l, hero, targets, selectedId = null, opts = {}) {
   const eligible = targets.filter((t) => WORK_KINDS.has(t.kind) && inReach(hero, t) && isWorkEligible(l, t, opts));
+  const grass = (t) => (idleWeed(l, t) ? 1 : 0);
   const sel = eligible.find((t) => t.id === selectedId);
-  if (sel) return sel;
-  eligible.sort((a, b) => (dist(hero, a) - (a.r ?? 0)) - (dist(hero, b) - (b.r ?? 0)) || (a.id < b.id ? -1 : 1));
+  if (sel && !(grass(sel) && eligible.some((t) => !grass(t)))) return sel;
+  eligible.sort((a, b) => grass(a) - grass(b) || (dist(hero, a) - (a.r ?? 0)) - (dist(hero, b) - (b.r ?? 0)) || (a.id < b.id ? -1 : 1));
   return eligible[0] ?? null;
 }
 
@@ -155,10 +169,25 @@ export function pickHighlight(l, hero, targets, selectedId = null, range = HIGHL
 }
 
 // v0.12: the build site she stands at (its blueprint outline marks it; no mat), or null
-export function atSite(hero, targets) {
+// v0.24 (the captain's v0.23 playtest: at "DIY · Windows & doors" she stood on the circle and the
+// button never came): `prefer` is the build the goal line is on. The five house stages share one
+// site in front of the house, so the nearest site was a tie between every house stage not built
+// yet, broken by id: the roof (H3) before the windows and doors (H5), which v0.23's order builds
+// first. So the answer for the windows and doors was "she is at the roof's site", and the button
+// said "go there" for good. Standing within reach of the next build's site is being at it, whatever
+// other site is as near or nearer.
+export function atSite(hero, targets, prefer = null) {
   const c = targets.filter((t) => t.kind === 'site' && inReach(hero, t));
+  const mine = prefer === null ? null : c.find((t) => t.id === prefer);
+  if (mine) return mine;
   c.sort((a, b) => (dist(hero, a) - (a.r ?? 0)) - (dist(hero, b) - (b.r ?? 0)) || (a.id < b.id ? -1 : 1));
   return c[0] ?? null;
+}
+// v0.24: the bottom line as the screen has it (guide.js buildBar), for where she stands: its DIY
+// button works (`here`) when she is within reach of the next build's own site. main.js shows this,
+// and the tests walk every build of the order through it.
+export function buildBarAt(l, hero, targets) {
+  return buildBar(l, atSite(hero, targets, nextStage(l))?.id ?? null);
 }
 
 // she carries something the pile takes
@@ -181,9 +210,11 @@ export function atFillTable(l, hero, targets) {
   return targets.some((t) => t.kind === 'table' && (t.table === undefined || t.table === k) && inReach(hero, t, TABLE_REACH_M));
 }
 // v0.23: another open job for the tool she holds lies within KEEP_TOOL_M: she keeps it in hand
+// (v0.24: a weed the farm does not ask for does not count: the rake goes back after the weed it
+// came for)
 export function toolJobNear(l, hero, targets, opts = {}) {
   if (!l.tool) return false;
-  return targets.some((t) => TOOL_FOR[t.kind] === l.tool && !t.hold && isWorkEligible(l, t, opts) && dist(hero, t) - (t.r ?? 0) <= KEEP_TOOL_M);
+  return targets.some((t) => TOOL_FOR[t.kind] === l.tool && !t.hold && !idleWeed(l, t) && isWorkEligible(l, t, opts) && dist(hero, t) - (t.r ?? 0) <= KEEP_TOOL_M);
 }
 // v0.15 (captain: "Vanessa should click the yard sale buttom from the north of the table"): she
 // holds the sale from behind her tables, on their north side (the far side from the camera, smaller

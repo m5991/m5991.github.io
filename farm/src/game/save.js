@@ -290,6 +290,23 @@ export function migratePreV023(d0) {
   } catch { /* a ledger too damaged to read: validation reports it */ }
   return d;
 }
+// ---------- saves from v0.23 and before (the weeds on the open grass) ----------
+// Still schema v5. v0.24's weeds on the grass stand from the start of a farm and grow back when
+// raked: the ledger gains the times the raked ones come back (none) and the count of those raked
+// (none). A farm that was being built gets its three as it loads (the first tick), a finished one
+// keeps those it had and is filled up to three. Returns a new payload; one that already has the
+// v0.24 shape is returned as is.
+export function isPreV024(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && !('yardBack' in l);
+}
+export function migratePreV024(d0) {
+  if (!isPreV024(d0)) return d0;
+  const d = structuredClone(d0);
+  d.ledger.yardBack = [];
+  d.ledger.yardRaked = 0;
+  return d;
+}
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
   if (!d?.session || typeof d.session !== 'object') return d;
@@ -313,7 +330,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSessionDefaults(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d)))))))));
+  return withSessionDefaults(migratePreV024(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))))));
 }
 
 // `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).
@@ -347,7 +364,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d) || isPreV023(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d) || isPreV023(d) || isPreV024(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

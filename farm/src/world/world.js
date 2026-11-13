@@ -282,9 +282,17 @@ export class World {
     this.buildSmoke(house);
     const tree = fitted('D09', G.tree());
     this.addCylinder(tree.position, TREE_TRUNK_R * tree.scale.x);
-    // v0.22: only the canopy fades when it hides her or a target; the trunk and the branches stay
+    // v0.22: only the canopy faded when it hid her or a target; the trunk and the branches stayed.
+    // v0.24 (the captain's v0.23 playtest: "the trunk of the tree also should go transparent"): the
+    // trunk and the branches go see-through together with the canopy, whichever of them is in the
+    // way. They are two faders with one answer (updateFade), so that the trunk can stay solid for
+    // the one moment v0.22 kept it for: while she hugs it.
     const leaves = [PAL.leaf, PAL.leafLight];
-    this.faders = [G.fadeable(tree, (m) => leaves.includes(m.material?.color?.getHex?.()))];
+    const isLeaf = (m) => leaves.includes(m.material?.color?.getHex?.());
+    const canopy = G.fadeable(tree, (m) => !m.userData.noFit && isLeaf(m));
+    const trunk = G.fadeable(tree, (m) => !m.userData.noFit && !isLeaf(m));
+    this.treeFade = { canopy, trunk };
+    this.faders = [canopy, trunk];
     // House parts already own paintable materials; fade those uniforms rather than clone
     // them away from their build/wash owners. Only committed walls occlude during play.
     const houseFade = { opacity: 1, meshes: [], set: (o) => {
@@ -841,6 +849,7 @@ export class World {
   // "Allow weeding anywhere in the picture there is a weed at the end"): the places a weed can come
   // up on the finished farm's grass (layout.js YARD_WEED_PLACES), each a weed station like the
   // others, hidden until the ledger has a weed there
+  // (v0.24: three of the places have a weed from the start of the game; raked, it grows back in)
   buildYardWeeds() {
     for (const [id, [u, v]] of Object.entries(YARD_WEED_PLACES)) {
       const obj = G.weed();
@@ -3331,20 +3340,27 @@ export class World {
   // ---------- occluder fade: the tree goes see-through while it hides what matters ----------
   // points: world positions that must stay visible (Vanessa's body, the marked target). A ray
   // from the camera to each point that meets the tree's meshes first fades the tree.
-  updateFade(dtMs, camera, points) {
+  // v0.24: the tree is one thing to see through: when its canopy or its trunk hides a point, both
+  // fade. `solidTrunk`: the trunk keeps its colour (she is hugging it: main.js).
+  updateFade(dtMs, camera, points, { solidTrunk = false } = {}) {
     if (this.houseFade) {
       this.houseFade.meshes = [];
       for (const id of HOUSE_STAGES) if (this.lastLedger && isCommitted(this.lastLedger, id)) this.parts[id].model.root.traverse((m) => { if (m.isMesh && !m.userData.outline) this.houseFade.meshes.push(m); });
     }
-    for (const f of this.faders) {
-      let hidden = false;
+    const hides = (f) => {
       for (const p of points) {
         tmpV.subVectors(p, camera.position);
         const len = tmpV.length();
         ray.set(camera.position, tmpV.divideScalar(len));
         ray.far = len - 0.05;
-        if (ray.intersectObjects(f.meshes, false).length) { hidden = true; break; }
+        if (ray.intersectObjects(f.meshes, false).length) return true;
       }
+      return false;
+    };
+    const { canopy, trunk } = this.treeFade ?? {};
+    const treeHides = !!canopy && (hides(canopy) || (!solidTrunk && hides(trunk)));
+    for (const f of this.faders) {
+      const hidden = f === canopy ? treeHides : f === trunk ? treeHides && !solidTrunk : hides(f);
       const target = hidden ? FADE_OPACITY : 1;
       let o = f.opacity + (target - f.opacity) * (1 - Math.exp(-dtMs / FADE_TAU_MS));
       if (Math.abs(o - target) < 0.01) o = target;

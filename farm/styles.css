@@ -63,9 +63,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #btn-blueprint[aria-pressed="true"] { background: #e6ecf5; }
 #audio-prompt { pointer-events: auto; margin-right: auto; align-self: flex-end; background: var(--paper); font-weight: 600; }
 #audio-prompt[hidden] { display: none; }
-#sound-settings { width: min(320px, 100%); margin: 0; padding: 8px 16px 12px; border: 2px solid var(--ink); border-radius: 10px; display: grid; gap: 4px; text-align: left; }
-#sound-settings legend { padding: 0 6px; font-weight: 600; }
-#sound-settings input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--navy); margin: 0; }
+/* (v0.24: the same box in Pause and in Extras) */
+.sound-settings { width: min(320px, 100%); margin: 0; padding: 8px 16px 12px; border: 2px solid var(--ink); border-radius: 10px; display: grid; gap: 4px; text-align: left; }
+.sound-settings legend { padding: 0 6px; font-weight: 600; }
+.sound-settings input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--navy); margin: 0; }
 /* the goal, one line: an icon, a short name, what is still missing as icons and numbers (the one
    she is after now underlined in flower yellow), a few last words that give way first */
 #goal { grid-column: 1; grid-row: 2; margin: 0; min-width: 0; min-height: 44px; display: flex; align-items: center; padding: 6px 10px; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 10px; font-size: 15px; line-height: 1.2; overflow: hidden; }
@@ -524,8 +525,8 @@ body.whole #btn-back.x-close { display: flex; }
 .sound-switch { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .sound-switch .state { font-weight: 700; }
 .sound-switch[aria-pressed="false"] { background: #ece4d0; }
-#pause .sound-switch { margin-top: 10px; min-height: 48px; width: min(220px, 100%); font-size: 16px; }
-#sound-settings .sound-switch { width: 100%; min-height: 46px; margin: 2px 0 6px; font-size: 16px; }
+#pause .sound-settings { margin-top: 10px; }
+.sound-settings .sound-switch { width: 100%; min-height: 46px; margin: 2px 0 6px; font-size: 16px; }
 /* Dwight's speech bubble: a pointed tail on the side that faces him, its tip at his head */
 #speech { transform: none; animation: note-fade 0.18s linear; }
 #speech::after { display: none; }

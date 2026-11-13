@@ -239,6 +239,8 @@ export function readyBuild(l) {
 // (Hire, Plant) button, which works only at its site. -> null when no build is next.
 // v0.23: only ever the next build in the order: standing at another part that could be built
 // offers nothing (v0.12-v0.22 gave the stage she stood at when she could build it).
+// (v0.24: `hereId` is the next build's id when she is within reach of its own site, whatever other
+// site is as near: interaction.js buildBarAt, which is what the screen asks.)
 // -> { stage, label, short, ready, here, verb, text }
 export function buildBar(l, hereId = null) {
   const id = nextStage(l);

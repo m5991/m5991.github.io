@@ -317,12 +317,23 @@ export const BIRDS_AFTER = 'H1';
 // v0.23 (Tiffany: "In the end, keep the birds coming and weeds growing random places in the yard
 // occasionally but don't let the weeds or birds take away / effect crops"): on the finished farm a
 // bird still comes now and then, lands on a crop plant, looks about and flies off with nothing
-// (birds.js, kind 'visit'); and a weed comes up somewhere on the grass, one every YARD_WEEDS.everyMs
-// of active time while fewer than `max` stand, at one of the YARD_WEED_SLOTS chosen by a seeded hash
-// (world/layout.js has their places). It is raked like any weed ("Allow weeding anywhere in the
+// (birds.js, kind 'visit'); and weeds stand on the grass, at YARD_WEED_SLOTS chosen by a seeded hash
+// (world/layout.js has their places). One is raked like any weed ("Allow weeding anywhere in the
 // picture there is a weed at the end") and is never over a crop: no plant wilts on the finished farm.
 export const END_BIRDS = { everyMs: 26000, firstMs: 9000, sitMs: 2600 };
-export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3 };
+// v0.24 (the captain's v0.23 playtest: "I would like the weeds to be removable from the start. All
+// the weeds should be able to be removed. But the ones that aren't going to be possible to plant
+// something on should be able to grow really fast to the point where people that want to remove
+// them simply give up, but they can remove them if they want"): the weeds on the open grass, where
+// nothing is ever planted, are there from the start of the game, not only on the finished farm.
+// `max` of them stand at a time. Each can be raked like any weed, and `backMs` after it is raked a
+// weed is up again (`growMs` from a sprout to its full size): on a farm still being built at the
+// places in `early` (the ones clear of everything she gathers, builds and sells at, so they are
+// never in her way: with three places and three weeds, it comes back where it stood), on the
+// finished farm at any free one of the ten (Tiffany's "random places in the yard"). They take
+// nothing, harm nothing and are never asked for: the goal line and the tools ignore them.
+// (v0.23: one came up every `everyMs` on the finished farm only, and a raked one stayed gone.)
+export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 3000, growMs: 600, early: ['wy8', 'wy2', 'wy10'] };
 export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10'];
 export const isYardWeed = (id) => YARD_WEED_SLOTS.includes(id);
 export const ARCHER_GUARDS = { A1: ['c1', 'c2', 'c3', 'c4', 's1', 's2', 's3', 's4', 't1', 't2'] };

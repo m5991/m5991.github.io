@@ -136,8 +136,14 @@ export const STATIONS = [
 // YARD_WEED_SLOTS; the ledger picks the next by a seeded hash, three at most at a time). Each is
 // clear of the path, the ring, the tables, the plots, the song spots and the keepsakes.
 // (Placed in metres on the ground, where the drawing's scale changes fast toward the viewer.)
+// v0.24: three of them (data.js YARD_WEEDS.early: wy8 and wy10 left of the tree's ring, wy2 right
+// of the corn) are also clear of everything she works at while the farm is being built (the
+// sticks, the rocks, the build sites, the tools, the pile, the tables), in plain sight of the play
+// camera, and those have a weed from the start of the game. The other seven lie where rocks and
+// sticks are until the farm is finished. (wy2 was at 20.3, 51.3, left of the house's front, where
+// the tree's crown hid it from the play camera; v0.24 moved it.)
 export const YARD_WEED_PLACES = {
-  wy1: [30.7, 61.5], wy2: [20.3, 51.3], wy3: [31.5, 56.4], wy4: [70.4, 62.6], wy5: [43.4, 67],
+  wy1: [30.7, 61.5], wy2: [94.6, 53.4], wy3: [31.5, 56.4], wy4: [70.4, 62.6], wy5: [43.4, 67],
   wy6: [31.2, 95], wy7: [97.9, 76], wy8: [4.3, 65.3], wy9: [86.6, 51.3], wy10: [6.4, 56.4],
 };
 
