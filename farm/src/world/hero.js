@@ -19,10 +19,12 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
-import { actionPose, finalePose, SIT, sitPose, stepUpHeight, toolPose } from './moments.js';
+import { actionPose, BENCH, finalePose, SIT, sitPose, stepUpHeight, toolPose } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
+// v0.29: where her eyes are, in her own frame (m up from her feet, m forward): the sunglasses
+const GLASSES_AT = { y: 1.45, z: 0.12 };
 const tmpSit = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();
@@ -204,9 +206,10 @@ export class Hero {
   // v0.17c a spot's moment; v0.22: one for every song spot (moments.js). `seat` and `yaw`: the
   // bench; `route`: the chimney climb (there and back) or the stepping stones (one way: she ends
   // on the last one); `to`: the act's own place a step away (the tree's trunk, the window).
-  startMoment(kind, { ms, seat, route, yaw, to, up, down } = {}) {
+  // v0.29: `hold` (the bench): once seated she stays there until the stick moves her (Sit with Dwight)
+  startMoment(kind, { ms, seat, route, yaw, to, up, down, hold = false } = {}) {
     this.restorePose();
-    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to, up, down };
+    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to, up, down, hold };
     this.celebrateMs = 0;
     if (kind === 'clean' && !this.cloth) {
       this.cloth = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.16), new THREE.MeshLambertMaterial({ color: 0xfff4d6 }));
@@ -231,8 +234,8 @@ export class Hero {
   // ---------- v0.27: sitting down and standing up (moments.js sitPose) ----------
   // where her feet stand for a seat (the seat's top, in the world) that faces `yaw`: on the
   // ground in front of its middle
-  sitSpot(seat, yaw, out = new THREE.Vector3()) {
-    return out.set(seat.x + Math.sin(yaw) * SIT.feet, 0, seat.z + Math.cos(yaw) * SIT.feet);
+  sitSpot(seat, yaw, out = new THREE.Vector3(), feet = SIT.feet) {
+    return out.set(seat.x + Math.sin(yaw) * feet, 0, seat.z + Math.cos(yaw) * feet);
   }
   // her body and her legs at k of the way from standing on that spot (0) to seated (1); her feet
   // stay on the spot. Laid over her idle stance (the caller has restored the last pose).
@@ -296,12 +299,35 @@ export class Hero {
     this.props = { sheet, ball };
     return this.props;
   }
+  // v0.29: a pair of sunglasses on her head bone, over her eyes ("put sunglasses on")
+  sunglasses() {
+    if (this.props?.glasses) return this.props.glasses;
+    this.momentProps();
+    const head = this.view.getObjectByName('Head_M') ?? this.view;
+    const ink = new THREE.MeshBasicMaterial({ color: 0x1d2633 });
+    const g = new THREE.Group(); g.name = 'MomentSunglasses';
+    for (const x of [-0.045, 0.045]) { const lens = new THREE.Mesh(new THREE.CircleGeometry(0.036, 16), ink); lens.position.set(x, 0, 0); g.add(lens); }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.008, 0.004), ink); g.add(bridge);
+    g.traverse((x) => { x.userData.noOutline = true; x.userData.noFit = true; });
+    head.add(g);
+    // eyes, in the head bone's frame: a little up and to the front of its origin (measured on the
+    // model: world.js and the checks see it from the front)
+    head.updateWorldMatrix(true, false);
+    const s = new THREE.Vector3(); head.getWorldScale(s);
+    g.scale.setScalar(1 / Math.max(1e-3, s.x));
+    g.position.copy(head.worldToLocal(this.view.localToWorld(new THREE.Vector3(0, GLASSES_AT.y, GLASSES_AT.z))));
+    g.visible = false;
+    this.props.glasses = g;
+    return g;
+  }
   updateMoment(dtMs) {
     const m = this.moment;
     if (this.cloth) this.cloth.visible = m?.kind === 'clean';
     if (!m) return;
     if (this.moving) { this.cancelMoment(); return; }
     m.t = Math.min(m.ms, m.t + dtMs);
+    if (m.hold && m.kind === 'bench') m.t = Math.min(m.t, m.ms * (BENCH.down + BENCH.up) / 2); // v0.29: she sits on
+    if (m.freezeAt != null) m.t = Math.min(m.t, m.ms * m.freezeAt); // v0.29: she waits there (the egg on the roof)
     const still = this.reducedMotion();
     const q = actionPose(m.kind, m.t / m.ms, still, { stones: m.route?.length ?? 5, up: m.up, down: m.down, seatY: m.seat?.y });
     if (m.kind === 'bench' && m.seat) {
@@ -348,7 +374,14 @@ export class Hero {
       this.view.rotation.y = this.yaw;
       this.body.position.x = this.position.x; this.body.position.z = this.position.z;
     } else if (m.kind === 'clean' && m.seat) {
-      this.view.rotation.y = Math.atan2(m.seat.x - this.body.position.x, m.seat.z - this.body.position.z);
+      // v0.29: first a step up to the stain (`to`), then she wipes it, facing it
+      if (m.to) {
+        const k = Math.min(1, m.t / 400);
+        this.position.x = m.from.x + (m.to.x - m.from.x) * k; this.position.z = m.from.z + (m.to.z - m.from.z) * k;
+        this.body.position.x = this.position.x; this.body.position.z = this.position.z;
+        this.momentGait = k < 1 ? 'walk' : null;
+      }
+      this.view.rotation.y = Math.atan2(m.seat.x - this.position.x, m.seat.z - this.position.z);
       this.position.y -= 0.1 * q.blend;
     } else {
       if (m.to && q.to > 0) { this.position.x = m.from.x + (m.to.x - m.from.x) * q.to; this.position.z = m.from.z + (m.to.z - m.from.z) * q.to; }
@@ -357,7 +390,9 @@ export class Hero {
       this.view.rotation.z = q.roll;
     }
     // what she holds
-    if (['show', 'sketch', 'pickup'].includes(m.kind)) {
+    // v0.29: the sunglasses go on as her hands reach her temples
+    if (m.kind === 'sunglasses') { const g = this.sunglasses(); g.visible = q.prop > 0.5; }
+    if (['show', 'pickup'].includes(m.kind)) {
       const { sheet, ball } = this.momentProps();
       sheet.visible = m.kind !== 'pickup' && q.prop > 0.25;
       ball.visible = m.kind === 'pickup' && m.t / m.ms > 0.36 && q.prop > 0.2;

@@ -94,7 +94,9 @@ export const STATIONS = [
   { id: 'tools', kind: 'tools', u: 43, v: 47.4, r: 0.3, label: 'tools' },
   // P27-1 (anchor about (44.5,45.5), to tune in play): just right of the leaning tools, so the
   // tools never hide it, against the house's right wall and short of the stepping stones
-  { id: 'yard', kind: 'yard', u: 45.8, v: 47.2, r: 0.5, label: 'yard pile' },
+  // v0.29 (Tiffany: "Don't have the sticks and stones pile overlap or bump into the stepping
+  // stones"): two metres further to the front (at 45.8, 47.2 it lay 0.9 m from the nearest stone)
+  { id: 'yard', kind: 'yard', u: 45.8, v: 49.4, r: 0.5, label: 'yard pile' },
   // v0.12 (answer 3, "No spots at all"): every build has a site, but nothing marks it: the part's
   // own blueprint outline shows where it goes, and the DIY button works within reach of the site.
   // The house (H1-H5 share the house front; the next stage shows), the path bend, the bench, the
@@ -110,10 +112,13 @@ export const STATIONS = [
   { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
-  { id: 'C0', kind: 'site', u: 60.5, v: 54, r: 0.7, label: 'corn patch' },
-  { id: 'C1', kind: 'site', u: 80.5, v: 53, r: 0.7, label: 'corn expansion' },
-  { id: 'S0', kind: 'site', u: 79, v: 75, r: 0.7, label: 'sunflower patch' },
-  { id: 'S1', kind: 'site', u: 90.5, v: 75, r: 0.7, label: 'sunflower expansion' },
+  // v0.29 (Tiffany: "When it has the yellow circle to stand in and it says to plant, or plant
+  // expansion, have that circle be where she plants not off to the side"): each patch's place is
+  // in the patch itself, between its two spots (it stood a few steps in front of them)
+  { id: 'C0', kind: 'site', u: 60.75, v: 49.4, r: 0.7, label: 'corn patch' },
+  { id: 'C1', kind: 'site', u: 75, v: 49.2, r: 0.7, label: 'corn expansion' },
+  { id: 'S0', kind: 'site', u: 82, v: 68.6, r: 0.7, label: 'sunflower patch' },
+  { id: 'S1', kind: 'site', u: 90, v: 66.8, r: 0.7, label: 'sunflower expansion' },
   { id: 'T0', kind: 'site', u: 68.5, v: 87.5, r: 0.8, label: 'raised bed' },
   // the yard-sale table (v0.12), where the market crate stood: beside the path bend, on the way
   // between the crops and the house
@@ -148,4 +153,6 @@ export const YARD_WEED_PLACES = {
 };
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
-export const BOUNDS = { uMin: 1, uMax: 99, vMin: 30, vMax: 99 };
+// v0.29 (Tiffany: "Don't allow her to walk in the sky"): she keeps to the ground, in front of its
+// drawn horizon (projection.js HORIZON_V 38.5); vMin was 30, 22 m back, out over the paper sky
+export const BOUNDS = { uMin: 1, uMax: 99, vMin: 40, vMax: 99 };

@@ -2,7 +2,7 @@
 // localStorage, written synchronously after every accepted ledger transaction. Storage that is
 // denied or full degrades to disclosed session-only play; a corrupt payload offers the last
 // good copy or a new game, never a silent reset.
-import { ALL_STAGES, CAPACITY, CROP_STAGES, CROPS, HEAD_CROPS, NODES, OPTIONAL_STAGES, PILES, PRICES, ROCKS, STICK_SLOTS, WEEDS, YARD_WEED_SLOTS } from './data.js';
+import { ALL_STAGES, CAPACITY, CROP_STAGES, CROPS, GATE, HEAD_CROPS, NODES, OPTIONAL_STAGES, PILES, PRICES, ROCKS, STICK_SLOTS, WEEDS, YARD_WEED_SLOTS } from './data.js';
 import { createLedger, mainComplete, stoneShortfall, tableCap, validateLedger } from './ledger.js';
 
 export const SCHEMA = 5;
@@ -342,6 +342,35 @@ export function migratePreV025(d0) {
   } catch { /* a ledger too damaged to read: validation reports it */ }
   return d;
 }
+// ---------- saves from v0.28 and before (the pacing gate, the overflow crate, the tables) ----------
+// Still schema v5. v0.29 adds `since` (the yard sales and the gathering since the last build); an
+// older farm gets it already met, so nothing it could build waits. The tables now come with the
+// yard sales held, so a farm may have fewer or more tables than it had: what its tables hold
+// beyond their room goes into the crate. The crate is overflow storage now and fills the tables
+// first: what an older farm left in it (v0.28's crate had no limit) goes onto the tables where they
+// have room, and the rest stays in the crate, however much it is, until sales have taken it. Nothing
+// is lost. Returns a new payload; one that already has the v0.29 shape is returned as is.
+export function isPreV029(d) {
+  const l = d?.ledger;
+  return !!l && typeof l === 'object' && !('since' in l);
+}
+export function migratePreV029(d0) {
+  if (!isPreV029(d0)) return d0;
+  const d = structuredClone(d0);
+  const l = d.ledger;
+  l.since = { sales: GATE.sales, gather: GATE.gather };
+  try {
+    const cap = tableCap(l);
+    const byPrice = [...CROPS].sort((a, b) => PRICES[b] - PRICES[a]);
+    // goods beyond the tables' room now: into the crate, the cheapest first
+    let over = CROPS.reduce((n, c) => n + l.table[c], 0) - cap;
+    for (const c of [...byPrice].reverse()) { const k = Math.max(0, Math.min(over, l.table[c])); l.table[c] -= k; l.crate[c] += k; over -= k; }
+    // the crate's crops onto the tables where they have room, the dearest first
+    let room = cap - CROPS.reduce((n, c) => n + l.table[c], 0);
+    for (const c of byPrice) { const k = Math.max(0, Math.min(room, l.crate[c])); l.crate[c] -= k; l.table[c] += k; room -= k; }
+  } catch { /* a ledger too damaged to read: validation reports it */ }
+  return d;
+}
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
   if (!d?.session || typeof d.session !== 'object') return d;
@@ -365,7 +394,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSessionDefaults(migratePreV025(migratePreV024(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d)))))))))));
+  return withSessionDefaults(migratePreV029(migratePreV025(migratePreV024(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))))))));
 }
 
 // `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).
@@ -399,7 +428,7 @@ export function createSaveManager(storage = globalThis.localStorage) {
     let d;
     try { d = JSON.parse(text); } catch { return { status: 'corrupt', errors: ['not JSON'] }; }
     if (d && typeof d.schema === 'number' && d.schema > SCHEMA) return { status: 'newer', schema: d.schema };
-    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d) || isPreV023(d) || isPreV024(d) || isPreV025(d);
+    const migrated = isPreV09(d) || isPreV011(d) || isPreV012(d) || isPreV013(d) || isPreV015(d) || isPreV017(d) || isPreV023(d) || isPreV024(d) || isPreV025(d) || isPreV029(d);
     d = upgradePayload(d);
     const errors = validateSave(d);
     if (errors.length) return { status: 'corrupt', errors };

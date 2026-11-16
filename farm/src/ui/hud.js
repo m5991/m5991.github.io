@@ -46,6 +46,8 @@ export const ICONS = {
 // v0.21 the goal line's own marks, in the counters' ink-and-wash hand
 const INK = 'stroke="#253347" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"';
 export const GOAL_ICONS = {
+  // v0.29: the materials and the coins, for the lines about them (the pile, the gate)
+  wood: ICONS.W, stone: ICONS.R, coins: ICONS.coins,
   rake: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 3.5L9 14" ${INK} stroke-width="2" fill="none"/><path d="M4.5 12.5l8 6.2" ${INK} stroke-width="2" fill="none"/><path d="M4.5 12.5l-1.6 3M7.2 14.6l-1.6 3M9.9 16.6l-1.6 3M12.5 18.7l-1.6 3" ${INK} fill="none" stroke="#2864bd" stroke-width="1.8"/></svg>`,
   shovel: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.5 3.5L10.5 12" ${INK} stroke-width="2" fill="none"/><path d="M16.5 2.6l4.6 4.3" ${INK} stroke-width="2" fill="none"/><path d="M11.8 10.4l2.6 2.6c-1 3.4-4 6.6-8.6 8.2-.9.3-1.7-.5-1.4-1.4 1.6-4.6 4.4-8.2 7.4-9.4z" fill="#2864bd" ${INK}/></svg>`,
   weed: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21c0-5 .2-9 .4-16M12 21c-.6-4.6-3-8.6-7.4-11M12 21c.8-4.2 3-7.6 7.6-9.6M12 21c-1-2.6-3.2-4.4-6.6-5M12 21c1-2.4 2.8-3.8 6-4.4" fill="none" stroke="#527447" stroke-width="2.2" stroke-linecap="round"/><path d="M5 21.5h14" ${INK} fill="none"/></svg>`,

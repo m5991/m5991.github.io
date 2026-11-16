@@ -137,7 +137,9 @@ const LIST = [
   ['Don’t You Worry', 'E23', 'sketch', 74.0],
   ['Who Knows', 'E25', 'bed', 28.1],
   ['And She Goes By Vanessa', 'E29', 'pose', 0],
-  ['Outdrawing all our dreams', 'E34', 'easel', 41.0],
+  // v0.29 (Tiffany, after "Farm changes #3": "The song out drawing our all our dreams has the D word
+  // in it. That was on the no-no song list"): "Outdrawing all our dreams" (E34) is out of play, and
+  // nothing takes its place (Vanessa asked to leave off "You swore you quit", E04, as well): 23 songs.
   ['Vanessa in her flip flops', 'E35', 'flipflops', 39.5],
 ];
 const entry = (id) => LIST.find((x) => x[1] === id) ?? null;
@@ -155,21 +157,34 @@ export const UNLISTED_SONGS = SONG_IDS.filter((id) => !SONG_LIST.includes(id));
 // Tiffany: "Make sure she does everything it says to do": every verb names what she is seen doing.
 const act = (verb, kind, word, ms) => ({ verb, kind, word, ms });
 export const SPOTS = {
-  sunflowers: { label: 'the sunflowers', act: act('Dance with the sunflowers', 'dance', 'Ta-da!', 3000) },
-  sun: { label: 'the field’s edge under the sun', act: act('Wave to the sun', 'wave', 'Hello, sunshine!', 2400) },
+  // (v0.29: at its own place in front of the sunflowers, where the sunflower patch's place was: that
+  // moved into the patch, and a red circle there would lie over the sunflowers' own rings)
+  sunflowers: { label: 'the sunflowers', uv: [79, 75], act: act('Dance with the sunflowers', 'dance', 'Ta-da!', 3000) },
+  // v0.29 (Tiffany: "The action wave should always be at a bird not the sun. The action for the sun
+  // should be 'put sunglasses on'")
+  sun: { label: 'the field’s edge under the sun', act: act('Put your sunglasses on', 'sunglasses', 'Too bright!', 2800) },
   tools: { label: 'the shovel and the rake', act: act('Lean the rake on the shovel', 'reach', 'Clink!', 2600) },
-  bench: { label: 'the bench', act: act('Rest on the bench', 'bench', 'Aah…', 2800) },
+  // v0.29 (Tiffany: 'She should also "rest on the bench" a little longer'): 5 s (it was 2.8 s)
+  bench: { label: 'the bench', act: act('Rest on the bench', 'bench', 'Aah…', 5000) },
   chimney: { label: 'the chimney', act: act('Climb to the chimney', 'chimney', 'Up we go!', 7200) },
   weeds: { label: 'the weeds by the raised bed', anchor: 'bed', offset: [1.9, 0.5], act: act('Shake a fist at the weeds', 'fist', 'Not today!', 2400) },
   tree: { label: 'the old tree', act: act('Hug the old tree', 'hug', 'Good team!', 2600) },
-  corn: { label: 'the corn', act: act('Tell the corn a joke', 'joke', 'Corny!', 3000) },
+  // v0.29 (Tiffany: "Make the corny song appear right next to the corn stalks instead of right
+  // behind the table"): beside the front row of the corn, between two of its plants (not on one)
+  corn: { label: 'the corn', uv: [67.8, 51.2], act: act('Tell the corn a joke', 'joke', 'Corny!', 3000) },
   stones: { label: 'the stepping stones', act: act('Hop the stepping stones', 'hop', 'Hop! Hop!', 3200) },
   door: { label: 'the front door', act: act('Knock on the door', 'door', 'Knock knock!', 1600) },
   birds: { label: 'the corner under the birds', act: act('Whistle to the birds', 'whistle', 'Tweet? Tweet!', 2400) },
-  world: { label: 'the front of the farm', uv: [52.2, 95.5], act: act('Show your drawing to the world', 'show', 'Look, world!', 2800) },
+  // v0.29 (Tiffany: "a person who looks like Tiffany (another farmer but with blond hair and a
+  // different colored shirt) run in in a second pair of overalls, steal the drawing and throw copies
+  // around then get chased off the screen by Vanessa"): the scene (world/thief.js), 9 s (v0.29: a
+  // little left of 52.2, 95.5, to keep clear of the Who-Knows plant's circle)
+  world: { label: 'the front of the farm', uv: [49.5, 96], act: act('Show your drawing to the world', 'thief', 'Look, world!', 9000) },
   between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh…', 2800) },
   // v0.23: "Beet seeds in my pocket": the vegetables' end of the raised bed (the table it stood at is not in the drawing)
-  pockets: { label: 'the vegetables in the raised bed', uv: [78.4, 82.9], act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
+  // (v0.29, Tiffany: "Never have a red circle that overlaps a crop collecting": a step past the
+  // bed's vegetable end and in front of it, off the tomato plants' rings; it stood at 78.4, 82.9)
+  pockets: { label: 'the vegetables in the raised bed', uv: [79, 98.5], act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
   glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Shade your eyes from the sun', 'shade', 'Oye, Sun!', 2600) },
   // v0.23: "On a bench in the yard ... Rests on her bench in the shade": the path beside the bench
   paper: { label: 'the path beside the bench', uv: [32.4, 71.7], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
@@ -178,9 +193,11 @@ export const SPOTS = {
   // v0.23: "She draws pictures of me / Standing next to her ... We're both farmers": beside the farmer's place in the drawing
   field: { label: 'the grass beside the farmer’s place', uv: [49.2, 74.3], act: act('Blow a kiss', 'kiss', '♥', 2400) },
   sketch: { label: 'the crumpled sketch in the corner', uv: [10.1, 93.1], act: act('Pick up the crumpled sketch', 'pickup', 'Keep it!', 2600) },
-  bed: { label: 'the Who-Knows plant in the raised bed', act: act('Say hello to the Who-Knows plant', 'hello', '?♪', 2400) },
+  // (v0.29: in front of the bed, by the Who-Knows plant, a step off the tomato plants' rings: a red
+  // circle never lies over a crop's; test/v029-world.test.mjs measures every spot)
+  bed: { label: 'the Who-Knows plant in the raised bed', anchor: 'bed', offset: [-0.55, 0.7], act: act('Say hello to the Who-Knows plant', 'hello', '?♪', 2400) },
   pose: { label: 'Vanessa’s place in the drawing', act: act('Strike your pose', 'pose', 'Vanessa!', 2600) },
-  easel: { label: 'the corner past the sunflowers', uv: [94.1, 83.9], act: act('Draw a big circle in the air', 'draw', 'Dream big!', 2800) },
+  // (v0.29: the corner past the sunflowers was "Outdrawing all our dreams"' spot, out of play)
   // v0.23: "Dancing down the garden rows ... Walking through the corn where the green runs high": the end of the corn rows
   flipflops: { label: 'the end of the corn rows', uv: [51, 50], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
 };
@@ -266,6 +283,29 @@ export const SPOTS_AT_ONCE = 3;
 // found last, it starts as its egg cracks, and a moment after its card is closed the sunset
 // begins under it. A farm that had found it already (an older save) goes on as before.
 export const LAST_SONG = 'E01';
+// v0.29 (Tiffany: "Make the second to last one the House song"): "The House" (E12) is held back too,
+// until every song but the last is found
+export const SECOND_LAST = 'E12';
+// v0.29 (Tiffany: "After she hugs the tree there should be more time between the option to play the
+// poop song comes up ... Maybe after the tree song, she goes around a collects a different song
+// before returning to the bench to get the poop song"): "Stay in the Shade" (E27, the bench, the
+// birds' poop) waits until "Tree and Bench" (E05, the tree) is found and one other song after it,
+// unless no other song is left to find first
+export const FOLLOWS = { E27: { after: 'E05', gap: 1 } };
+const HELD = new Set([LAST_SONG, SECOND_LAST]);
+// a song still waiting its turn (not shown even when it is among the first few left)
+export function songWaits(id, discoveries = {}) {
+  if (id === LAST_SONG) return true; // (its own turn is in visibleSpots)
+  if (id === SECOND_LAST) return !SONG_LIST.every((x) => HELD.has(x) || !!discoveries?.[x]);
+  const rule = FOLLOWS[id];
+  if (!rule) return false;
+  const others = SONG_LIST.filter((x) => x !== id && !HELD.has(x) && !discoveries?.[x]);
+  if (!others.length) return false; // nothing else to find first
+  const t = discoveries?.[rule.after];
+  if (!t) return true;
+  const after = SONG_LIST.filter((x) => x !== id && x !== rule.after && (discoveries?.[x]?.at ?? -1) > (t.at ?? 0)).length;
+  return after < rule.gap;
+}
 // every song but the last one is found: the last one's turn has come (or it is found too)
 export const lastSongTurn = (discoveries = {}) => SONG_LIST.every((id) => id === LAST_SONG || !!discoveries?.[id]);
 // the last song is the only one left, and it waits: something else is still to find first
@@ -273,7 +313,7 @@ export const lastSongWaits = (discoveries = {}, othersFound = true) => !discover
 export function visibleSpots(discoveries = {}, n = SPOTS_AT_ONCE, { othersFound = true } = {}) {
   const out = [];
   for (const id of SONG_LIST) {
-    if (id === LAST_SONG) continue; // (its own turn is below)
+    if (id === LAST_SONG || discoveries?.[id] || songWaits(id, discoveries)) continue; // (the last one's own turn is below)
     const spot = songSpot(id);
     if (!discoveries?.[id] && spot && !out.includes(spot)) out.push(spot);
     if (out.length >= n) break;
@@ -304,12 +344,14 @@ export function lastSpot(discoveries = {}) {
 // not here: it is the songs counter in the HUD.
 // v0.27: `othersFound`: everything that is not a song (the keepsakes) is found; while it is not,
 // the last song waits and the line says what for.
-export function huntGoal({ discoveries = {}, egg = null, othersFound = true } = {}) {
+// v0.29: `egg` 'rest': a song was just found, and the next circles wait a while (`restS` seconds)
+export function huntGoal({ discoveries = {}, egg = null, othersFound = true, restS = 0 } = {}) {
   const left = SONG_LIST.filter((id) => !discoveries?.[id]);
   const all = SONG_LIST.length;
   if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
   if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
   if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
+  if (egg === 'rest') return { text: `Listen a while: the next red circles come out in ${restS} seconds. A keepsake can be found meanwhile.`, line: { icon: 'note', label: 'Listen a while', tail: `circles in ${restS} s` } };
   if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
   if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: find the keepsakes that are still hidden on the farm first.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
   if (left.length === 1 && left[0] === LAST_SONG) return { text: `The last song: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'The last song', tail: 'at the red circle' } };

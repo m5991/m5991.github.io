@@ -371,7 +371,8 @@ ol.songbook .song-actions .button, ol.songbook .song-actions button { min-height
 
 /* v0.17c the finished farm's evening: a golden-to-dusk wash over the world (under the HUD) */
 /* v0.20 (audit 2: "check that the wash reads golden, not purple"): gold all the way down; the old wash ended in a violet that dimmed the grass */
-#evening { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(to bottom, rgba(250, 172, 84, 0.42) 0%, rgba(240, 164, 84, 0.36) 45%, rgba(214, 150, 84, 0.34) 100%); mix-blend-mode: multiply; }
+/* (v0.29: deeper, so the Evening light switch in Extras is plain to see either way) */
+#evening { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(to bottom, rgba(236, 128, 86, 0.62) 0%, rgba(240, 150, 76, 0.5) 45%, rgba(196, 128, 92, 0.48) 100%); mix-blend-mode: multiply; }
 body.credits #evening, body.backdrop #evening, body.finale #evening, body.opening #evening, body.whole #evening { display: none; }
 
 /* v0.17c the coins count up after a sale, a "+N" floating off the counter */
@@ -481,6 +482,8 @@ body.backdrop #hud, body.backdrop #controls, body.backdrop #progress, body.backd
 #pause, #extras { z-index: 6; } /* over the song's bar, which belongs to the farm */
 #pause h2 { font-size: 30px; }
 #pause #btn-resume { min-height: 64px; font-size: 20px; }
+/* v0.29: Start over, under the sound settings: plain, so it is not pressed by mistake */
+#pause .start-over { margin-top: 10px; background: transparent; border: 2px dashed var(--ink); font-weight: 700; }
 /* Extras: New farm first and plain to see (a bigger, tomato-red button with a sprout), then the rest */
 #extras { justify-content: safe center; }
 #extras h2 { font-size: 26px; }
@@ -588,6 +591,22 @@ figure.keepsake-print.drawing.complete { position: relative; }
 figure.keepsake-print.drawing .signature { position: absolute; right: 4%; bottom: 1.5%; font-family: "Pencil Title", "Comic Sans MS", cursive; font-weight: 700; font-size: clamp(14px, 4.2vw, 23px); color: #2a2760; transform: rotate(-3deg); white-space: nowrap; pointer-events: none; }
 figure.keepsake-print.drawing .gold-stamp { position: absolute; left: 4%; bottom: 5%; font-size: clamp(11px, 3.2vw, 15px); pointer-events: none; }
 
+/* v0.29: the song card closes with a tap outside it; its small × in the corner */
+dialog#card.tap-out { position: fixed; }
+dialog#card .card-x { position: absolute; top: 6px; right: 8px; width: 40px; height: 40px; min-height: 0; padding: 0; font-size: 26px; line-height: 1; border-radius: 50%; background: transparent; border: 2px solid var(--ink); }
+dialog#card.tap-out h2 { padding-right: 40px; }
+dialog#card .tap-hint { opacity: 0.75; margin-bottom: 0; }
+
+/* v0.29 (Tiffany: "At the end when she's walking around collecting songs the yardsale button keeps
+   getting in the way ... Move the yardsale button to the bottoms left and make it a little smaller.
+   Still an option but not the focal point of the game anymore"): in the song hunt it sits at the
+   bottom left, smaller and still, with no pulse */
+body.hunting #btn-sale { order: -1; margin-right: auto; min-height: 44px; padding: 4px 12px; font-size: 17px; box-shadow: 0 3px 0 var(--ink); transform: none; }
+body.hunting #btn-sale, body.hunting #btn-sale:not(.away), body.hunting #btn-sale.coach-pulse:not(.away) { animation: none; }
+/* v0.29 (Tiffany: "Get rid of the lyric captions during the slide show"): the song plays on its own,
+   no line of its words under the pictures (the lyrics still time the slideshow) */
+#credits .credits-lyrics { display: none; }
+
 /* ---------- the crop theme (spec v0.11): cards, menus, the pause screen ---------- */
 /* src/ui/theme.js sets html[data-theme] to corn, sunflower or tomato once the first crop is chosen;
    with no attribute nothing below applies. Cards, the pause screen and the save notice get a
@@ -669,3 +688,4 @@ html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) di
   #credits .credits-paper.closing { max-width: min(88vw, 640px); padding: 14px 20px; }
   #credits .credits-paper.closing p { font-size: 15px; line-height: 1.45; }
 }
+

@@ -37,7 +37,7 @@
 // holds (`atCrate`, the ledger's `stow`). With twelve crops on her head a plant is not worked.
 import { CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, canTake, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
+  available, canTake, crateRoom, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
 } from './ledger.js';
 import { buildBar, nextStage } from './guide.js';
 
@@ -280,7 +280,9 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       }
       // v0.28: the crop crate: walking past it puts every crop on her head into it, moving or not
       // (also while a sale is shown: the tables fill from it once the buyers have gone)
-      if (hasCrops(l) && tableAvailable(l) && atCrate(ctx.hero, ctx.targets)) {
+      // v0.29: the crate is overflow storage: with every table full, walking past the tables (or the
+      // crate beside them) leaves her crops in it, as many as it has room for; full, it takes none
+      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && tableFull(l) && crateRoom(l) > 0 && (atTable(ctx.hero, ctx.targets) || atCrate(ctx.hero, ctx.targets))) {
         const res = commit({ t: 'stow' });
         events.push({ type: 'stow', result: res });
         l = getLedger();

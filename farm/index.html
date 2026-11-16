@@ -141,6 +141,9 @@
       <label for="vol-effects-pause">Effects volume</label>
       <input id="vol-effects-pause" type="range" min="0" max="100" step="5">
     </fieldset>
+    <!-- v0.29 (Tiffany: "there should be a button that allows you to start over from the
+         beginning"): any time in the game, behind its confirmation -->
+    <button id="btn-start-over" type="button" class="start-over">Start over</button>
   </section>
 
   <!-- v0.22 Extras: only at the end, once the farm is finished and she is just exploring; New farm
@@ -156,6 +159,7 @@
     <button id="btn-slideshow" type="button">Slideshow</button>
     <!-- v0.25: once everything is found the farm stays in its evening light; this gives the day back -->
     <button id="btn-evening" type="button" class="sound-switch" aria-pressed="true" hidden>Evening light: <span class="state">on</span></button>
+    <p id="evening-note" class="small" hidden>On: the farm stays in its golden evening, with fireflies. Off: daylight.</p>
     <fieldset id="sound-settings" class="sound-settings">
       <legend>Sound</legend>
       <button id="btn-sound-extras" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>

@@ -91,8 +91,12 @@ export const saysAfter = (endedAt = SUNSET.total, { reducedMotion = false } = {}
 //   while the scene plays (`scene`: its `evening`, or null) the light is at least the scene's;
 //   once the sunset has been seen the evening stays (1), unless she has asked for the day back
 //   (`dayLight`), which gives the cycle again.
+// v0.29 (Tiffany: "What is the evening light button do? The light looks the same whether it's on or
+// off"): with the switch off the day came back, but v0.17c's own evening still came every six
+// minutes, so for two and a half minutes of every six, on and off looked the same. Now off is
+// daylight, always, and on is the golden evening, always (and the wash is deeper: styles.css).
 export function eveningLight({ cycle = 0, scene = null, seen = false, dayLight = false } = {}) {
   if (scene !== null) return Math.max(cycle, scene);
-  if (seen && !dayLight) return 1;
+  if (seen) return dayLight ? 0 : 1;
   return cycle;
 }

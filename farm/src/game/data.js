@@ -148,6 +148,12 @@ export const NODES = {
 // (`hire`; v0.16: the archer stands at his post from then on, world.js, and says ARCHER_LINES[0]). v0.12: nothing is paid in
 // part any more; a stage is built in one go, with its DIY button, once she has all of it (on her
 // head, at the yard pile and in her purse) and stands at it.
+// v0.29 (Tiffany: "There needs to be a more natural amount of time between the various builds";
+// with the pacing gate every build waits for a yard sale): each build costs about three quarters
+// of what the yard sale before it brings on the goal line's route, so the coins matter at every
+// build and one sale is enough for it. v0.28 -> v0.29: foundation 10 -> 18, path 6 -> 20, stepping
+// stones 8 -> 22, Dwight 12 -> 30, tree stones 8 -> 36, bench 10 -> 36, walls 36 -> 48, windows and
+// doors 46 -> 56, roof 52 -> 60, chimney 58 -> 66 (the raised bed and the plantings are as they were).
 export const STAGES = {
   C0: { label: 'corn patch', prereq: [], weeds: ['wC1', 'wC2'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'C', afterHarvest: true },
   S0: { label: 'sunflower patch', prereq: [], weeds: ['wS0a', 'wS0b'], coins: 8, W: 0, R: 0, workMs: 0, crop: true, base: 'S', afterHarvest: true },
@@ -157,21 +163,21 @@ export const STAGES = {
   // v0.23: the bed is every farm's first DIY (Tiffany's order), so its coins are what one first
   // yard sale of corn pays (10; it was 14)
   T0: { label: 'raised bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 10, W: 4, R: 0, workMs: 2000, crop: true, base: 'T', afterHarvest: true },
-  H1: { label: 'house foundation', prereq: ['first'], coins: 10, W: 4, R: 4, workMs: 3000 },
-  G1: { label: 'path', prereq: ['H1'], coins: 6, W: 0, R: 3, workMs: 2000 },
+  H1: { label: 'house foundation', prereq: ['first'], coins: 18, W: 4, R: 4, workMs: 3000 },
+  G1: { label: 'path', prereq: ['H1'], coins: 20, W: 0, R: 3, workMs: 2000 },
   // v0.23: the later parts of the house cost more (Tiffany: "make her need to make more money to
   // continue building (DIY) later parts of the property, so the extra tables makes sense"): the
   // walls come with the second yard-sale table and take about one sale of both tables, the windows
   // and doors, the roof and the chimney about one sale of all three each (LATE_COINS below; v0.22:
   // walls 16, home 34, roof 14, chimney 12)
-  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 36, W: 4, R: 2, workMs: 4000 },
+  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 48, W: 4, R: 2, workMs: 4000 },
   // v0.23: hired after the foundation (he was hired after the walls, which now come late)
-  A1: { label: 'archer', prereq: ['H1'], coins: 12, W: 2, R: 0, workMs: 0, hire: true },
+  A1: { label: 'archer', prereq: ['H1'], coins: 30, W: 2, R: 0, workMs: 0, hire: true },
   C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
   S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
-  G2: { label: 'bench', prereq: ['H1'], coins: 10, W: 4, R: 0, workMs: 2000 },
-  G3: { label: 'stepping stones', prereq: ['H1'], coins: 8, W: 0, R: 3, workMs: 2000 },
-  G4: { label: 'tree-border stones', prereq: ['H1'], coins: 8, W: 0, R: 4, workMs: 2000 },
+  G2: { label: 'bench', prereq: ['H1'], coins: 36, W: 4, R: 0, workMs: 2000 },
+  G3: { label: 'stepping stones', prereq: ['H1'], coins: 22, W: 0, R: 3, workMs: 2000 },
+  G4: { label: 'tree-border stones', prereq: ['H1'], coins: 36, W: 0, R: 4, workMs: 2000 },
   // v0.15 (captain: "the walls should only be walls, roof only be roof, add an extra step for
   // chimney, last step still the home with door and window"): five house stages. The old H3
   // (roof and chimney: 26 coins, 2 wood, 2 stone, 4 s) is split between the roof (its wood) and
@@ -184,9 +190,9 @@ export const STAGES = {
   // The ids keep their parts (H3 the roof, H4 the chimney, H5 the windows and doors), so a save from
   // an earlier build keeps what it had built. The order itself is DIY_ORDER below, which the goal
   // line follows one build at a time; the prerequisites here are only what a part stands on.
-  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 52, W: 2, R: 0, workMs: 2500 },
-  H4: { label: 'chimney', prereq: ['H3'], coins: 58, W: 0, R: 2, workMs: 2000 },
-  H5: { label: 'windows and doors', prereq: ['H2'], coins: 46, W: 4, R: 0, workMs: 4000 },
+  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 60, W: 2, R: 0, workMs: 2500 },
+  H4: { label: 'chimney', prereq: ['H3'], coins: 66, W: 0, R: 2, workMs: 2000 },
+  H5: { label: 'windows and doors', prereq: ['H2'], coins: 56, W: 4, R: 0, workMs: 4000 },
 };
 // v0.23: Tiffany's DIY order, exactly: the ten things Vanessa hammers up, first to last
 export const DIY_ORDER = ['T0', 'H1', 'G1', 'G3', 'G4', 'G2', 'H2', 'H5', 'H3', 'H4'];
@@ -218,7 +224,8 @@ export const DWIGHT_SAYS_EVERY = 3;
 // Manager. [of the] being much smaller font size"): what he says on the bench in the sunset, once
 // Vanessa has sat down beside him (game/sunset.js `says`). A line is a string, or a list of parts
 // in which { small } is said in much smaller letters (styles.css `#speech .aside`).
-export const DWIGHT_THANKS = Object.freeze(['This wouldn’t be possible without the help of your Assistant ', Object.freeze({ small: '(of the)' }), ' General Manager.']);
+// v0.29 (Tiffany: "That should be assistant (to the) manager, not (to the) general manager")
+export const DWIGHT_THANKS = Object.freeze(['This wouldn’t be possible without the help of your Assistant ', Object.freeze({ small: '(to the)' }), ' Manager.']);
 // a line's words in one string (the screen reader's announcement, the tests)
 export const lineText = (line) => (typeof line === 'string' ? line : line.map((p) => (typeof p === 'string' ? p : p.small)).join(''));
 // the line for his n-th deterred bird (n from 1), or null when he says nothing this time
@@ -289,10 +296,34 @@ export const TABLE_REACH_M = 1.2; // like the yard pile: within about 1.2 m her 
 // are built (the windows and doors, the roof and the chimney are next). Three at most, and no more
 // "no maximum": the tables hold six each, always (TABLE_STAGES; ledger.js tables, saleReady).
 export const SALE_MIN = 6;
-export const TABLE_STAGES = ['G2', 'H2'];
-export const TABLES_MAX = 1 + TABLE_STAGES.length;
+// v0.29 (Tiffany, "Farm changes #3": "Give her more and more tables and space to fill up during the
+// game as her yard sales grows"): the tables come with the yard sales she has held, not with the
+// builds: a second table after her 4th sale, a third after her 8th, a fourth after her 11th
+// (TABLE_SALES; on the goal line's route the fourth comes with the sale before the chimney). Four at
+// most, six crops each. (v0.23-v0.28: the second with the bench, the
+// third with the walls: TABLE_STAGES, kept for older code that names it.)
+export const TABLE_SALES = [4, 8, 11];
+export const TABLE_STAGES = [];
+export const TABLES_MAX = 1 + TABLE_SALES.length;
 export const TABLES_UNLIMITED = Infinity; // (v0.14-v0.22: from the fourth table on; gone)
-export const BUYERS = [[2, 3], [4, 5], [6, 8]];
+export const BUYERS = [[2, 3], [4, 5], [6, 8], [7, 9]];
+// v0.29 (Tiffany: "if she ignores the yardsale button too long have a crate appear just for
+// overflow if the table/tables are out of space. Explain that she has no more space so they go in
+// storage. And when the crate is full she can't drop stuff off at all until the yardsale happens
+// and the crates are emptied"; the captain: "Yes, do it that way", in place of v0.28's crate that
+// was always there and had no limit): the crate is there only while the tables are full. Walking
+// past the full tables with crops on her head puts them into it, CRATE_CAP at most; with the crate
+// full nothing more can be dropped off. A yard sale empties it onto the tables again. Because the
+// crate only ever fills while every table is full, a crate holding anything always means a yard
+// sale can be held (no softlock), and nothing is lost: a crop only moves toward a sale.
+export const CRATE_CAP = 12;
+// v0.29 (Tiffany: "I should have to have at least 1 yard sale and collect some sticks and stones
+// between everything I DIY / hiring dwight"; "at other points you didn't even need any time or
+// resources at all"): every build she hammers up and Dwight's hire wait, after the one before, for
+// GATE.sales yard sale and GATE.gather wood or stone picked up since. The first build has none to
+// wait for. When no wood or stone can be picked up at all (before the sticks fall, every pile and
+// rock empty) the gathering is not asked for, so the farm can always go on.
+export const GATE = { sales: 1, gather: 2 };
 // v0.23 (design audit 13, "buyer wishes"): now and then a neighbour asks for one crop before a
 // sale ("Two tomatoes, please!"); if that many are on the tables when the sale is held, they leave a
 // tip of WISH.tip coins on top. Every WISH.every-th sale has a wish, for the crops in turn, and only
@@ -310,7 +341,12 @@ export const WISH = { every: 3, n: 2, tip: 1, crops: ['T', 'C', 'S'] };
 // v0.15 (captain: "Weed should be bigger and more noticeable, grow faster on crops"): a weed comes
 // back after 75 s instead of 120 s, shows as a clump after 10 s and is grown and choking after
 // 30 s instead of 60 s; the wilt stays bounded: one plant, 120 s after its weed came, as before.
-export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 75000, warnMs: 10000, growMs: 30000, wiltMs: 120000 };
+// v0.29 (Tiffany, "Farm changes #3": "It takes a little less time to choke out a crop"): the plant
+// under a weed wilts 90 s after the weed came (120 s before); its two warnings are unchanged.
+// ("When the weeds choke out a crop, let the crop disappear but the weed stay": the plant goes and
+// the weed stands on at the empty spot until it is raked; then the spot can be dug again. Ledger:
+// `overgrown` keeps its time on an unplanted, wilted spot.)
+export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 75000, warnMs: 10000, growMs: 30000, wiltMs: 90000 };
 // a regrowth weed's id: `wr-` and the crop node it covers
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
@@ -363,7 +399,9 @@ export const END_BIRDS = { everyMs: 26000, firstMs: 9000, sitMs: 2600 };
 // finished farm at any free one of the ten (Tiffany's "random places in the yard"). They take
 // nothing, harm nothing and are never asked for: the goal line and the tools ignore them.
 // (v0.23: one came up every `everyMs` on the finished farm only, and a raked one stayed gone.)
-export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 3000, growMs: 600, early: ['wy8', 'wy2', 'wy10'] };
+// v0.29 (Tiffany: "The weeds all the way to the left that grow back should grow back after like 30
+// seconds instead of immediately"): a raked weed on the open grass is up again 30 s later (it was 3 s).
+export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 30000, growMs: 600, early: ['wy8', 'wy2', 'wy10'] };
 export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10'];
 export const isYardWeed = (id) => YARD_WEED_SLOTS.includes(id);
 export const ARCHER_GUARDS = { A1: ['c1', 'c2', 'c3', 'c4', 's1', 's2', 's3', 's4', 't1', 't2'] };

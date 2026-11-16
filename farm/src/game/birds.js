@@ -114,6 +114,9 @@ export function warningText(t) {
 //   { a: 'done' }                       it is out of sight; the next visit waits BIRDS.everyMs
 // ctx as targetFor, plus `blocked` (a sale or a build is under way, a card or the finale: a bird
 // that is not sitting yet gives up, and none comes).
+// v0.29 (Tiffany: "When it says wave, give her a second to wave at the bird"): Wave holds the bird
+// where it is for WAVE_MS while she waves at it, and then it flies off with nothing
+export const WAVE_MS = 1000;
 export function createBirds() {
   const s = { phase: 'idle', t: 0, nextAt: null, target: null, archer: null, drawT: 0, why: null, lastShot: -Infinity, guarded: false };
   // v0.20: is this visit Dwight's: a crop plant a hired archer guards
@@ -165,8 +168,7 @@ export function createBirds() {
     // a free Wave: off it goes with nothing. -> true when there was a bird to wave off
     wave() {
       if (!this.wavable) return false;
-      const out = [];
-      leave(out, 'wave');
+      s.phase = 'waved'; s.t = 0; s.why = 'wave';
       return true;
     },
     update(dt, ctx) {
@@ -189,6 +191,8 @@ export function createBirds() {
         return out;
       }
       s.t += dt;
+      // v0.29: waved at, it waits a second (she waves), then goes with nothing
+      if (s.phase === 'waved') { if (s.t >= WAVE_MS) leave(out, 'wave'); return out; }
       follow(ctx);
       if (s.phase === 'leave') {
         if (s.t >= BIRDS.leaveMs) {

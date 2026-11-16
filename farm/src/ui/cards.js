@@ -11,11 +11,20 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function createCards(dialog, { player = null } = {}) {
   let onClose = null;
   dialog.addEventListener('close', () => { const f = onClose; onClose = null; f?.(dialog.returnValue); });
+  // v0.29 (Tiffany: "When a song comes up instead of saying lovely to get out, just be able to click
+  // around that box to get back to the screen"): a card marked `tap-out` closes on a tap anywhere
+  // outside it (the dialog's own backdrop)
+  dialog.addEventListener('click', (e) => {
+    if (!dialog.open || !dialog.classList.contains('tap-out') || e.target !== dialog) return;
+    const r = dialog.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close('close');
+  });
 
   function open(html, handlers, closeCb) {
     // a card closed just now whose close event has not fired yet: run its close first, so a card
     // opened straight after one (the songbook after a song) never swallows it
     if (!dialog.open && onClose) { const f = onClose; onClose = null; f(dialog.returnValue); }
+    dialog.classList.remove('tap-out');
     dialog.innerHTML = html;
     onClose = closeCb;
     for (const [sel, fn] of Object.entries(handlers)) {
@@ -79,8 +88,11 @@ export function createCards(dialog, { player = null } = {}) {
     // v0.22 a song found: { id, title, songTitle, lyric, text, src, from, available, onClose }.
     // One button, Lovely. "Now playing" shows while its song plays. `tap` appears only when the
     // browser refused to start the song with no tap behind it: that button is the tap.
+    // v0.29: no Lovely: a tap outside the card closes it (a small × in its corner too, for a
+    // keyboard or a screen reader; Escape as before); the song plays on until it is stopped
     song(o) {
-      open(`<h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden>${EQ} Now playing</p><p>${esc(o.text)}</p><div class="song-actions tap" hidden><button type="button" data-act="tap"><span aria-hidden="true">▶</span> Play it</button></div><div class="actions"><button type="button" class="primary" data-close autofocus>Lovely</button></div>`, {}, o.onClose);
+      open(`<button type="button" class="card-x" data-close autofocus aria-label="Back to the farm (the song plays on)">×</button><h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden>${EQ} Now playing</p><p>${esc(o.text)}</p><div class="song-actions tap" hidden><button type="button" data-act="tap"><span aria-hidden="true">▶</span> Play it</button></div><p class="small tap-hint">Tap outside this card to go back to the farm. The song plays on.</p>`, {}, o.onClose);
+      dialog.classList.add('tap-out');
       const taste = dialog.querySelector('.song-taste');
       const tap = dialog.querySelector('.song-actions.tap');
       if (!player) return;

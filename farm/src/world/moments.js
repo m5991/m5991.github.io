@@ -110,8 +110,16 @@ export const ACTIONS = {
   show: 'holds her drawing out before her with both hands, for the viewer to see',
   lean: 'leans her whole body sideways, toward the sunflowers',
   pockets: 'digs her hands into her pockets, then flings them out',
-  shade: 'raises a hand to her brow and looks up',
-  sketch: 'holds a pad and draws on it, glancing up',
+  // v0.29 (Tiffany: "The shading eyes from the sun doesn't look like she's doing that. Put her arms
+  // across her face")
+  shade: 'puts both arms across her face against the sun',
+  // v0.29 (Tiffany: "When she sketches the farm, let it be on an easel"; "make her have a thought
+  // bubble with the drawing like she's thinking about what to draw next")
+  sketch: 'thinks, a hand at her chin, then draws on the easel beside her',
+  // v0.29 (Tiffany: "The action for the sun should be 'put sunglasses on'")
+  sunglasses: 'puts a pair of sunglasses on and looks up at the sun',
+  // v0.29: "I gave it to the world" (world/thief.js plays the other farmer and the copies)
+  thief: 'holds her drawing out to the world; another farmer runs in, takes it, throws copies of it everywhere and runs off, and Vanessa chases her',
   peek: 'cups her hands round her eyes and leans to the glass',
   toss: 'crouches, then throws both arms up',
   kiss: 'touches her hand to her lips and sweeps it out',
@@ -311,7 +319,7 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
   } else if (kind === 'whistle') {
     bones.Shoulder_R = [-1.5 * blend, 0.35 * blend, -0.32 * blend]; bones.Elbow_R = [-2.15 * blend];
     bones.Head_M = [-0.48 * blend]; bones.Chest_M = [-0.1 * blend];
-  } else if (kind === 'show') {
+  } else if (kind === 'show' || kind === 'thief') { // (v0.29: the farmer's scene opens on this)
     // out before her at arm's length, at chest height (never over her head: what she carries is there)
     const k = span(u, 0.05, 0.25, 0.8, 0.97);
     bones.Shoulder_R = [-1.42 * k, 0, 0.2 * k]; bones.Shoulder_L = [-1.42 * k, 0, -0.2 * k];
@@ -336,9 +344,31 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     bones.Spine1_M = [0.12 * dig - 0.1 * fling];
     smile = fling;
   } else if (kind === 'shade') {
-    bones.Shoulder_R = [-1.72 * blend, 0.55 * blend, -0.72 * blend]; bones.Elbow_R = [-2.05 * blend];
-    bones.Shoulder_L = [0.15 * blend, -0.7 * blend, 0.6 * blend]; bones.Elbow_L = [-1.15 * blend];
-    bones.Head_M = [-0.36 * blend]; bones.Spine1_M = [-0.1 * blend];
+    // v0.29: both forearms crossed in front of her face, her head ducked a little behind them
+    const k = span(u, 0.05, 0.22, 0.8, 0.96);
+    const flinch = reduced ? 0 : 0.05 * Math.sin(u * Math.PI * 5);
+    bones.Shoulder_R = [-1.62 * k, 0.62 * k, (-0.38 + flinch) * k]; bones.Elbow_R = [-2.05 * k];
+    bones.Shoulder_L = [-1.5 * k, -0.62 * k, (0.38 - flinch) * k]; bones.Elbow_L = [-2.05 * k];
+    bones.Head_M = [0.12 * k]; bones.Spine1_M = [0.1 * k];
+  } else if (kind === 'sunglasses') {
+    // both hands up to her temples (the glasses go on there: hero.js), then down, and she looks up
+    const on = span(u, 0.06, 0.22, 0.4, 0.52);
+    const up = span(u, 0.45, 0.6, 0.86, 0.98);
+    bones.Shoulder_R = [-1.55 * on, 0.25 * on, -1.0 * on]; bones.Elbow_R = [-2.25 * on];
+    bones.Shoulder_L = [-1.55 * on, -0.25 * on, 1.0 * on]; bones.Elbow_L = [-2.25 * on];
+    bones.Shoulder_R[0] -= 0.25 * up; bones.Shoulder_R[2] -= 0.35 * up; // one thumb up at the sun
+    bones.Head_M = [-0.42 * up]; bones.Spine1_M = [-0.08 * up];
+    smile = up; prop = clamp01((u - 0.3) / 0.12) * smooth((1 - u) / 0.04);
+  } else if (kind === 'sketch' && opts.easel !== false) {
+    // v0.29: a hand at her chin while the drawing is in her thought bubble; then she draws on the
+    // easel beside her, her pencil hand moving on its sheet
+    const think = span(u, 0.04, 0.12, 0.38, 0.46);
+    const draw = span(u, 0.44, 0.52, 0.9, 0.97);
+    const scribble = reduced ? 0 : Math.sin(u * Math.PI * 30);
+    bones.Shoulder_R = [-1.35 * think - 1.25 * draw, 0.45 * think, -0.75 * think + (-0.15 + 0.12 * scribble) * draw]; bones.Elbow_R = [-2.2 * think - (0.45 + 0.15 * scribble) * draw];
+    bones.Head_M = [-0.22 * think + 0.08 * draw, 0, 0.12 * think];
+    bones.Spine1_M = [0.08 * draw];
+    smile = draw;
   } else if (kind === 'sketch') {
     const k = span(u, 0.04, 0.22, 0.82, 0.97);
     const look = reduced ? 0 : Math.max(0, Math.sin(u * Math.PI * 4 - 1.2)); // up at the farm, down at the pad

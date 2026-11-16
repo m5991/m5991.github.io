@@ -40,12 +40,19 @@
 // house; a sale can be held once the tables and the crate together fill every standing table, and
 // it fills the tables from the crate before it sells (`saleReady`, `yardSale`); after a sale the
 // game fills the tables again from the crate (`restock`, no longer a follow-up of every change).
+// v0.29 (Tiffany's "Farm changes #3", 2026-11-16, with the captain's "Yes, do it that way"): the
+// tables come with the yard sales held (`tables`); the crate is overflow storage only, there while
+// every table is full, holding CRATE_CAP crops at most: walking past the full tables leaves her
+// crops in it (`stow`), with it full nothing more is dropped off, and the tables take from it as
+// soon as a sale has emptied them (`restock`, a follow-up again). Every build she hammers up and
+// Dwight's hire wait for a yard sale and a little gathering since the build before (`since`,
+// `gateOpen`). A plant choked by a weed is gone, and the weed stays on its spot until raked.
 import { PERF } from '../core/perf.js';
 import {
   ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
-  STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLE_STAGES, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
-  WISH, YARD_MATERIALS, YARD_WEEDS, YARD_WEED_SLOTS, isYardWeed,
+  STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLE_SALES, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
+  WISH, YARD_MATERIALS, YARD_WEEDS, YARD_WEED_SLOTS, isYardWeed, CRATE_CAP, GATE, HAMMERED,
 } from './data.js';
 
 const zeroRes = () => Object.fromEntries(RESOURCES.map((r) => [r, 0]));
@@ -99,6 +106,9 @@ export function createLedger() {
     yardWeedSeq: 0,
     yardBack: [],
     yardRaked: 0,
+    // v0.29: yard sales held and wood or stone picked up since the last build she hammered up or
+    // hired (the pacing gate: `gateOpen`)
+    since: { sales: 0, gather: 0 },
   };
 }
 
@@ -168,7 +178,9 @@ export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id)
 // enough tables that when she fills them the yard sale button is highlighted"): one, a second once
 // the bench is built and a third once the walls are (TABLE_STAGES): each comes as the builds begin
 // to cost what it brings
-export const tables = (l) => 1 + TABLE_STAGES.filter((id) => isCommitted(l, id)).length;
+// v0.29 (Tiffany: "Give her more and more tables and space to fill up during the game as her
+// yardsales grows"): one, and one more after her 4th, 8th and 11th yard sale (TABLE_SALES)
+export const tables = (l) => 1 + TABLE_SALES.filter((n) => (l.sales ?? 0) >= n).length;
 // what the tables hold: six each (v0.14-v0.22 had no maximum from the fourth table on; gone)
 export const tablesUnlimited = () => false;
 export const tableCap = (l) => TABLE_CAP * tables(l);
@@ -184,12 +196,38 @@ export const fillRoom = (l) => (tableFull(l) ? 0 : TABLE_CAP - (tableCount(l) % 
 export const cropsCarried = (l) => CROPS.reduce((n, c) => n + l.carried[c], 0);
 export const headRoom = (l) => Math.max(0, HEAD_CROPS - cropsCarried(l));
 export const crateCount = (l) => sum(l.crate ?? {});
+// v0.29: the crate is overflow storage: it is there while every table is full (or while it still
+// holds something), and holds CRATE_CAP at most (an older save may hold more: nothing is lost, it
+// only takes nothing more until a sale has emptied it)
+export const crateRoom = (l) => Math.max(0, CRATE_CAP - crateCount(l));
+export const crateShown = (l) => tableAvailable(l) && (crateCount(l) > 0 || tableFull(l));
+export const crateFull = (l) => crateCount(l) >= CRATE_CAP;
 // can she take one more unit of this resource now: wood and stone up to CAPACITY each on her head;
 // crops up to HEAD_CROPS, all crops together (v0.28; v0.25-v0.27: a crop always, past her head's
 // six it went into the crate)
 export const canTake = (l, res) => (CROPS.includes(res) ? cropsCarried(l) < HEAD_CROPS : l.carried[res] < CAPACITY);
 // the tables can be filled from the crate now: something is in it and a table has room
 export const restockReady = (l) => tableAvailable(l) && crateCount(l) > 0 && tableRoom(l) > 0;
+// ---------- v0.29: the pacing gate ----------
+// the builds that wait: everything she hammers up, and Dwight's hire (not the crop plantings)
+export const gated = (id) => HAMMERED.includes(id) || !!STAGES[id]?.hire;
+// some wood or stone can be picked up now or later: a pile, a rock, a stick lying, or the sticks
+// that fall from the foundation on
+export function gatherable(l) {
+  if (Object.values(l.piles).some((n) => n > 0) || Object.values(l.rocks).some((n) => n > 0)) return true;
+  return STICK_SLOTS.some((id) => l.sticks[id].units > 0) || l.stickNext !== null || isCommitted(l, STICK.after);
+}
+// what the gate still asks before a build: { sales, gather } still to go (0 when met). The first
+// build has nothing before it to wait for.
+export function gateShort(l, id) {
+  if (!gated(id) || !(l.paymentEvents ?? []).some(gated)) return { sales: 0, gather: 0 };
+  const since = l.since ?? { sales: GATE.sales, gather: GATE.gather };
+  return {
+    sales: Math.max(0, GATE.sales - since.sales),
+    gather: gatherable(l) ? Math.max(0, GATE.gather - since.gather) : 0,
+  };
+}
+export const gateOpen = (l, id) => { const g = gateShort(l, id); return g.sales + g.gather === 0; };
 // a yard sale can be held: every table standing is full (v0.13-v0.22: six at least, whatever the
 // number of tables, which left a table empty at most sales). v0.28: or the crate holds enough to
 // fill what is still empty: the sale takes it from there first.
@@ -337,7 +375,7 @@ export const plotClear = (l, stage) => plotWeeds(stage).every((w) => l.weeds[w])
 // a dig spot: its stage committed, its plot weeds raked, not dug yet (or its plant wilted)
 export function digOpen(l, id) {
   const n = NODES[id];
-  return !!n && isCommitted(l, n.stage) && !l.nodes[id].dug && plotClear(l, n.stage);
+  return !!n && isCommitted(l, n.stage) && !l.nodes[id].dug && plotClear(l, n.stage) && l.overgrown[id] === null;
 }
 export const openDigSpots = (l) => Object.keys(NODES).filter((id) => digOpen(l, id));
 // a spot dug or waiting to be dug (committed stage), even if its weeds still stand
@@ -376,6 +414,9 @@ export function autoTxs(l) {
   }
   // (v0.25-v0.27: the tables filled up again from the crate here, whenever one had room. v0.28: the
   // crate is a store she fills herself; the tables take from it as a sale starts and after a sale)
+  // v0.29: the crate is overflow only, so whatever is in it goes onto the tables the moment they
+  // have room (after a sale; the game holds this back while the buyers are still at the tables)
+  if (restockReady(l)) out.push({ t: 'restock' });
   if (toolIdle(l)) out.push({ t: 'returnTool' });
   return out;
 }
@@ -444,7 +485,9 @@ export function tickQuiet(l, now, calm = false) {
   for (const id of Object.keys(NODES)) {
     const since = l.overgrown[id];
     if (since === null) continue;
-    if (calm || done || now >= since + REGROW.wiltMs) return false; // it is cleared, or its plant wilts
+    if (calm || done) return false; // it is cleared
+    if (!l.nodes[id].dug) { over = true; continue; } // (v0.29: the weed left on a choked plant's spot: it only stands)
+    if (now >= since + REGROW.wiltMs) return false; // its plant wilts
     for (const at of [REGROW.warnMs, REGROW.growMs]) if (l.activeMs < since + at && now >= since + at) return false; // one of its two warnings
     over = true;
   }
@@ -508,6 +551,7 @@ function tick(l0, ms, calm = false) {
   } else {
     for (const id of over) {
       const since = l.overgrown[id];
+      if (!l.nodes[id].dug) continue; // v0.29: the weed left standing where its plant was choked
       const prev = l0.activeMs;
       // the two warnings: a clump at warnMs, grown and choking the plant at growMs
       for (const [at, stage] of [[REGROW.warnMs, 'clump'], [REGROW.growMs, 'choking']]) {
@@ -515,7 +559,9 @@ function tick(l0, ms, calm = false) {
       }
       if (now < since + REGROW.wiltMs) continue;
       // the one plant under it wilts: its spot needs digging again, the rest is untouched
-      l.overgrown[id] = null;
+      // v0.29 (Tiffany: "When the weeds choke out a crop, let the crop disappear but the weed
+      // stay"): the plant is gone and the weed stays on the empty spot (`overgrown` keeps its
+      // time); raked, the spot can be dug again
       l.nodes[id] = { remaining: 0, readyAt: null, dug: false };
       l.grown[id] = 0;
       l.wilted[id] = true;
@@ -638,7 +684,7 @@ function dig(l0, id) {
   if (!(id in NODES)) return fail('unknownSpot');
   if (!isCommitted(l0, NODES[id].stage)) return fail('notCommitted');
   if (l0.nodes[id].dug) return fail('alreadyDug');
-  if (!plotClear(l0, NODES[id].stage)) return fail('weeds');
+  if (!plotClear(l0, NODES[id].stage) || l0.overgrown[id] !== null) return fail('weeds');
   if (l0.tool !== 'shovel') return fail('needShovel');
   const l = clone(l0);
   const replanted = l.wilted[id];
@@ -672,8 +718,10 @@ function build(l0, stage) {
   const why = buildable(l0, stage);
   if (why) return fail(why);
   if (!affordable(l0, stage)) return fail('short');
+  if (!gateOpen(l0, stage)) return fail('gate'); // v0.29: a yard sale and a little gathering since the last build first
   const l = clone(l0);
   const need = recipe(l, stage);
+  if (gated(stage)) l.since = { sales: 0, gather: 0 };
   const took = { carried: { W: 0, R: 0 }, yard: { W: 0, R: 0 }, coins: need.coins };
   for (const r of MATERIALS) {
     const head = Math.min(need[r], l.carried[r]);
@@ -731,13 +779,20 @@ function stock(l0, max = Infinity) {
 // v0.28: everything of crops on her head into the crate beside the tables as she walks past it, in
 // one step, the way her wood and stone go onto the pile by the house (`drop`). The crate has no
 // limit; it comes with the first table.
+// v0.29: only while every table is full (the crate is overflow storage), and only as many as it
+// has room for, the cheapest crop first (the dearest stay on her head for the tables); with the
+// crate full nothing is dropped off
 function stow(l0) {
   if (!tableAvailable(l0)) return fail('noTable');
   if (!CROPS.some((c) => l0.carried[c] > 0)) return fail('noStock');
+  if (!tableFull(l0)) return fail('tablesHaveRoom');
+  if (crateRoom(l0) <= 0) return fail('crateFull');
   const l = clone(l0);
   const n = zeroCrops();
-  for (const c of CROPS) { n[c] = l.carried[c]; l.crate[c] += n[c]; l.carried[c] = 0; }
-  return { ok: true, l, events: [{ type: 'stowed', n, crate: { ...l.crate } }] };
+  let room = crateRoom(l0);
+  for (const c of [...BY_PRICE].reverse()) { const k = Math.min(l.carried[c], room); room -= k; n[c] = k; l.crate[c] += k; l.carried[c] -= k; }
+  const first = crateCount(l0) === 0;
+  return { ok: true, l, events: [{ type: 'stowed', n, crate: { ...l.crate }, ...(first ? { first: true } : {}), ...(crateFull(l) ? { full: true } : {}) }] };
 }
 
 // v0.25: the tables fill up again from the crate: as many as they have room for, the dearest crop
@@ -786,7 +841,9 @@ function yardSale(l0) {
   l.purse += coins;
   l.lifetimeCoins += coins;
   l.sales += 1;
-  return { ok: true, l, events: [...pre, { type: 'yardSale', items, coins, sale: l.sales, tables: tables(l), ...(wish ? { wish: { ...wish, met: tip > 0 } } : {}), ...(tip ? { tip } : {}) }] };
+  l.since = { ...(l.since ?? { sales: 0, gather: 0 }), sales: (l.since?.sales ?? 0) + 1 };
+  const more = tables(l) > tables(l0);
+  return { ok: true, l, events: [...pre, { type: 'yardSale', items, coins, sale: l.sales, tables: tables(l0), ...(more ? { moreTables: tables(l) } : {}), ...(wish ? { wish: { ...wish, met: tip > 0 } } : {}), ...(tip ? { tip } : {}) }] };
 }
 
 // ---------- v0.17 birds (spec §7) ----------
@@ -855,6 +912,7 @@ function pick(l0, src) {
   // (one she has not used yet stays: it would not come back to her by itself)
   if (l.tool !== null && toolUsed(l, l.tool)) { events.push({ type: 'toolReturned', tool: l.tool }); l.tool = null; }
   l.carried[res] += 1;
+  if (!crop) l.since = { ...(l.since ?? { sales: 0, gather: 0 }), gather: (l.since?.gather ?? 0) + 1 };
   if (src in PILES) l.piles[src] -= 1;
   else if (src in l.sticks) {
     const s = l.sticks[src];
@@ -944,7 +1002,7 @@ export function validateLedger(l) {
     for (const id of Object.keys(NODES)) {
       const o = l.overgrown[id];
       if (!isTime(o)) e(`overgrown ${id}`);
-      else if (o !== null && !l.nodes?.[id]?.dug) e(`a weed over ${id}, which is not planted`);
+      else if (o !== null && !l.nodes?.[id]?.dug && !l.wilted?.[id]) e(`a weed over ${id}, which is not planted`);
     }
   }
   if (!sameKeys(l.wilted, Object.keys(NODES)) || !Object.keys(NODES).every((id) => typeof l.wilted[id] === 'boolean' && !(l.wilted[id] && l.nodes?.[id]?.dug))) e('wilted');
@@ -966,5 +1024,6 @@ export function validateLedger(l) {
   if (!sameKeys(l.yardWeeds, YARD_WEED_SLOTS) || !YARD_WEED_SLOTS.every((id) => typeof l.yardWeeds[id] === 'boolean')) e('yard weeds');
   if (!isTime(l.yardWeedAt) || !isInt(l.yardWeedSeq)) e('yard weed clock');
   if (!Array.isArray(l.yardBack) || l.yardBack.length > YARD_WEED_SLOTS.length || !l.yardBack.every((t) => isInt(t)) || !isInt(l.yardRaked)) e('yard weeds coming back');
+  if (!sameKeys(l.since, ['sales', 'gather']) || !isInt(l.since.sales) || !isInt(l.since.gather)) e('since');
   return errors;
 }

@@ -19,6 +19,18 @@
 // - One-shot effects (for the sound-effects step): loadEffect(name, url), then
 //   playEffect(name, { volume, rate }) plays through the effects bus.
 //
+// v0.29 (Tiffany, on her phone: "Music isn't on in the main part of the game ... Eventually it said
+// 'tap to resume audio' and it never did. It worked during the slide show though"): the theme is
+// Web Audio and the slideshow a plain <audio> element. On an iPhone, Web Audio is silenced by the
+// ring/silent switch unless the page's audio session is "playback", while a media element plays
+// either way; and a context the phone interrupted (another app, the lock screen) can stay
+// "interrupted", or report "running" with its clock stopped, so resume() alone never brings the
+// theme back. So: the audio session is set to "playback" where the browser has the API
+// (`session`); where it does not, an iPhone gets a silent looping media element on the first tap,
+// which does the same (`keepAlive`); a context that is interrupted, refused, or whose clock does not
+// move after a resume is replaced by a new one on the next tap (`rebuild`), the theme's buffer and
+// the effects carried over, the theme going on where it was.
+//
 // Settings live in their own device key, not in the farm save: they apply on the title screen
 // before a farm is loaded, and a progress reset keeps them (spec §12).
 import { loopPoints, playhead, TRACK } from './track.js';
@@ -52,7 +64,7 @@ function writeSettings(storage, s) {
 // Everything browser-specific is injected so the logic runs under Node tests.
 //   AudioContextCtor  window.AudioContext (or webkitAudioContext); missing = unsupported
 //   load(url)         Promise<ArrayBuffer> of an encoded file
-export function createAudio({ AudioContextCtor, load, storage, track = TRACK, onChange, blockCheckMs = BLOCK_CHECK_MS } = {}) {
+export function createAudio({ AudioContextCtor, load, storage, track = TRACK, onChange, blockCheckMs = BLOCK_CHECK_MS, session = null, keepAlive = null, clockCheckMs = 600 } = {}) {
   let settings = readSettings(storage);
   let ctx = null;
   let master = null;
@@ -62,6 +74,9 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
   let blocked = false;
   let hidden = false;
   let awaitingReturn = false; // came back from a hidden tab; the next gesture resumes
+  let stalled = false; // v0.29: the context says it runs but its clock stands still: the next gesture replaces it
+  let rebuilds = 0;
+  let blockedTries = 0; // gestures made while the context stayed refused
   const holds = new Set();
   const musicLevel = () => settings.musicVolume;
   // theme
@@ -88,6 +103,8 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
   }
 
   function create() {
+    // v0.29: an iPhone plays Web Audio past the silent switch only in a "playback" audio session
+    try { if (session && session.type !== 'playback') session.type = 'playback'; } catch { /* not settable here */ }
     try {
       ctx = new AudioContextCtor();
     } catch {
@@ -111,8 +128,32 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     if (!ctx || running()) return;
     const c = ctx;
     const check = () => { if (c === ctx && !running() && settings.soundEnabled && !hidden) { blocked = true; changed(); } };
-    Promise.resolve(c.resume?.()).then(() => { if (running()) { blocked = false; reconcile(); changed(); } else check(); }, check);
+    Promise.resolve(c.resume?.()).then(() => { if (running()) { blocked = false; reconcile(); changed(); watchClock(); } else check(); }, check);
     setTimeout(check, blockCheckMs);
+  }
+  // v0.29: a context that says it runs must also move its clock; one that does not is stalled
+  function watchClock() {
+    const c = ctx;
+    if (!c || typeof c.currentTime !== 'number') return;
+    const t0 = c.currentTime;
+    setTimeout(() => {
+      if (c !== ctx || hidden || !running() || !settings.soundEnabled) return;
+      if (c.currentTime === t0) { stalled = true; blocked = true; changed(); }
+    }, clockCheckMs);
+  }
+  // v0.29: a new context in place of one the phone has stuck (inside a gesture, so it may start):
+  // the theme goes on from where it was, the effects keep their decoded buffers
+  function rebuild() {
+    const pos = position();
+    const old = ctx;
+    if (source) { try { source.stop(); } catch { /* gone */ } source = null; }
+    savedPos = pos;
+    try { old?.close?.().catch?.(() => {}); } catch { /* already closed */ }
+    ctx = null;
+    stalled = false;
+    blocked = false;
+    rebuilds++;
+    return create();
   }
 
   async function loadMusic() {
@@ -188,6 +229,12 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
       if (unsupported || hidden) return;
       if (awaitingReturn) { awaitingReturn = false; holds.delete('hidden'); }
       if (!settings.soundEnabled) { changed(); return; }
+      try { keepAlive?.(); } catch { /* the fallback is only a help */ }
+      // v0.29: a context the phone has stuck (interrupted, refused before, or its clock still) is
+      // replaced here, inside the tap, where a new one may start
+      // (a refusal is retried once on the same context, as before; refused again, it is replaced)
+      if (blocked && !running()) blockedTries++;
+      if (ctx && (ctx.state === 'interrupted' || stalled || (blocked && !running() && blockedTries >= 2))) { blockedTries = 0; if (!rebuild()) { changed(); return; } }
       if (!ctx && !create()) { changed(); return; }
       tryResume();
       if (musicState === 'none') loadMusic();
@@ -295,6 +342,7 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
       return 'playing';
     },
     get running() { return running(); },
+    get rebuilds() { return rebuilds; }, // v0.29: contexts replaced after the phone stuck one
     get musicError() { return musicError; },
     get position() { return position(); },
     get holds() { return [...holds]; },
