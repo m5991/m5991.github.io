@@ -20,11 +20,18 @@ export function createCards(dialog, { player = null } = {}) {
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close('close');
   });
 
-  function open(html, handlers, closeCb) {
+  // v0.30 (Tiffany's "Farm changes #4": "When tabs have close at the bottom, also allow an x in the
+  // top corner"): a card with a closing button at its foot (Close, Lovely, Keep this farm) also has
+  // a small × in its top corner that does the same. `corner: false`: none (the welcome, whose one
+  // button starts the game).
+  const CORNER_X = '<button type="button" class="card-x" data-close aria-label="Close">×</button>';
+  function open(html, handlers, closeCb, { corner = true } = {}) {
     // a card closed just now whose close event has not fired yet: run its close first, so a card
     // opened straight after one (the songbook after a song) never swallows it
     if (!dialog.open && onClose) { const f = onClose; onClose = null; f(dialog.returnValue); }
     dialog.classList.remove('tap-out');
+    if (corner && !html.includes('class="card-x"') && /data-close/.test(html)) html = CORNER_X + html;
+    dialog.classList.toggle('has-x', html.includes('class="card-x"'));
     dialog.innerHTML = html;
     onClose = closeCb;
     for (const [sel, fn] of Object.entries(handlers)) {
@@ -140,7 +147,7 @@ export function createCards(dialog, { player = null } = {}) {
     },
     // v0.25 the welcome, once on a new farm: { title (the captain's line, pencilled), who, first, go, onClose }
     welcome(o) {
-      open(`<h2 id="card-title" class="welcome-line">${esc(o.title)}</h2><p>${esc(o.who)}</p><p class="welcome-first">${esc(o.first)}</p><div class="actions"><button type="button" class="primary" data-close autofocus>${esc(o.go)}</button></div>`, {}, o.onClose);
+      open(`<h2 id="card-title" class="welcome-line">${esc(o.title)}</h2><p>${esc(o.who)}</p><p class="welcome-first">${esc(o.first)}</p><div class="actions"><button type="button" class="primary" data-close autofocus>${esc(o.go)}</button></div>`, {}, o.onClose, { corner: false });
       dialog.classList.add('welcome');
     },
     // (v0.23, Tiffany: "Get rid of the credits tab": the Credits card of v0.22 is gone)

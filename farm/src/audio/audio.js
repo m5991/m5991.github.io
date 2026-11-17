@@ -38,6 +38,18 @@ import { loopPoints, playhead, TRACK } from './track.js';
 export const AUDIO_KEY = 'vanessas-farm/audio';
 export const DEFAULT_SETTINGS = Object.freeze({ soundEnabled: true, musicVolume: 0.35, effectsVolume: 0.8 });
 export const BLOCK_CHECK_MS = 900; // a resume still pending after this counts as a refusal
+// v0.30 (Tiffany's "Farm changes #4": "When I click out of the game to a different page in my phone
+// and then come back, it should automatically start the audio. I shouldn't have to enable audio"):
+// - a hidden page no longer suspends the audio context at once: the theme stops (a hold), and the
+//   context is left to the browser for HIDDEN_SUSPEND_MS. A context the page suspended itself is one
+//   a phone's browser will not start again without a tap; one it only interrupted (another app, the
+//   lock screen) it starts again by itself when the page is back, and the theme then goes on at once;
+// - back on the page the theme comes back as soon as the context runs (a resume, or the browser's
+//   own return from an interruption, `onstatechange`), with no tap where the browser allows it;
+// - "Tap to resume audio" shows only if the sound is still not back RETURN_GRACE_MS after the page
+//   is (v0.23-v0.29 showed it at once and waited for that tap). Any tap still brings it back.
+export const HIDDEN_SUSPEND_MS = 60000;
+export const RETURN_GRACE_MS = 1500;
 export const MAX_EFFECT_VOICES = 8;
 const FADE_IN_S = 0.4;
 const FADE_OUT_S = 0.06; // short enough to feel immediate, long enough not to click
@@ -64,7 +76,7 @@ function writeSettings(storage, s) {
 // Everything browser-specific is injected so the logic runs under Node tests.
 //   AudioContextCtor  window.AudioContext (or webkitAudioContext); missing = unsupported
 //   load(url)         Promise<ArrayBuffer> of an encoded file
-export function createAudio({ AudioContextCtor, load, storage, track = TRACK, onChange, blockCheckMs = BLOCK_CHECK_MS, session = null, keepAlive = null, clockCheckMs = 600 } = {}) {
+export function createAudio({ AudioContextCtor, load, storage, track = TRACK, onChange, blockCheckMs = BLOCK_CHECK_MS, session = null, keepAlive = null, clockCheckMs = 600, hiddenSuspendMs = HIDDEN_SUSPEND_MS, returnGraceMs = RETURN_GRACE_MS, timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => clearTimeout(t) } } = {}) {
   let settings = readSettings(storage);
   let ctx = null;
   let master = null;
@@ -74,6 +86,9 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
   let blocked = false;
   let hidden = false;
   let awaitingReturn = false; // came back from a hidden tab; the next gesture resumes
+  let returnGrace = false; // v0.30: just back on the page: no prompt yet while the sound may still come back by itself
+  let hideTimer = null; // v0.30: the context is suspended only after a while hidden
+  let graceTimer = null;
   let stalled = false; // v0.29: the context says it runs but its clock stands still: the next gesture replaces it
   let rebuilds = 0;
   let blockedTries = 0; // gestures made while the context stayed refused
@@ -120,7 +135,11 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     musicBus.connect(master);
     effectsBus.connect(master);
     master.connect(ctx.destination);
-    ctx.onstatechange = () => { if (running()) blocked = false; reconcile(); changed(); };
+    ctx.onstatechange = () => {
+      if (running()) blocked = false;
+      if (running() && awaitingReturn && !hidden) backOnPage(); // v0.30: the browser started it again by itself
+      reconcile(); changed();
+    };
     return true;
   }
 
@@ -130,6 +149,12 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     const check = () => { if (c === ctx && !running() && settings.soundEnabled && !hidden) { blocked = true; changed(); } };
     Promise.resolve(c.resume?.()).then(() => { if (running()) { blocked = false; reconcile(); changed(); watchClock(); } else check(); }, check);
     setTimeout(check, blockCheckMs);
+  }
+  // v0.30: back on the page and the context runs: the theme goes on, no tap asked
+  function backOnPage() {
+    awaitingReturn = false; returnGrace = false;
+    holds.delete('hidden');
+    watchClock();
   }
   // v0.29: a context that says it runs must also move its clock; one that does not is stalled
   function watchClock() {
@@ -227,7 +252,7 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     // Call from every user gesture (tap, click, key). Idempotent and cheap.
     gesture() {
       if (unsupported || hidden) return;
-      if (awaitingReturn) { awaitingReturn = false; holds.delete('hidden'); }
+      if (awaitingReturn) { awaitingReturn = false; returnGrace = false; holds.delete('hidden'); }
       if (!settings.soundEnabled) { changed(); return; }
       try { keepAlive?.(); } catch { /* the fallback is only a help */ }
       // v0.29: a context the phone has stuck (interrupted, refused before, or its clock still) is
@@ -306,19 +331,32 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
       h = !!h;
       if (h === hidden) return;
       hidden = h;
+      if (graceTimer !== null) { timers.clear(graceTimer); graceTimer = null; }
       if (hidden) {
         holds.add('hidden');
         reconcile();
-        ctx?.suspend?.().catch(() => {});
+        // (v0.30: the context is suspended only after a while hidden; v0.23-v0.29 suspended it at once)
+        const c = ctx;
+        if (hideTimer !== null) timers.clear(hideTimer);
+        hideTimer = c ? timers.set(() => { hideTimer = null; if (c === ctx && hidden) c.suspend?.()?.catch?.(() => {}); }, hiddenSuspendMs) : null;
       } else if (ctx && settings.soundEnabled) {
+        if (hideTimer !== null) { timers.clear(hideTimer); hideTimer = null; }
         // v0.23: the sound comes back by itself when the browser lets it (it does once the page
         // has been touched); if it does not, the next gesture resumes, as before
+        // v0.30: a context still running (it was never suspended) goes on at once; one the browser
+        // interrupted comes back when it starts it again (onstatechange); the prompt waits a moment
         awaitingReturn = true;
         const c = ctx;
-        Promise.resolve(c.resume?.()).then(() => {
-          if (c !== ctx || !running() || !awaitingReturn || hidden) return;
-          awaitingReturn = false; holds.delete('hidden'); reconcile(); changed();
-        }, () => {});
+        if (running()) backOnPage();
+        else {
+          returnGrace = true;
+          graceTimer = timers.set(() => { graceTimer = null; returnGrace = false; changed(); }, returnGraceMs);
+          Promise.resolve(c.resume?.()).then(() => {
+            if (c !== ctx || !running() || !awaitingReturn || hidden) return;
+            backOnPage(); reconcile(); changed();
+          }, () => {});
+        }
+        reconcile();
       } else {
         holds.delete('hidden'); // nothing was playing; the next gesture starts as usual
       }
@@ -327,7 +365,7 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     // What the UI should offer: null, 'enable' (`Tap to enable audio`) or 'resume'.
     get prompt() {
       if (unsupported || !settings.soundEnabled || hidden) return null;
-      if (awaitingReturn) return 'resume';
+      if (awaitingReturn) return returnGrace ? null : 'resume'; // (v0.30: not while it may still come back by itself)
       return blocked ? 'enable' : null;
     },
     // 'unsupported' | 'off' | 'idle' (no gesture yet) | 'blocked' | 'paused' | 'loading' | 'playing' | 'error'

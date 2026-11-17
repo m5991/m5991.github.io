@@ -165,7 +165,9 @@ export const SPOTS = {
   sun: { label: 'the field’s edge under the sun', act: act('Put your sunglasses on', 'sunglasses', 'Too bright!', 2800) },
   tools: { label: 'the shovel and the rake', act: act('Lean the rake on the shovel', 'reach', 'Clink!', 2600) },
   // v0.29 (Tiffany: 'She should also "rest on the bench" a little longer'): 5 s (it was 2.8 s)
-  bench: { label: 'the bench', act: act('Rest on the bench', 'bench', 'Aah…', 5000) },
+  // v0.30 (Tiffany: "Make her clean the bench not rest on I in order to unlock the stay in the shade
+  // song"): she wipes the bench with her cloth (it was "Rest on the bench", v0.22-v0.29)
+  bench: { label: 'the bench', act: act('Clean the bench', 'clean', 'Squeaky clean!', 3200) },
   chimney: { label: 'the chimney', act: act('Climb to the chimney', 'chimney', 'Up we go!', 7200) },
   weeds: { label: 'the weeds by the raised bed', anchor: 'bed', offset: [1.9, 0.5], act: act('Shake a fist at the weeds', 'fist', 'Not today!', 2400) },
   tree: { label: 'the old tree', act: act('Hug the old tree', 'hug', 'Good team!', 2600) },
@@ -322,6 +324,62 @@ export function visibleSpots(discoveries = {}, n = SPOTS_AT_ONCE, { othersFound 
   return out;
 }
 
+// v0.30 (Tiffany's "Farm changes #4": "There should never be a time that there aren't any red
+// circles if there are more songs to collect"; "If a red circle appears don't let it disappear
+// until she collects the song"; "Make the song circles appear spaced out in location. Don't have her
+// collect all the ones by the house in order. She has to move to a different part of the farm to
+// get to the next circle"):
+// The circles on show are worked out by playing the hunt back from its start, find by find, in the
+// order the songs were found (`at`). A circle comes out and stays out until its song is found: a
+// find takes only its own circle away, and the free places are filled again at once, so while a
+// song is left there is always a circle (the songs that wait their turn, `songWaits`, are passed
+// over until their turn; the last one's turn is when every other song is found). A new circle is
+// placed away from where she has just been: the first song in her list (still to find, not waiting)
+// that is at least HUNT_SPACING.far metres from the spot of the song just found and
+// HUNT_SPACING.apart metres from every circle still out; if none is, the first that is far from the
+// spot just found; if none is, the one farthest from it. `dist(a, b)`: metres between two spots
+// (main.js measures them on the farm; with none given, every spot is far from every other, which is
+// v0.23's order). Kept for older saves too: they are played back the same way.
+// (v0.23-v0.29 showed the first three in list order not found yet: a find could bring an earlier
+// song out in place of one on show, and the last song hid every circle while a keepsake was left.)
+export const HUNT_SPACING = { far: 6, apart: 5 };
+export function huntCircles(discoveries = {}, { n = SPOTS_AT_ONCE, dist = null } = {}) {
+  const d = dist ?? (() => Infinity);
+  const finds = SONG_LIST.filter((id) => discoveries?.[id])
+    .map((id) => ({ id, at: discoveries[id]?.at ?? 0, i: SONG_LIST.indexOf(id) }))
+    .sort((a, b) => a.at - b.at || a.i - b.i);
+  const known = {};
+  let shown = [];
+  let last = null; // the spot of the song just found
+  const fill = () => {
+    while (shown.length < n) {
+      const spots = new Set(shown.map((x) => x.spot));
+      const free = SONG_LIST.filter((id) => !known[id] && !shown.some((x) => x.id === id) && !spots.has(songSpot(id))
+        && (id === LAST_SONG ? lastSongTurn(known) : !songWaits(id, known)));
+      if (!free.length) break;
+      const farFrom = (id) => !last || d(songSpot(id), last) >= HUNT_SPACING.far;
+      const apart = (id) => shown.every((x) => d(songSpot(id), x.spot) >= HUNT_SPACING.apart);
+      // (among those, the one with the most songs still to find near it first, so a part of the farm
+      // where several wait is thinned out early and the last few are not left bunched together)
+      const crowd = (id) => SONG_LIST.filter((x) => x !== id && !known[x] && d(songSpot(id), songSpot(x)) < HUNT_SPACING.far).length;
+      const best = (ids) => ids.reduce((b, id) => (b === null || crowd(id) > crowd(b) ? id : b), null);
+      let pick = best(free.filter((id) => farFrom(id) && apart(id))) ?? best(free.filter(farFrom));
+      if (!pick) pick = free.reduce((best, id) => (d(songSpot(id), last) > d(songSpot(best), last) ? id : best), free[0]);
+      shown.push({ id: pick, spot: songSpot(pick) });
+    }
+  };
+  fill();
+  for (const f of finds) {
+    known[f.id] = discoveries[f.id];
+    shown = shown.filter((x) => x.id !== f.id);
+    last = songSpot(f.id);
+    fill();
+  }
+  return shown.map((x) => x.spot);
+}
+// the song whose circle is at a spot (null: none in play there)
+export const songAt = (spot) => SONG_LIST.find((id) => songSpot(id) === spot) ?? null;
+
 // The next egg a bird brings: the song of the spot she is at (`spot`, or null). Nothing before
 // the hunt opens.
 export function nextEgg(l, { discoveries = {}, spot = null } = {}) {
@@ -351,9 +409,12 @@ export function huntGoal({ discoveries = {}, egg = null, othersFound = true, res
   if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
   if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
   if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
-  if (egg === 'rest') return { text: `Listen a while: the next red circles come out in ${restS} seconds. A keepsake can be found meanwhile.`, line: { icon: 'note', label: 'Listen a while', tail: `circles in ${restS} s` } };
+  // (v0.30: the circles stay out while she listens; only their actions wait: Tiffany, "There should
+  // never be a time that there aren't any red circles if there are more songs to collect")
+  if (egg === 'rest') return { text: `Listen a while: the next song can be fetched from a red circle in ${restS} seconds. A keepsake can be found meanwhile.`, line: { icon: 'note', label: 'Listen a while', tail: `next song in ${restS} s` } };
   if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
-  if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: find the keepsakes that are still hidden on the farm first.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
+  // (v0.30: its red circle is out all the while; its action waits for the keepsakes)
+  if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: its red circle is out, and its action waits until the keepsakes still on the farm are found.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
   if (left.length === 1 && left[0] === LAST_SONG) return { text: `The last song: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'The last song', tail: 'at the red circle' } };
   if (left.length === 1) return { text: `One song left: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'One song left', tail: 'at the red circle' } };
   return { text: 'Walk to a red circle on the farm and do what it says: a bird brings its song as an egg, in a yellow circle.', line: { icon: 'note', label: 'Walk to a red circle' } };

@@ -98,6 +98,39 @@ export function drawPostcard(canvas, img, stats, { width = 1400 } = {}) {
   return canvas;
 }
 
+// v0.30 (Tiffany's "Farm changes #4": "When you can share the picture make it just the picture and
+// make it have a disclaimer 'Vanessa drew this!'"): what Share sends is Vanessa's drawing alone,
+// edge to edge, with "Vanessa drew this!" pencilled in her pen's blue on a slip of paper in its
+// lower right corner: no title, no numbers, no signature or stamp (v0.23-v0.29 sent the postcard,
+// `drawPostcard`: the drawing with the farm's numbers under it).
+export const SHARED_NOTE = 'Vanessa drew this!';
+export function drawShared(canvas, img, { width = 1600 } = {}) {
+  const w = width;
+  const h = Math.round(w * (img.height / img.width));
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d');
+  g.drawImage(img, 0, 0, w, h);
+  const size = Math.round(w * 0.042);
+  g.font = `italic 700 ${size}px "Pencil Title", "Comic Sans MS", cursive`;
+  const tw = g.measureText?.(SHARED_NOTE)?.width ?? size * SHARED_NOTE.length * 0.5;
+  const padX = Math.round(size * 0.55); const padY = Math.round(size * 0.35);
+  const bw = tw + padX * 2; const bh = size + padY * 2;
+  const x = w - bw - Math.round(w * 0.02); const y = h - bh - Math.round(w * 0.02);
+  g.save();
+  g.translate(x + bw / 2, y + bh / 2);
+  g.rotate(-0.04);
+  g.fillStyle = 'rgba(255, 247, 229, 0.94)';
+  g.fillRect(-bw / 2, -bh / 2, bw, bh);
+  g.strokeStyle = '#2b2a5e'; g.lineWidth = Math.max(2, w / 600);
+  g.strokeRect(-bw / 2, -bh / 2, bw, bh);
+  g.fillStyle = '#2b2a5e';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(SHARED_NOTE, 0, size * 0.04);
+  g.restore();
+  return canvas;
+}
+
 // Hand the picture to the share sheet (a file), or save it when the browser has no such sheet.
 // -> 'shared' | 'saved' | 'cancelled'
 export async function sharePostcard(canvas, { name = 'The Farm postcard.png', title = 'The Farm', text = '', nav = globalThis.navigator, doc = globalThis.document } = {}) {

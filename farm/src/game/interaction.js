@@ -37,7 +37,7 @@
 // holds (`atCrate`, the ledger's `stow`). With twelve crops on her head a plant is not worked.
 import { CROPS, isWeedId, NODES, TABLE_REACH_M, TIMING, YARD_MATERIALS } from './data.js';
 import {
-  available, canTake, crateRoom, digOpen, fillRoom, fillTable, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
+  available, canTake, crateRoom, digOpen, fillRoom, fillTable, tableRoom, nodeEstablished, sourceResource, tableAvailable, tableFull, toolComes, toolJobs, toolUsed, weedJob, weedOpen,
 } from './ledger.js';
 import { buildBar, nextStage } from './guide.js';
 
@@ -273,8 +273,11 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       }
       // the yard-sale table: walking past it sets her crops out on it (v0.12)
       // (v0.23: at the table that has room, and only what that table still holds)
-      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atFillTable(l, ctx.hero, ctx.targets)) {
-        const res = commit({ t: 'stock', max: fillRoom(l) });
+      // (v0.30: the crate stands beside the tables all the time again; walking past it while the
+      // tables have room sets her crops out on them, as the tables themselves do)
+      const byCrate = !atFillTable(l, ctx.hero, ctx.targets) && atCrate(ctx.hero, ctx.targets);
+      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && (atFillTable(l, ctx.hero, ctx.targets) || byCrate)) {
+        const res = commit({ t: 'stock', max: byCrate ? tableRoom(l) : fillRoom(l) });
         events.push({ type: 'stock', result: res });
         l = getLedger();
       }

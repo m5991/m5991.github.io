@@ -265,9 +265,13 @@ body.booting #hud, body.booting #controls, body.booting #stick-zone, body.bootin
 #opening.frozen canvas.still { display: block; }
 #opening.frozen .sheet, #opening.frozen #opening-start, #opening.frozen #opening-sound { display: none; }
 /* the title: graphite on the paper, a little paper grain through it so it reads as pencil */
-#opening-title { position: absolute; left: 0; top: 0; margin: 0; visibility: hidden; display: flex; align-items: center; justify-content: center; gap: 0 0.28em; font: normal 400 40px/1 "Pencil Title", "Segoe Script", cursive; color: #5a5f68; letter-spacing: 0.01em; white-space: nowrap; transform-origin: 50% 50%; pointer-events: none; }
+/* v0.30 (Tiffany: 'The words "the farm" should be in the same dark blue as the drawing'): the dark
+   blue of her pen, sampled from the drawing's darkest strokes, and its pencil grain lighter so it reads
+   as dark as her lines (it was a pencil grey, #5a5f68) */
+#opening { --title-ink: #1d1b4c; }
+#opening-title { position: absolute; left: 0; top: 0; margin: 0; visibility: hidden; display: flex; align-items: center; justify-content: center; gap: 0 0.28em; font: normal 400 40px/1 "Pencil Title", "Segoe Script", cursive; color: var(--title-ink); letter-spacing: 0.01em; white-space: nowrap; transform-origin: 50% 50%; pointer-events: none; }
 #opening.laid #opening-title { visibility: visible; }
-#opening-title span { display: inline-block; padding: 0.12em 0.08em 0.2em; clip-path: inset(0 100% 0 0); transform: rotate(-3deg); background: #5a5f68 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.97 0 0 0 0 0.9 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+#opening-title span { display: inline-block; padding: 0.12em 0.08em 0.2em; clip-path: inset(0 100% 0 0); transform: rotate(-3deg); background: var(--title-ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.97 0 0 0 0 0.9 0 0 0 0.3 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 #opening-title.stacked { flex-direction: column; align-items: flex-start; justify-content: center; padding-left: 0.1em; line-height: 1.1; }
 #opening-title.stacked .w2 { margin-left: 0.55em; }
 /* it writes itself in, left to right, in about 1.6 s */
@@ -399,6 +403,10 @@ body.credits #evening, body.backdrop #evening, body.finale #evening, body.openin
 #now-playing .np-title { grid-column: 1 / -1; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #now-playing input { width: 100%; min-height: 28px; accent-color: var(--navy); }
 #now-playing .np-time { font-variant-numeric: tabular-nums; }
+/* v0.30: the download beside the stop, as big as a button */
+#now-playing .np-download { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 2px solid var(--ink); border-radius: 12px; color: var(--ink); background: var(--paper); }
+#now-playing .np-download svg { width: 22px; height: 22px; }
+#now-playing .np-download:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
 .song-seek { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 8px; }
 .song-seek[hidden] { display: none; }
 .song-seek input { width: 100%; min-height: 32px; accent-color: var(--navy); }
@@ -593,7 +601,11 @@ figure.keepsake-print.drawing .gold-stamp { position: absolute; left: 4%; bottom
 
 /* v0.29: the song card closes with a tap outside it; its small × in the corner */
 dialog#card.tap-out { position: fixed; }
+dialog#card.has-x #card-title { padding-right: 40px; } /* (v0.30: clear of the corner ×) */
+/* (v0.30: the × over the card, on paper, and the crop's sprig of a themed card beside it, not on it) */
+html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card.has-x h2::after { right: 34px; }
 dialog#card .card-x { position: absolute; top: 6px; right: 8px; width: 40px; height: 40px; min-height: 0; padding: 0; font-size: 26px; line-height: 1; border-radius: 50%; background: transparent; border: 2px solid var(--ink); }
+dialog#card .card-x { z-index: 2; min-width: 40px; background: var(--paper); } /* (v0.30: over the themed card's sprig, round) */
 dialog#card.tap-out h2 { padding-right: 40px; }
 dialog#card .tap-hint { opacity: 0.75; margin-bottom: 0; }
 

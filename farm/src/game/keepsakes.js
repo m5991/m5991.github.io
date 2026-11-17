@@ -29,6 +29,16 @@ export const KEEPSAKE_NEAR_M = 4; // within this, it gives a small hop now and t
 // bounces gently all the time (world.js), wherever she is. No arrow points at one.
 export const KEEPSAKES_AT_ONCE = 2;
 export const visibleKeepsakes = (saved = {}, n = KEEPSAKES_AT_ONCE) => KEEPSAKE_IDS.filter((id) => !saved?.[id]).slice(0, n);
+// v0.30 (Tiffany: "Make the keepsakes also pop up one by one, maybe one for every song that's
+// available so you can slowly collect them"): one keepsake on the grass at a time, and one more
+// for each song found: the first comes out with the first song, and the next only once another
+// song has been found (so with n songs found, n keepsakes have come out at most). `songsFound`: the
+// number of songs found. (v0.23-v0.29: two at a time from the start, `visibleKeepsakes`.)
+export function keepsakesNow(saved = {}, songsFound = 0) {
+  const left = KEEPSAKE_IDS.filter((id) => !saved?.[id]);
+  const out = KEEPSAKE_IDS.length - left.length;
+  return left.length && songsFound > out ? [left[0]] : [];
+}
 
 // they are out on the farm in the exploring phase only
 export const keepsakesOut = (mainDone) => !!mainDone;

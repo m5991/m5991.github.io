@@ -1193,7 +1193,9 @@ export function steppingOutline(i) {
 // ray on its own (`D22_SunRays`, so each can reach out and draw back). Behind them, for the end:
 // a soft halo and a beam of light along every ray (`D22_SunGlow`), unseen until the sun has its
 // colour (world.js updateSun lights and moves them).
-export function sun(radius, maxLen = () => Infinity) {
+// (v0.30: `stretch`, the most a ray grows as it reaches out (world.js SUN_RAY_MAX): its drawn length
+// is kept that much inside the composition edge, so at its longest it still ends there)
+export function sun(radius, maxLen = () => Infinity, stretch = 1) {
   const R = radius; const w = R * 0.045;
   const ink = inkBasic(1);
   const stroke = (geos, name) => { const m = new THREE.Mesh(geos.length > 1 ? mergeGeometries(geos, false) : geos[0], ink); m.name = name; m.userData.noOutline = true; m.userData.noFit = true; return m; };
@@ -1232,7 +1234,7 @@ export function sun(radius, maxLen = () => Infinity) {
   for (let k = 0; k < 13; k++) {
     const a = (k / 13) * Math.PI * 2 + (r() - 0.5) * 0.25;
     const r0 = R * (1.2 + r() * 0.15);
-    const len = Math.min(R * (2.2 + r() * 1.4), maxLen(a) - r0);
+    const len = Math.min(R * (2.2 + r() * 1.4), (maxLen(a) - r0) / stretch);
     if (len < R * 0.5) continue;
     // each ray is drawn along +X from the rim and turned to its angle, so it can stretch along itself
     const pts = [];

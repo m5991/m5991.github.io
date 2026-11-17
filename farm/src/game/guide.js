@@ -58,7 +58,7 @@
 //   the pile by the house.
 // - "When the weeds choke out a crop, let the crop disappear but the weed stay": the weed left on
 //   the empty spot is raked first, then the spot is dug again.
-import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, MATERIALS, NODES, PILES, PRICES, REGROW, RESOURCE_NAMES, RESOURCE_UNIT, ROCK_IDS, STAGES, STICK_SLOTS } from './data.js';
+import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, HAMMERED, MATERIALS, NODES, PILES, PRICES, REGROW, RESOURCE_NAMES, RESOURCE_UNIT, ROCK_IDS, STAGES, STICK_SLOTS } from './data.js';
 import {
   available, cropsCarried, firstStage, gateShort, headRoom, recipe, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable,
   plotWeeds, regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableFull, tableRoom, toolComes, undug,
@@ -268,6 +268,8 @@ export function nextStage(l) {
     ? STAGES[id].crop && undug(l).some((n) => NODES[n].stage === id) // a planted crop stage still has spots to dig
     : true)) ?? null;
 }
+// v0.30: wood or stone on her head, and none has ever been left at the pile or gone into a build
+export const firstLoad = (l) => MATERIALS.some((r) => l.carried[r] > 0) && !(l.paymentEvents ?? []).some((id) => HAMMERED.includes(id)) && l.yard.W + l.yard.R === 0;
 // v0.23: she has everything for the next build and it can be built now (a crop patch: once its
 // weeds are raked): the goal line says DIY (Plant, Hire) and the place
 export function readyBuild(l) {
@@ -338,6 +340,13 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   // do with it"): a head full of wood or stone goes to the pile by the house, which builds take from
   const full = MATERIALS.find((r) => l.carried[r] >= CAPACITY);
   if (full) return { text: `${CAPACITY} ${RESOURCE_NAMES[full]} on her head, the most she carries: walk through the pile by the house to leave it there. Builds take it from the pile.`, target: 'yard', carry: full, line: { icon: full === 'W' ? 'wood' : 'stone', label: 'Leave it at the pile', tail: 'by the house' } };
+  // v0.30 (Tiffany's "Farm changes #4": "When you first pick up stones and rocks the drop off pile
+  // should be the only one highlighted. THEN it highlights the shovel"): her first wood or stone, as
+  // long as none has ever gone to the pile (or into a build), takes her to the pile first: the line,
+  // the one arrow and the one circle are the pile's. Once she has left a load there, the line goes
+  // on to what is next (the shovel, for her first crop). (v0.29 circled the pile beside the goal's
+  // own circle, the shovel's.)
+  if (firstLoad(l)) return { text: 'Wood and stone go to the pile by the house: walk through it to leave them there. Every build takes from her head and from that pile.', target: 'yard', carry: l.carried.W ? 'W' : 'R', first: true, line: { icon: l.carried.W ? 'wood' : 'stone', label: 'Leave it at the pile', tail: 'by the house' } };
   const first = firstStage(l);
   const firstLabel = cap(PATCH_NAME[l.crop]);
   const own = cropSteps(l, first, firstLabel, toolsCome);

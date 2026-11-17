@@ -29,7 +29,7 @@
 // flat hand-drawn stepping stones with grass between.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { BIRDS, HOUSE_STAGES, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, TOMATO_YIELD, YARD_SHOWN } from '../game/data.js';
+import { BIRDS, HOUSE_STAGES, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, TOMATO_YIELD, YARD_SHOWN, YARD_WEEDS } from '../game/data.js';
 import { crateCount, crateShown, digOpen, fillTable, isCommitted, mainComplete, plantSize, saleReady, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
 import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
@@ -105,8 +105,9 @@ const SIGN_AT = { along: 0.55, behind: 1.75 };
 // `dropAt` m over it, in `flyMs`; the egg falls for `fallMs`; the bird and egg sizes
 // v0.29: the crop patches' earth (buildPatches): the two spots of each, and how far it reaches past
 // them (m: along the line of the two, and across it)
-const PATCH_NODES = { C0: ['c1', 'c2'], C1: ['c3', 'c4'], S0: ['s1', 's2'], S1: ['s3', 's4'] };
-const PATCH_PAD = { along: 0.75, across: 0.75 };
+// v0.30: where the weeds by the raised bed stand, from the weeds' song spot (m)
+const FIXED_WEED = { at: [1.4, -1.5] };
+const PATCH_PAD = { along: 0.75, across: 0.75, corn: 0.75, sunflowers: 0.7, bed: 0.3, rim: 0.07 }; // (v0.30: the plots' margins round what stands on them, and the pencilled edge, m)
 // v0.29: where the easel stands from her for "Put it on Paper" (m: to her right, behind her)
 const EASEL_AT = [0.62, -0.5];
 export const EGG = { cross: 7, high: 4.2, dropAt: 2.6, flyMs: 2200, fallMs: 520, size: 1.9, birdSize: 2.1 };
@@ -167,7 +168,12 @@ export function keepsakeBounce(t) {
 // turn in about four seconds; v0.22's turn took eleven and was easy to miss), the beams and the
 // halo are stronger (`beam`, `halo`: times v0.22's), the disc has a pale hot heart (`core`), and
 // the sky is lit round it (look.js paperBackdrop uSunGlow)
-export const SUN = { spin: 1.6, reach: 0.11, reachMs: 760, beam: [0.2, 0.56], waveMs: 620, halo: 1.6, core: 0.85, rim: 0.07, rimMs: 520 }; // (v0.29: rim, rimMs: the rim and the disc swell 7%, a breath about every 3.3 s)
+// (v0.30, Tiffany: "Have the lines coming from the sun lengthening and retracting": each ray grows
+// to a third longer and draws back, `reach` 0.32 (it was 0.11, too little to be seen), every
+// 2π·reachMs ≈ 6 s, on the farm under way too, not only once the sun has its colour)
+export const SUN = { spin: 1.6, reach: 0.32, reachMs: 950, beam: [0.2, 0.56], waveMs: 620, halo: 1.6, core: 0.85, rim: 0.07, rimMs: 520 }; // (v0.29: rim, rimMs: the rim and the disc swell 7%, a breath about every 3.3 s)
+// (v0.30: a ray's scale runs from 1 - 0.35 reach to 1 + 0.65 reach; this is its longest)
+export const SUN_RAY_MAX = 1 + SUN.reach * 0.65;
 export const THIEF = { size: 2.3, crop: 2.6, away: [9, 4.2, -5] };
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
@@ -509,30 +515,43 @@ export class World {
     this.boundsQuad = [[BOUNDS.uMin, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMax], [BOUNDS.uMin, BOUNDS.vMax]]
       .map(([u, v]) => p.groundAt(u, v));
     this.buildPatches();
+    this.buildFixedWeed(); // v0.30 (after the raised bed and the song spots stand)
     this.built = true; // v0.26: every station stands where it stays (eggSpotPos keeps its answers from here on)
   }
   // v0.29 (Tiffany: "Make the patches (the ground under where the plants will be) a color so we
-  // don't need to guess where a crop patch is"): a bed of brown earth under each crop patch's two
-  // spots (the corn's two patches, the sunflowers' two; the tomatoes have their raised bed), there
-  // from the start, with a pencilled edge
+  // don't need to guess where a crop patch is"): brown earth under the crop patches, there from the
+  // start, with a pencilled edge.
+  // v0.30 (Tiffany's "Farm changes #4": "The patch for the corn should be a huge rectangular plot of
+  // dirt that will fit the eventual complete corn field"; "Under the flowers should be one single
+  // patch of dirt and under where the raised garden bed will be should be a patch of dirt in the same
+  // rectangular shape"): three rectangles of earth, square to the farm: one under the whole corn
+  // field (every stalk of the finished field, its silhouettes too), one under all four sunflowers,
+  // and one where the raised bed stands (before it is built, the place it will be). v0.29 had an oval
+  // under each patch's two spots (four of them: two for the corn, two for the sunflowers).
   buildPatches() {
     const soil = new THREE.MeshBasicMaterial({ color: 0x9c6b43, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     const edge = new THREE.MeshBasicMaterial({ color: 0x5b3b22, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.patches = {};
-    for (const [stage, ids] of Object.entries(PATCH_NODES)) {
-      const a = this.stations[ids[0]]?.pos; const b = this.stations[ids[1]]?.pos;
-      if (!a || !b) continue;
-      const along = Math.hypot(b.x - a.x, b.z - a.z) / 2 + PATCH_PAD.along;
-      const g = new THREE.Group(); g.name = `patch:${stage}`;
-      const bed = new THREE.Mesh(new THREE.CircleGeometry(1, 40), soil);
-      const rim = new THREE.Mesh(new THREE.RingGeometry(0.94, 1, 40), edge);
+    const plot = (name, pts, pad) => {
+      const xs = pts.map((q) => q.x); const zs = pts.map((q) => q.z);
+      const x0 = Math.min(...xs) - pad; const x1 = Math.max(...xs) + pad;
+      const z0 = Math.min(...zs) - pad; const z1 = Math.max(...zs) + pad;
+      const w = x1 - x0; const d = z1 - z0; const t = PATCH_PAD.rim;
+      const g = new THREE.Group(); g.name = `patch:${name}`;
+      const bed = new THREE.Mesh(new THREE.PlaneGeometry(w, d), soil);
+      const frame = new THREE.Shape([new THREE.Vector2(-w / 2, -d / 2), new THREE.Vector2(w / 2, -d / 2), new THREE.Vector2(w / 2, d / 2), new THREE.Vector2(-w / 2, d / 2)]);
+      frame.holes.push(new THREE.Path([new THREE.Vector2(-w / 2 + t, -d / 2 + t), new THREE.Vector2(-w / 2 + t, d / 2 - t), new THREE.Vector2(w / 2 - t, d / 2 - t), new THREE.Vector2(w / 2 - t, -d / 2 + t)]));
+      const rim = new THREE.Mesh(new THREE.ShapeGeometry(frame), edge);
       for (const m of [bed, rim]) { m.rotation.x = -Math.PI / 2; m.renderOrder = 1; m.userData.noOutline = true; m.userData.noFit = true; g.add(m); }
-      g.position.set((a.x + b.x) / 2, 0.012, (a.z + b.z) / 2);
-      g.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
-      g.scale.set(along, 1, PATCH_PAD.across);
+      g.position.set((x0 + x1) / 2, 0.012, (z0 + z1) / 2);
+      g.userData.box = { x0, x1, z0, z1 };
       this.root.add(g);
-      this.patches[stage] = g;
-    }
+      this.patches[name] = g;
+    };
+    plot('corn', CORN_PLANTS.map((c) => this.proj.groundAt(c.u, c.v)), PATCH_PAD.corn);
+    plot('sunflowers', SUNFLOWER_NODES.map((id) => this.stations[id].pos), PATCH_PAD.sunflowers);
+    const b = new THREE.Box3().setFromObject(this.objects.D18);
+    plot('bed', [new THREE.Vector3(b.min.x, 0, b.min.z), new THREE.Vector3(b.max.x, 0, b.max.z)], PATCH_PAD.bed);
   }
   // v0.26: something of the world's own is on the move that should be seen at the full frame
   // budget (main.js worldBusy): a stick falling, the bird that comes for the crops, Dwight
@@ -811,7 +830,9 @@ export class World {
       if (dv > 1e-6) t = Math.min(t, (99.5 - SKY.D22.v) / dv); else if (dv < -1e-6) t = Math.min(t, (0.5 - SKY.D22.v) / dv);
       return t;
     };
-    const sun = G.sun(sunR, maxLen);
+    // (v0.30: drawn a little shorter, so that at their longest the rays end where v0.29's did, 1.11
+    // of the edge's length, which the finale's frame was measured for: framing.js WHOLE_FARM)
+    const sun = G.sun(sunR, maxLen, SUN_RAY_MAX / 1.11);
     sun.position.copy(sunC);
     sun.lookAt(p.camera.position);
     this.root.add(sun);
@@ -920,6 +941,23 @@ export class World {
       obj.scale.setScalar(stationScale(def));
       this.stations[id] = { def, obj, pos: pos.clone().setY(0) };
     }
+  }
+
+  // v0.30 (Tiffany: "In the very end, allow her to weed any weed at any time"): the weeds by the
+  // raised bed ("Shake a fist at the weeds" is about them) are a weed station like the ones on the
+  // grass (YARD_WEEDS.fixed): two clumps, a little way past the action's red circle, so standing in
+  // the circle does not set her raking them. The ledger has them on the finished farm.
+  buildFixedWeed() {
+    const id = YARD_WEEDS.fixed;
+    const w = G.weed(); w.name = `weed:${id}`;
+    const pos = this.eggSpotPos('weeds').add(new THREE.Vector3(FIXED_WEED.at[0], 0, FIXED_WEED.at[1])).setY(0);
+    w.position.copy(pos); w.rotation.y = 0.6;
+    const w2 = G.weed(); w2.position.set(0.32, 0, 0.18); w2.rotation.y = 1.9; w2.scale.setScalar(0.8); w.add(w2);
+    w.visible = false;
+    this.root.add(w);
+    const def = { id, kind: 'weed', r: 0.35, label: 'weeds', yard: true };
+    w.scale.setScalar(stationScale(def));
+    this.stations[id] = { def, obj: w, pos: pos.clone() };
   }
 
   // v0.12: the sale's sign and buyers, made once and shown only during a yard sale
@@ -1394,12 +1432,13 @@ export class World {
     if (!s) return;
     const k = this.finaleColour?.sun ?? 0;
     s.glow.visible = k > 0.001;
-    if (!s.glow.visible) { s.spiral.rotation.z = 0; for (const r of s.rays.children) r.scale.x = 1; if (s.core) s.core.visible = false; if (s.rim) s.rim.scale.setScalar(1); if (s.disc) s.disc.scale.setScalar(1); return; }
     const still = this.reducedMotion();
     if (!still) s.t += dtMs;
     const t = s.t;
+    // (v0.30: the rays reach out and draw back all game long; the rest moves once the sun has its colour)
+    s.rays.children.forEach((r, i) => { r.scale.x = still ? 1 : 1 - SUN.reach * 0.35 + SUN.reach * (0.5 + 0.5 * Math.sin(t / SUN.reachMs + i * 1.7)); });
+    if (!s.glow.visible) { s.spiral.rotation.z = 0; if (s.core) s.core.visible = false; if (s.rim) s.rim.scale.setScalar(1); if (s.disc) s.disc.scale.setScalar(1); return; }
     s.spiral.rotation.z = still ? 0 : -(t / 1000) * SUN.spin;
-    s.rays.children.forEach((r, i) => { r.scale.x = still ? 1 : 1 + SUN.reach * Math.sin(t / SUN.reachMs + i * 1.7); });
     // v0.29 (Tiffany: "Make the suns outter line grow and retract a bit so it's not just the center
     // that moves"): the rim, and the yellow disc inside it, swell and draw back, slowly
     const breathe = still ? 1 : 1 + SUN.rim * Math.sin(t / SUN.rimMs);
@@ -1703,7 +1742,8 @@ export class World {
   spotStage(spot, hero) {
     const h = this.objects.D01;
     switch (spot) {
-      case 'bench': return { seat: this.benchSeat(), yaw: this.objects.D10.rotation.y };
+      // (v0.30: `to`, where she stands to wipe it for "Clean the bench": in front of her end of the seat)
+      case 'bench': { const seat = this.benchSeat(); const yaw = this.objects.D10.rotation.y; return { seat, yaw, to: new THREE.Vector3(seat.x + Math.sin(yaw) * 0.42, 0, seat.z + Math.cos(yaw) * 0.42) }; }
       case 'chimney': return { route: this.chimneyRoute() };
       case 'stones': return { route: this.hopRoute() };
       case 'tree': {
@@ -1896,18 +1936,14 @@ export class World {
   // false outside the hunt): the weed clump of "Weeds Elite" and the crumpled sketch of "Don't You
   // Worry"
   updateSpotProps(spots, out) {
-    if (!this.weedProp) {
-      const w = G.weed(); w.name = 'HuntWeeds';
-      const at = this.eggSpotPos('weeds').add(new THREE.Vector3(0.75, 0, -0.1));
-      w.position.copy(at); w.scale.setScalar(1.25);
-      const w2 = G.weed(); w2.position.set(0.32, 0, 0.18); w2.rotation.y = 1.9; w2.scale.setScalar(0.8); w.add(w2);
-      this.root.add(w); this.weedProp = w;
+    if (!this.sketchProp) {
+      // (v0.30: the weeds are the real weeds by the raised bed now, YARD_WEEDS.fixed: buildFixedWeed)
+      this.weedProp = this.stations[YARD_WEEDS.fixed]?.obj ?? null;
       const s = G.crumpledSketch(); s.name = 'HuntSketch';
       s.position.copy(this.eggSpotPos('sketch').add(new THREE.Vector3(0.42, 0, 0.2)));
       this.root.add(s); this.sketchProp = s;
     }
     const show = out && !this.finaleActive && !this.playHidden;
-    this.weedProp.visible = show && spots.includes('weeds');
     if (!this.sketchProp.userData.taken) this.sketchProp.visible = show && spots.includes('sketch');
   }
   // is a spot's circle and star in view now (checks)
@@ -1935,7 +1971,7 @@ export class World {
     if (this.eggCircle) this.eggCircle.visible = false;
     if (this.nuisance) this.nuisance.bird.visible = false;
     for (const k of Object.values(this.keepsakes ?? {})) k.obj.visible = false;
-    if (this.weedProp) { this.weedProp.visible = false; this.sketchProp.visible = false; }
+    if (this.sketchProp) this.sketchProp.visible = false; // (v0.30: the weeds by the raised bed are a weed station: sync shows them)
     if (this.airLine) this.airLine.visible = false;
     for (const sp of this.inkWords ?? []) sp.visible = false;
   }
@@ -1988,6 +2024,25 @@ export class World {
     await dropped;
     flight.then(() => {});
     return egg;
+  }
+  // v0.30: an egg on the roof that she is not up beside rolls off the edge and drops onto the grass
+  // at `to` (game/egg.js). Its circle follows it down; it can be picked up once it has landed.
+  async eggFall(egg, to) {
+    if (!egg) return;
+    egg.userData.falling = true;
+    const from = egg.position.clone();
+    const y0 = egg.userData.y ?? from.y;
+    egg.userData.y = 0;
+    const ms = this.reducedMotion() ? 200 : 700;
+    await this.tweens.run(ms, (t) => {
+      egg.position.lerpVectors(from, to, t);
+      egg.position.y = Math.max(0, y0 + 0.35 * Math.sin(Math.PI * Math.min(1, t * 1.6)) - y0 * t * t);
+      egg.rotation.x = t * 5;
+    });
+    egg.position.copy(to).setY(0);
+    egg.rotation.x = 0;
+    this.puff(to.clone().setY(0.1), { scale: 0.45 });
+    egg.userData.falling = false;
   }
   // she picks it up: it hops, cracks into a pop of dust and is gone
   async popEgg(egg) {
@@ -2684,11 +2739,13 @@ export class World {
   // v0.16: a free place on the grass near `p` for the egg to land: the first of a few places
   // round her (in front of her toward the camera first) clear of the tables, the house and the
   // farm's footprints, inside the walkable ground
-  freeSpotNear(p, out = new THREE.Vector3()) {
+  // (v0.30: `avoid`, [{ x, z, r }]: places to keep clear of as well: the red circles, which stay out
+  // while the bird comes now)
+  freeSpotNear(p, out = new THREE.Vector3(), avoid = []) {
     const boxes = [...this.saleBoxes(tables(this.lastLedger ?? { stages: {} })), ...this.obstacleBoxes(0.2)];
     const h = this.objects.D01; const hb = new THREE.Box3().setFromObject(h);
     boxes.push({ lo: [hb.min.x - 0.2, hb.min.z - 0.2], hi: [hb.max.x + 0.2, hb.max.z + 0.2] });
-    const free = (q) => !boxes.some((b) => q.x > b.lo[0] && q.x < b.hi[0] && q.z > b.lo[1] && q.z < b.hi[1]);
+    const free = (q) => !boxes.some((b) => q.x > b.lo[0] && q.x < b.hi[0] && q.z > b.lo[1] && q.z < b.hi[1]) && !avoid.some((a) => Math.hypot(q.x - a.x, q.z - a.z) < a.r);
     for (const [dx, dz] of [[0.5, 1.25], [-0.5, 1.25], [1.15, 0.6], [-1.15, 0.6], [1.3, -0.2], [-1.3, -0.2], [0.4, -1.2], [0, 1.9]]) {
       out.set(p.x + dx, 0, p.z + dz);
       const q = out.clone();
@@ -2889,6 +2946,15 @@ export class World {
     for (const id of ['s1', 's2', 's3', 's4', 'c1', 'c2', 'c3', 'c4']) {
       const o = this.stations[id]?.obj;
       if (o) o.rotation.x = sway * Math.sin(d.t / 260 + i * 0.9);
+      i++;
+    }
+    // v0.30 (Tiffany: "Have the tomatoes dance/sway when the corn and sunflowers do"): the tomato
+    // plants in the raised bed nod about their feet with them, a little less (they are short)
+    for (const id of ['t1', 't2']) {
+      const plant = this.nodeViews?.[id]?.plant;
+      if (!plant) continue;
+      plant.userData.rx ??= plant.rotation.x; // (about x only: a bird's tug shakes it about z)
+      plant.rotation.x = plant.userData.rx + sway * Math.sin(d.t / 260 + i * 0.9);
       i++;
     }
     if (beat && on && !still) {

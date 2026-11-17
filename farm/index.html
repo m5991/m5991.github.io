@@ -61,6 +61,9 @@
   <div id="now-playing" role="region" aria-label="Song playing" hidden>
     <button type="button" data-act="toggle" aria-label="Pause the song"><span aria-hidden="true">❚❚</span></button>
     <div class="np-main"><span class="np-title"></span><input type="range" min="0" max="1" step="0.5" value="0" aria-label="Where in the song"><span class="np-time small"></span></div>
+    <!-- v0.30 (Tiffany: "Put a download button right next to the x on the box that is playing the
+         song while you're running around"): the song's MP3, beside the stop -->
+    <a class="np-download" data-act="download" href="#" download aria-label="Download the song"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
     <button type="button" data-act="stop" aria-label="Stop the song and bring back the farm's music"><span aria-hidden="true">✕</span></button>
   </div>
   <footer id="controls">
@@ -157,9 +160,8 @@
     <!-- v0.23 (Tiffany: "Put the slideshow button under the keepsakes. It should be the bottom of
          the list. Above sound"; "Get rid of the credits tab") -->
     <button id="btn-slideshow" type="button">Slideshow</button>
-    <!-- v0.25: once everything is found the farm stays in its evening light; this gives the day back -->
-    <button id="btn-evening" type="button" class="sound-switch" aria-pressed="true" hidden>Evening light: <span class="state">on</span></button>
-    <p id="evening-note" class="small" hidden>On: the farm stays in its golden evening, with fireflies. Off: daylight.</p>
+    <!-- (v0.25-v0.29: an Evening light switch stood here, once everything was found. v0.30, Tiffany:
+         "Remove the option to turn evening light off": the evening stays) -->
     <fieldset id="sound-settings" class="sound-settings">
       <legend>Sound</legend>
       <button id="btn-sound-extras" type="button" class="sound-switch" aria-pressed="true">Sound: <span class="state">on</span></button>

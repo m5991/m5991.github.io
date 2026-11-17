@@ -24,7 +24,7 @@ import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
 // v0.29: where her eyes are, in her own frame (m up from her feet, m forward): the sunglasses
-const GLASSES_AT = { y: 1.45, z: 0.12 };
+const GLASSES_AT = { y: 1.53, z: 0.12 };
 const tmpSit = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();

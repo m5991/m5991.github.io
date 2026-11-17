@@ -111,13 +111,14 @@ import { createCredits } from './ui/credits.js';
 import { createSongPlayer, fmtTime } from './ui/songplayer.js';
 import { createBeat, lowEnergy } from './audio/beat.js';
 import { eveningAt, sinceFinish } from './game/evening.js';
-import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft, visibleKeepsakes } from './game/keepsakes.js';
+import { KEEPSAKES, KEEPSAKE_IDS, KEEPSAKE_REACH_M, foundKeepsakes, keepsakeLine, keepsakePrints, keepsakesLeft, keepsakesNow } from './game/keepsakes.js';
 import { bubblePlace } from './ui/bubble.js';
 import { createRace, fmtRace, raceClock } from './game/race.js';
-import { drawPostcard, postcardStats, sharePostcard, statsItems, statsLine } from './ui/postcard.js';
+import { drawShared, postcardStats, sharePostcard, SHARED_NOTE, statsItems, statsLine } from './ui/postcard.js';
 import { createDiyHint } from './game/hints.js';
 import { PATCH_NAME, PLACE_LABEL, SHORT_LABEL, spotStatus, WOOD_PILES, WOOD_SOURCES } from './game/guide.js';
-import { eggPhase, found, foundCount, foundSongs, huntGoal, lastSongTurn, lastSongWaits, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink, visibleSpots } from './game/songs.js';
+import { eggPhase, eggsAt, found, foundCount, foundSongs, hasSong, huntCircles, huntGoal, LAST_SONG, lastSongTurn, lastSongWaits, mp3Name, mp3Path, nextEgg, previewStart, songLyric, songNumber, songSpot, songTitle, songsFor, spotAct, SPOTS, sunoLink } from './game/songs.js';
+import { eggStuck } from './game/egg.js';
 import { createNotes, onePill, quietCoach } from './ui/voices.js';
 import { Hammering } from './world/build.js';
 import { wishWords } from './world/world.js';
@@ -300,12 +301,31 @@ async function boot() {
   // v0.27: the circles out now. The last song's ("I gave it to the world") comes out when every
   // other song and every keepsake is found (songs.js LAST_SONG), so it is always the last find.
   const keepsakesDone = () => keepsakesLeft(data.keepsakes ?? {}).length === 0;
-  const spotsNow = () => visibleSpots(data.discoveries, undefined, { othersFound: keepsakesDone() });
+  // v0.30 (Tiffany: "There should never be a time that there aren't any red circles if there are
+  // more songs to collect"; "If a red circle appears don't let it disappear until she collects the
+  // song"; "Make the song circles appear spaced out in location"): the circles out now (songs.js
+  // huntCircles), worked out again only when a song is found, with the metres between the spots
+  // measured on the farm. The last song's circle comes out as soon as every other song is found; its
+  // action waits for the keepsakes (`actOpen`).
+  const spotGap = new Map();
+  const spotDist = (a, b) => {
+    const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+    let m = spotGap.get(k);
+    if (m === undefined) { const p = world.eggSpotPos(a, new THREE.Vector3()); const q = world.eggSpotPos(b, new THREE.Vector3()); m = Math.hypot(p.x - q.x, p.z - q.z); spotGap.set(k, m); }
+    return m;
+  };
+  const circles = { of: null, out: [] };
+  const spotsNow = () => {
+    if (circles.of !== data.discoveries) { circles.of = data.discoveries; circles.out = huntCircles(data.discoveries, { dist: spotDist }); }
+    return circles.out;
+  };
+  // can the action at this spot be done now (v0.30: the last song's waits for the keepsakes)
+  const actOpen = (spot) => !(eggsAt(spot, data.discoveries)[0] === LAST_SONG && !keepsakesDone());
   function spotHere(heroXZ) {
     // (v0.23: only the few spots on show have their action)
     for (const id of spotsNow()) {
       world.eggSpotPos(id, tmpH);
-      if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= world.spotReach(id)) return id;
+      if (Math.hypot(tmpH.x - heroXZ.x, tmpH.z - heroXZ.z) <= world.spotReach(id) && actOpen(id)) return id;
     }
     return null;
   }
@@ -317,16 +337,23 @@ async function boot() {
     // song itself, the egg on the grass, lies in a yellow one
     const showing = spotsNow();
     world.updateSpotProps(showing, true); // the weeds and the crumpled sketch lie at their spots
-    const waiting = hunt.busy || hunt.egg || hunt.moment || hunt.restMs > 0;
-    world.updateEggSpots(waiting ? [] : showing, dt);
+    // (v0.30: every circle stays out until its song is found: while the bird comes, while the egg
+    // waits, while she does an action and while she listens to the song just found; v0.23-v0.29
+    // hid them all then)
+    world.updateEggSpots(showing, dt);
     world.updateEggCircle(hunt.egg, dt);
     if (hunt.egg) {
-      if (Math.hypot(hunt.egg.position.x - heroXZ.x, hunt.egg.position.z - heroXZ.z) <= HUNT.pickM) pickEgg();
+      // v0.30 (Tiffany: "The egg fell on the chimney but she can't climb back up to get it. Also when
+      // she's on top of the house"; "She can't reach the chimney egg"): an egg on the roof that she
+      // is not up beside comes down off the roof to the grass beside her (the stick took her down
+      // from the chimney while the bird was on its way)
+      if (eggStuck({ eggY: hunt.egg.userData.y ?? 0, heroUp: heroUp() }) && !hunt.egg.userData.falling) eggDown(hunt.egg);
+      if (!hunt.egg.userData.falling && Math.hypot(hunt.egg.position.x - heroXZ.x, hunt.egg.position.z - heroXZ.z) <= HUNT.pickM) pickEgg();
       return;
     }
     if (hunt.busy) return;
     hunt.restMs = Math.max(0, hunt.restMs - dt);
-    if (hunt.restMs > 0 || cards.isOpen) { if (!cards.isOpen && !hunt.moment && $('context').hidden) dwightSeat(heroXZ); return; }
+    if (hunt.restMs > 0 || cards.isOpen) { if (!cards.isOpen && !hunt.moment && $('context').hidden) dwightSeat(heroXZ, dt); return; }
     // v0.17c: at a spot, its small moment first (songs.js SPOTS act), then the bird
     const m = hunt.moment;
     if (m) {
@@ -355,22 +382,39 @@ async function boot() {
     const spot = spotHere(heroXZ);
     const act = spot && spotAct(spot);
     if (act && $('context').hidden) hud.setContext(act.verb, () => startMoment(spot), 'act');
-    else if (!act && $('context').hidden) dwightSeat(heroXZ);
+    else if (!act && $('context').hidden) dwightSeat(heroXZ, dt);
   }
-  // v0.29 (Tiffany: "Let her go sit with Dwight at anytime. In the collecting faze"): beside the
-  // bench while he sits on it, a button sits her down at its other end; she stays until she walks off
-  function dwightSeat(heroXZ) {
-    if (!world.archerSeated('A1') || hero.moment || hero.rise) return;
+  // v0.29 (Tiffany: "Let her go sit with Dwight at anytime. In the collecting faze"): she sits at the
+  // bench's other end while he sits on it, and stays until the stick moves her.
+  // v0.30 (Tiffany: "You can sit down next to Dwight without clicking on the button. Just standing
+  // right next to him makes you sit"): no button: standing still beside his end of the bench for a
+  // moment (SEAT_AUTO) sits her down. Once she gets up she has to step away before it can again.
+  const SEAT_AUTO = { near: 1.25, away: 1.9, ms: 350 };
+  const seatAuto = { ms: 0, armed: true };
+  function dwightSeat(heroXZ, dt = 0) {
+    if (!world.archerSeated('A1') || hero.moment || hero.rise || cleaning) { seatAuto.ms = 0; return; }
     const seat = benchSpot();
-    if (Math.hypot(seat.x - heroXZ.x, seat.z - heroXZ.z) > 1.9) return;
-    hud.setContext('Sit with Dwight', () => {
-      ix.reset();
-      hero.halt();
-      hero.startMoment('bench', { ms: 5000, hold: true, ...world.spotStage('bench', hero.position) });
-      hud.setContext(null, null);
-      hud.announce('Vanessa sits on the bench beside Dwight');
-    });
+    const d = Math.hypot(seat.x - heroXZ.x, seat.z - heroXZ.z);
+    if (d > SEAT_AUTO.away) seatAuto.armed = true;
+    if (!seatAuto.armed || d > SEAT_AUTO.near || hero.moving) { seatAuto.ms = 0; return; }
+    seatAuto.ms += dt;
+    if (seatAuto.ms < SEAT_AUTO.ms) return;
+    seatAuto.ms = 0; seatAuto.armed = false;
+    ix.reset();
+    hero.halt();
+    hero.startMoment('bench', { ms: 5000, hold: true, ...world.spotStage('bench', hero.position) });
+    hud.announce('Vanessa sits on the bench beside Dwight');
   }
+  // v0.30: is she up on the house (the chimney's climb), where an egg on the roof is in her reach
+  const heroUp = () => hero.moment?.kind === 'chimney' && hero.position.y > 0.5;
+  // the egg rolls off the roof and drops onto the grass a step from her, clear of the red circles
+  function eggDown(egg) {
+    const to = world.freeSpotNear(hero.position, new THREE.Vector3(), circleAvoid());
+    hud.announce('The egg rolls off the roof and drops onto the grass beside Vanessa');
+    world.eggFall(egg, to).then(() => sfx.cue('eggDrop'));
+  }
+  // the red circles on show, for the egg to land clear of
+  const circleAvoid = () => spotsNow().map((sp) => { const p = world.eggSpotPos(sp, new THREE.Vector3()); return { x: p.x, z: p.z, r: 1.0 }; });
   // ---------- v0.17c: the keepsakes hidden on the finished farm (game/keepsakes.js) ----------
   let creditsContent = null;
   const loadCreditsContent = () => (creditsContent ??= fetch('assets/credits/credits.json').then((r) => r.json()).catch(() => null));
@@ -378,7 +422,8 @@ async function boot() {
     const out = inHunt();
     data.keepsakes ??= {};
     // v0.23: a few at a time, each bouncing where it lies
-    const shown = visibleKeepsakes(data.keepsakes);
+    // (v0.30: one at a time, one more for each song found: keepsakes.js keepsakesNow)
+    const shown = keepsakesNow(data.keepsakes, foundCount(data.discoveries));
     world.updateKeepsakes(dt, { out, found: data.keepsakes, shown });
     if (!out || cards.isOpen || hunt.moment) return;
     for (const id of shown) {
@@ -403,7 +448,8 @@ async function boot() {
       title: `Found: ${KEEPSAKES[id].label}`,
       text: `One of Vanessa's gift jokes, hidden on the farm. ${keepsakeLine(data.keepsakes)}.`,
       prints: keepsakePrints(id, c),
-      left: n < KEEPSAKE_IDS.length ? 'Another one is out on the farm now.' : 'That was the last one. Extras → Keepsakes shows them all.',
+      // (v0.30: one at a time, and the next comes out with the next song found)
+      left: n < KEEPSAKE_IDS.length ? (keepsakesNow(data.keepsakes, foundCount(data.discoveries)).length ? 'Another one is out on the farm now.' : 'The next one comes out when you find another song.') : 'That was the last one. Extras → Keepsakes shows them all.',
       onClose: () => loop.resume('card'),
     });
   }
@@ -414,7 +460,7 @@ async function boot() {
     const left = keepsakesLeft(data.keepsakes);
     cards.prints({
       title: `Keepsakes · ${found.length} of ${KEEPSAKE_IDS.length}`,
-      text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes lie about the finished farm, a couple at a time. Each one you find is kept here.',
+      text: found.length ? 'The gift jokes found on the farm.' : 'Five of Vanessa\'s gift jokes lie about the finished farm, one at a time: one more comes out with each song you find. Each one you find is kept here.',
       prints: found.flatMap((id) => keepsakePrints(id, c)),
       left: left.length && lastSongTurn(data.discoveries) ? `Hints: ${left.map((id) => KEEPSAKES[id].hint).join(' ')}` : left.length ? `${left.length} still hidden.` : '',
       cancel: 'Close',
@@ -431,7 +477,7 @@ async function boot() {
   // numbers (the time it was finished in, the yard sales, the birds Dwight scared off, the songs
   // and the keepsakes found), and Share, which sends the drawing with that strip as one picture
   // through the phone's share sheet (or saves it where there is none). ui/postcard.js.
-  const DRAWING = { src: 'assets/reference/drawing.jpg', download: 'The Farm, the drawing.jpg', postcard: 'The Farm postcard.png' };
+  const DRAWING = { src: 'assets/reference/drawing.jpg', download: 'The Farm, the drawing.jpg', postcard: 'The Farm postcard.png', shared: 'Vanessa drew this.png' };
   const farmStats = () => postcardStats({
     ledger: data.ledger, session: data.session,
     songsFound: foundCount(data.discoveries), songsTotal: songsFor().length,
@@ -452,9 +498,11 @@ async function boot() {
       // v0.25: with everything found the drawing is signed "The Farm, complete" and stamped 100%
       ...(stats.complete ? { signature: SIGNATURE, stamp: STAMP } : {}),
       share: 'Share',
+      // v0.30 (Tiffany: "When you can share the picture make it just the picture and make it have a
+      // disclaimer 'Vanessa drew this!'"): the drawing alone, with that note on it (ui/postcard.js)
       onShare: async (img, say) => {
-        const canvas = drawPostcard(document.createElement('canvas'), img, stats);
-        const how = await sharePostcard(canvas, { name: DRAWING.postcard, title: 'The Farm', text: statsLine(stats) });
+        const canvas = drawShared(document.createElement('canvas'), img);
+        const how = await sharePostcard(canvas, { name: DRAWING.shared, title: 'The Farm', text: SHARED_NOTE });
         say(how === 'saved' ? 'Saved as a picture.' : how === 'shared' ? 'Shared.' : '');
       },
     });
@@ -561,7 +609,8 @@ async function boot() {
   function bringEgg(id, { roof = false } = {}) {
     // the egg lands a step from her, on the camera's side, clear of the farm's footprints
     // (v0.29: or on the roof right beside her, up by the chimney)
-    const at = roof ? hero.position.clone().add(new THREE.Vector3(0.28, 0, 0.12)) : world.freeSpotNear(hero.position);
+    // (v0.30: on the grass clear of the red circles, which stay out now)
+    const at = roof ? hero.position.clone().add(new THREE.Vector3(0.28, 0, 0.12)) : world.freeSpotNear(hero.position, new THREE.Vector3(), circleAvoid());
     const y = roof ? hero.position.y + 0.05 : 0;
     hunt.busy = true;
     hunt.id = id;
@@ -775,9 +824,13 @@ async function boot() {
     bar.querySelector('[data-act="stop"]').onclick = () => { songs.stop(); menuButton().focus({ preventScroll: true }); };
     range.addEventListener('input', () => { dragging = true; time.textContent = `${fmtTime(Number(range.value))} / ${fmtTime(Number(range.max))}`; });
     range.addEventListener('change', () => { dragging = false; songs.seek(Number(range.value)); });
+    // v0.30 (Tiffany: "Put a download button right next to the x on the box that is playing the
+    // song"): the song's own MP3, under its number and title, as the songbook names it
+    const dl = bar.querySelector('[data-act="download"]');
     songs.subscribe((st) => {
       bar.hidden = !st.id;
       if (!st.id) return;
+      if (dl.dataset.id !== st.id && hasSong(st.id)) { dl.dataset.id = st.id; dl.href = mp3Path(st.id); dl.download = mp3Name(st.id); dl.setAttribute('aria-label', `Download “${songTitle(st.id)}”`); }
       bar.querySelector('.np-title').textContent = `♪ ${st.title}`;
       toggle.firstElementChild.textContent = st.playing ? '❚❚' : '▶';
       toggle.setAttribute('aria-label', st.playing ? 'Pause the song' : 'Play the song');
@@ -1116,7 +1169,8 @@ async function boot() {
           if (lead) world.holdReveal(e.stage, data.ledger);
           // v0.13 (P29-5): a house stage brings one more yard-sale table, set up as its DIY ends
           // (v0.23: the bench brings the second and the walls the third: data.js TABLE_STAGES)
-          const moreTables = TABLE_STAGES.includes(e.stage) && tables(data.ledger) > Math.max(1, world.tablesShown ?? 1);
+          // (v0.30: with the builds again: data.js TABLE_BUILDS)
+          const moreTables = tables(data.ledger) > Math.max(1, world.tablesShown ?? 1);
           if (moreTables) world.tableHold = true;
           world.tweens.wait(lead).then(() => world.reveal(e.stage, s.workMs, data.ledger)).then(async () => {
             sfx.cue('complete');
@@ -1128,7 +1182,7 @@ async function boot() {
               world.sync(data.ledger, true); // the new table pops up in dust
               sfx.cue('thud');
               const n = tables(data.ledger);
-              const nth = ['', 'first', 'second', 'third'][n] ?? 'new';
+              const nth = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n] ?? 'new';
               if (!finishing) hud.toast(`More neighbours are coming: a ${nth} yard-sale table. Fill ${n === 2 ? 'both' : `all ${n}`} for a yard sale: the next builds cost more.`, 5200);
             }
             // v0.23 (audit 8): each house stage has its small ink moment (world.js houseMoment);
@@ -1460,7 +1514,8 @@ async function boot() {
     if (!diyTime && !building && !eggPhase(data.ledger)) {
       const lesson = carryLessons(data.ledger);
       if (lesson.mat && !visibleMarkers.includes('yard')) visibleMarkers.push('yard');
-      if (lesson.crop && !visibleMarkers.includes('table')) visibleMarkers.push('table');
+      // (v0.30: while her first wood or stone is on its way to the pile, the pile is the only circle)
+      if (lesson.crop && !lesson.mat && !visibleMarkers.includes('table')) visibleMarkers.push('table');
     }
     // v0.23 ("Don't have a blue circle on top of a yellow circle unless there is a reason to"): the
     // blue ring keeps off a place that already has a circle (the guide's yellow one, an action's
@@ -1519,8 +1574,7 @@ async function boot() {
     for (const id of ids) if (id === t.id || near(world.standPoint(id, tmpS))) return true;
     if (!inHunt()) return false;
     if (hunt.egg && near(hunt.egg.position)) return true;
-    if (hunt.busy || hunt.egg || hunt.moment) return false;
-    return spotsNow().some((sp) => near(world.eggSpotPos(sp, tmpS)));
+    return spotsNow().some((sp) => near(world.eggSpotPos(sp, tmpS))); // (v0.30: they are always out)
   }
   let statusWant = null; // what the status pill would say (updateContext)
   const onlyTold = new Set(); // v0.29: the builds whose "only wood (or stone) missing" has been told
@@ -1861,23 +1915,14 @@ async function boot() {
     holdWorld();
     $('btn-songs').textContent = `Songs (${foundCount(data.discoveries)}/${songsFor().length} found)`;
     $('btn-keepsakes').textContent = `Keepsakes (${foundKeepsakes(data.keepsakes ?? {}).length}/${KEEPSAKE_IDS.length})`;
-    showEvening();
     extrasEl.hidden = false;
     extrasEl.scrollTop = 0;
     $('btn-extras-back').focus({ preventScroll: true });
   }
   function closeExtras() { extrasEl.hidden = true; releaseWorld(); $('btn-extras').focus({ preventScroll: true }); }
-  // v0.25: once the sunset has played the farm stays in its evening light; this switch in Extras
-  // gives the day back (with its own evening now and then, as before), and the evening again
-  function showEvening() {
-    const b = $('btn-evening');
-    b.hidden = !data.session.sunsetSeen;
-    $('evening-note').hidden = b.hidden; // v0.29: what the switch does, under it
-    const on = !data.session.dayLight;
-    b.setAttribute('aria-pressed', String(on));
-    b.querySelector('.state').textContent = on ? 'on' : 'off';
-  }
-  $('btn-evening').onclick = () => { data.session.dayLight = !data.session.dayLight; persist(); showEvening(); hud.announce(data.session.dayLight ? 'The day is back on the farm' : 'The evening light stays on the farm'); };
+  // (v0.25-v0.29: an Evening light switch in Extras gave the day back after the sunset. v0.30
+  // (Tiffany's "Farm changes #4": "Remove the option to turn evening light off"): it is gone, and the
+  // farm stays in its evening once the sunset has played, also on a farm whose switch was off.)
   $('btn-extras').onclick = openExtras;
   $('btn-extras-back').onclick = closeExtras;
   // (v0.23, Tiffany: "Get rid of the credits tab": Extras has no Credits)
@@ -1975,7 +2020,7 @@ async function boot() {
   // The captain's pick for the end of the postgame: the day turns to golden evening, Vanessa and
   // Dwight sit on the bench, fireflies over the corn, and "The Farm, complete" is pencilled in with
   // a gold 100%. Presentation only (world/sunset.js); it plays once per farm, can be skipped like
-  // the finale, and afterwards the evening stays (Extras has the switch for the day).
+  // the finale, and afterwards the evening stays (v0.25-v0.29: Extras had a switch for the day).
   const signEl = $('sunset-sign');
   signEl.querySelector('.line').textContent = SIGNATURE;
   signEl.querySelector('.gold-stamp').textContent = STAMP;
@@ -2026,7 +2071,7 @@ async function boot() {
       signEl.classList.add('leaving');
       setTimeout(() => signEl.classList.remove('leaving'), 700);
       hud.announce(`${SIGNATURE}. The evening stays on the farm.`);
-      hud.toast(`${SIGNATURE}: every song and every keepsake found. The evening stays on the farm; Extras has a switch for the day, and The drawing is signed.`, 7000);
+      hud.toast(`${SIGNATURE}: every song and every keepsake found. The evening stays on the farm, and The drawing is signed.`, 7000);
       menuButton().focus({ preventScroll: true });
     },
   });
@@ -2259,6 +2304,10 @@ async function boot() {
     // the song automatically start playing again"): a song that was playing plays on when the page
     // is shown again (the element was started by her tap, so the browser lets it go on)
     if (document.hidden) { songResume = songs.state.playing; songs.pause(); } else if (songResume) { songResume = false; songs.resume(); }
+    // v0.30 (Tiffany: "When I click out of the game to a different page in my phone and then come
+    // back, it should automatically start the audio"): the iPhone's silent element, which keeps
+    // its audio session, plays on again too (it was started by her tap, so it may)
+    if (!document.hidden && silent) silent.play()?.catch?.(() => {});
   });
 
   // ---------- audio (audio/audio.js): the single owner; starts on an explicit gesture ----------
@@ -2516,7 +2565,7 @@ async function boot() {
     // while that scene plays the light and the fireflies are the scene's
     const dusk = sunset.active ? sunset.state : null;
     const ev = session.playing && !finale.active && !credits.active && !backdrop
-      ? eveningLight({ cycle: eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)), scene: dusk ? dusk.evening : null, seen: data.session.sunsetSeen && mainComplete(data.ledger), dayLight: data.session.dayLight })
+      ? eveningLight({ cycle: eveningAt(sinceFinish(data.ledger.activeMs, data.session.finishedAt), mainComplete(data.ledger)), scene: dusk ? dusk.evening : null, seen: data.session.sunsetSeen && mainComplete(data.ledger), dayLight: false })
       : 0;
     world.updateFireflies(dt, dusk ? Math.min(ev, dusk.fireflies) : ev);
     // (v0.26: written when it changes)

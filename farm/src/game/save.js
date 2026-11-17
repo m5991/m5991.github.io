@@ -2,7 +2,7 @@
 // localStorage, written synchronously after every accepted ledger transaction. Storage that is
 // denied or full degrades to disclosed session-only play; a corrupt payload offers the last
 // good copy or a new game, never a silent reset.
-import { ALL_STAGES, CAPACITY, CROP_STAGES, CROPS, GATE, HEAD_CROPS, NODES, OPTIONAL_STAGES, PILES, PRICES, ROCKS, STICK_SLOTS, WEEDS, YARD_WEED_SLOTS } from './data.js';
+import { ALL_STAGES, CAPACITY, CROP_STAGES, CROPS, GATE, HEAD_CROPS, NODES, OPTIONAL_STAGES, PILES, PRICES, ROCKS, STICK_SLOTS, WEEDS, YARD_WEED_SLOTS, YARD_WEEDS } from './data.js';
 import { createLedger, mainComplete, stoneShortfall, tableCap, validateLedger } from './ledger.js';
 
 export const SCHEMA = 5;
@@ -371,6 +371,31 @@ export function migratePreV029(d0) {
   } catch { /* a ledger too damaged to read: validation reports it */ }
   return d;
 }
+// ---------- v0.30: the tables come with the builds again ----------
+// A farm saved by v0.29 counted its tables from its yard sales; now they come with its builds (data.js
+// TABLE_BUILDS), so it may stand with fewer tables than it had. What its tables hold beyond their
+// room now goes into the crate, the cheapest first (the crate may hold more than its twelve then, as
+// an older farm's could: it takes nothing more until sales have emptied it). Nothing is lost. A farm
+// whose goods fit is returned as is.
+export function fitTables(d0) {
+  const l = d0?.ledger;
+  let over = 0;
+  try { over = CROPS.reduce((n, c) => n + l.table[c], 0) - tableCap(l); } catch { return d0; }
+  if (!(over > 0) || !l.crate) return d0;
+  const d = structuredClone(d0);
+  const t = d.ledger;
+  for (const c of [...CROPS].sort((a, b) => PRICES[a] - PRICES[b])) { const k = Math.max(0, Math.min(over, t.table[c])); t.table[c] -= k; t.crate[c] += k; over -= k; }
+  return d;
+}
+// v0.30: the weeds by the raised bed are a weed of their own (data.js YARD_WEEDS.fixed): an older
+// farm gets their place, not standing yet (the next tick of a finished farm brings them up)
+export function withFixedWeed(d) {
+  const l = d?.ledger;
+  if (!l || typeof l !== 'object' || !l.yardWeeds || typeof l.yardWeeds !== 'object') return d;
+  const fx = YARD_WEEDS.fixed;
+  if (fx in l.yardWeeds && 'yardFixedAt' in l) return d;
+  return { ...d, ledger: { ...l, yardWeeds: { ...l.yardWeeds, [fx]: l.yardWeeds[fx] === true }, yardFixedAt: Number.isInteger(l.yardFixedAt) ? l.yardFixedAt : null } };
+}
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c
   if (!d?.session || typeof d.session !== 'object') return d;
@@ -394,7 +419,7 @@ function withSettingDefaults(d) {
 // what a stored payload becomes before validation: older test saves brought up to v0.15
 export function upgradePayload(d) {
   if (!d || typeof d !== 'object' || d.schema !== SCHEMA) return d;
-  return withSessionDefaults(migratePreV029(migratePreV025(migratePreV024(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))))))));
+  return withSessionDefaults(withFixedWeed(fitTables(migratePreV029(migratePreV025(migratePreV024(migratePreV023(migratePreV017(migratePreV015(migratePreV013(withSettingDefaults(migratePreV012(migratePreV011(migratePreV09(d))))))))))))));
 }
 
 // `mainComplete` derives from the home (v0.15: H5) even if endingSeen is false (spec §12).

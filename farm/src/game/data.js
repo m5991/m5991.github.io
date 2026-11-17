@@ -163,21 +163,21 @@ export const STAGES = {
   // v0.23: the bed is every farm's first DIY (Tiffany's order), so its coins are what one first
   // yard sale of corn pays (10; it was 14)
   T0: { label: 'raised bed', prereq: [], weeds: ['wT0a', 'wT0b'], coins: 10, W: 4, R: 0, workMs: 2000, crop: true, base: 'T', afterHarvest: true },
-  H1: { label: 'house foundation', prereq: ['first'], coins: 18, W: 4, R: 4, workMs: 3000 },
-  G1: { label: 'path', prereq: ['H1'], coins: 20, W: 0, R: 3, workMs: 2000 },
+  H1: { label: 'house foundation', prereq: ['first'], coins: 12, W: 4, R: 4, workMs: 3000 },
+  G1: { label: 'path', prereq: ['H1'], coins: 12, W: 0, R: 3, workMs: 2000 },
   // v0.23: the later parts of the house cost more (Tiffany: "make her need to make more money to
   // continue building (DIY) later parts of the property, so the extra tables makes sense"): the
   // walls come with the second yard-sale table and take about one sale of both tables, the windows
   // and doors, the roof and the chimney about one sale of all three each (LATE_COINS below; v0.22:
   // walls 16, home 34, roof 14, chimney 12)
-  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 48, W: 4, R: 2, workMs: 4000 },
+  H2: { label: 'walls', prereq: ['H1', 'second'], coins: 24, W: 4, R: 2, workMs: 4000 },
   // v0.23: hired after the foundation (he was hired after the walls, which now come late)
-  A1: { label: 'archer', prereq: ['H1'], coins: 30, W: 2, R: 0, workMs: 0, hire: true },
-  C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
-  S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 14, W: 0, R: 0, workMs: 0, crop: true },
-  G2: { label: 'bench', prereq: ['H1'], coins: 36, W: 4, R: 0, workMs: 2000 },
-  G3: { label: 'stepping stones', prereq: ['H1'], coins: 22, W: 0, R: 3, workMs: 2000 },
-  G4: { label: 'tree-border stones', prereq: ['H1'], coins: 36, W: 0, R: 4, workMs: 2000 },
+  A1: { label: 'archer', prereq: ['H1'], coins: 22, W: 2, R: 0, workMs: 0, hire: true },
+  C1: { label: 'corn expansion', prereq: ['A1', 'C0'], coins: 8, W: 0, R: 0, workMs: 0, crop: true },
+  S1: { label: 'sunflower expansion', prereq: ['A1', 'S0'], coins: 8, W: 0, R: 0, workMs: 0, crop: true },
+  G2: { label: 'bench', prereq: ['H1'], coins: 22, W: 4, R: 0, workMs: 2000 },
+  G3: { label: 'stepping stones', prereq: ['H1'], coins: 16, W: 0, R: 3, workMs: 2000 },
+  G4: { label: 'tree-border stones', prereq: ['H1'], coins: 20, W: 0, R: 4, workMs: 2000 },
   // v0.15 (captain: "the walls should only be walls, roof only be roof, add an extra step for
   // chimney, last step still the home with door and window"): five house stages. The old H3
   // (roof and chimney: 26 coins, 2 wood, 2 stone, 4 s) is split between the roof (its wood) and
@@ -190,9 +190,9 @@ export const STAGES = {
   // The ids keep their parts (H3 the roof, H4 the chimney, H5 the windows and doors), so a save from
   // an earlier build keeps what it had built. The order itself is DIY_ORDER below, which the goal
   // line follows one build at a time; the prerequisites here are only what a part stands on.
-  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 60, W: 2, R: 0, workMs: 2500 },
-  H4: { label: 'chimney', prereq: ['H3'], coins: 66, W: 0, R: 2, workMs: 2000 },
-  H5: { label: 'windows and doors', prereq: ['H2'], coins: 56, W: 4, R: 0, workMs: 4000 },
+  H3: { label: 'roof', prereq: ['H2', 'A1', 'T0', 'C1', 'S1'], coins: 36, W: 2, R: 0, workMs: 2500 },
+  H4: { label: 'chimney', prereq: ['H3'], coins: 46, W: 0, R: 2, workMs: 2000 },
+  H5: { label: 'windows and doors', prereq: ['H2'], coins: 24, W: 4, R: 0, workMs: 4000 },
 };
 // v0.23: Tiffany's DIY order, exactly: the ten things Vanessa hammers up, first to last
 export const DIY_ORDER = ['T0', 'H1', 'G1', 'G3', 'G4', 'G2', 'H2', 'H5', 'H3', 'H4'];
@@ -304,7 +304,16 @@ export const SALE_MIN = 6;
 // third with the walls: TABLE_STAGES, kept for older code that names it.)
 export const TABLE_SALES = [4, 8, 11];
 export const TABLE_STAGES = [];
-export const TABLES_MAX = 1 + TABLE_SALES.length;
+// v0.30 (Tiffany's "Farm changes #4": "We need more and more tables to be added through the game
+// like before. You shouldn't need a bunch of yard sales in a row"): the tables come with the
+// builds again, not with the sales: a table more once TABLE_BUILDS[k] of the builds that wait for
+// a sale (everything she hammers up, and Dwight's hire: ledger.js gated) are done, up to
+// TABLES_MAX. And every one of those builds costs no more than one sale of the cheapest crop on the
+// tables standing by then (two coins a corn, six to a table), so one yard sale always pays for the
+// next build, whatever crops she sells: one sale per build, never a string of them (test/v030).
+// (TABLE_SALES, v0.29's tables after the 4th, 8th and 11th sale, is kept for older code that names it.)
+export const TABLE_BUILDS = [3, 9, 10];
+export const TABLES_MAX = 1 + TABLE_BUILDS.length;
 export const TABLES_UNLIMITED = Infinity; // (v0.14-v0.22: from the fourth table on; gone)
 export const BUYERS = [[2, 3], [4, 5], [6, 8], [7, 9]];
 // v0.29 (Tiffany: "if she ignores the yardsale button too long have a crate appear just for
@@ -401,7 +410,12 @@ export const END_BIRDS = { everyMs: 26000, firstMs: 9000, sitMs: 2600 };
 // (v0.23: one came up every `everyMs` on the finished farm only, and a raked one stayed gone.)
 // v0.29 (Tiffany: "The weeds all the way to the left that grow back should grow back after like 30
 // seconds instead of immediately"): a raked weed on the open grass is up again 30 s later (it was 3 s).
-export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 30000, growMs: 600, early: ['wy8', 'wy2', 'wy10'] };
-export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10'];
+// v0.30 (Tiffany's "Farm changes #4": "In the very end, allow her to weed any weed at any time"):
+// the weeds by the raised bed that "Shake a fist at the weeds" is about were scenery the rake could
+// not touch (v0.22-v0.29). Now they are a weed of their own, `fixed` (wy11): on the finished farm
+// they stand from the start, can be raked like any weed on the grass, and are back backMs later.
+// They are not one of the `max` that come and go at the other places.
+export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 30000, growMs: 600, early: ['wy8', 'wy2', 'wy10'], fixed: 'wy11' };
+export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10', 'wy11'];
 export const isYardWeed = (id) => YARD_WEED_SLOTS.includes(id);
 export const ARCHER_GUARDS = { A1: ['c1', 'c2', 'c3', 'c4', 's1', 's2', 's3', 's4', 't1', 't2'] };

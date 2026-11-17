@@ -24,12 +24,17 @@ export const TURN_S = 0.12; // a turn is ~95% complete (three time constants)
 export const TURN_TAU_S = TURN_S / 3;
 export const STICK_DEAD_ZONE = 0.08; // fraction of the stick radius
 
+// v0.30 (Tiffany's "Farm changes #4": "Don't make her not be able to run or move slow when you're
+// trying to move her somewhere"): she runs at full speed from STICK_FULL of the stick's reach on
+// (16 px of its 40), and only a small push near the dead zone is slower. It was full speed only at
+// the knob's full reach, so a thumb that moved a little made her walk (v0.6-v0.29).
+export const STICK_FULL = 0.4;
 // raw stick offset in px -> screen vector (x right, y up), magnitude 0..1 after the dead zone
 export function shapeStick(dx, dy, radius, deadZone = STICK_DEAD_ZONE) {
   const len = Math.hypot(dx, dy);
   const frac = Math.min(1, len / radius);
   if (frac <= deadZone) return { x: 0, y: 0 };
-  const mag = (frac - deadZone) / (1 - deadZone);
+  const mag = Math.min(1, (frac - deadZone) / (STICK_FULL - deadZone));
   return { x: (dx / len) * mag, y: (-dy / len) * mag };
 }
 

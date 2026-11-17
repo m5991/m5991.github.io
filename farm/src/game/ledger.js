@@ -51,7 +51,7 @@ import { PERF } from '../core/perf.js';
 import {
   ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
-  STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_CAP, TABLE_SALES, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
+  STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_BUILDS, TABLE_CAP, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
   WISH, YARD_MATERIALS, YARD_WEEDS, YARD_WEED_SLOTS, isYardWeed, CRATE_CAP, GATE, HAMMERED,
 } from './data.js';
 
@@ -106,6 +106,7 @@ export function createLedger() {
     yardWeedSeq: 0,
     yardBack: [],
     yardRaked: 0,
+    yardFixedAt: null, // v0.30: when the weeds by the raised bed (YARD_WEEDS.fixed) are back, once raked
     // v0.29: yard sales held and wood or stone picked up since the last build she hammered up or
     // hired (the pacing gate: `gateOpen`)
     since: { sales: 0, gather: 0 },
@@ -180,7 +181,12 @@ export const tableAvailable = (l) => BASE_STAGES.some((id) => isCommitted(l, id)
 // to cost what it brings
 // v0.29 (Tiffany: "Give her more and more tables and space to fill up during the game as her
 // yardsales grows"): one, and one more after her 4th, 8th and 11th yard sale (TABLE_SALES)
-export const tables = (l) => 1 + TABLE_SALES.filter((n) => (l.sales ?? 0) >= n).length;
+// v0.30 (Tiffany: "We need more and more tables to be added through the game like before. You
+// shouldn't need a bunch of yard sales in a row"): one, and one more as the builds go up
+// (TABLE_BUILDS: the number of builds that waited for a sale, `gatedBuilt`)
+// (the builds standing, her free first patch among them: with the tomatoes first that is the raised bed)
+export const gatedBuilt = (l) => Object.keys(l.stages ?? {}).filter((id) => gated(id) && l.stages[id]?.committed).length;
+export const tables = (l) => 1 + TABLE_BUILDS.filter((n) => gatedBuilt(l) >= n).length;
 // what the tables hold: six each (v0.14-v0.22 had no maximum from the fourth table on; gone)
 export const tablesUnlimited = () => false;
 export const tableCap = (l) => TABLE_CAP * tables(l);
@@ -200,7 +206,11 @@ export const crateCount = (l) => sum(l.crate ?? {});
 // holds something), and holds CRATE_CAP at most (an older save may hold more: nothing is lost, it
 // only takes nothing more until a sale has emptied it)
 export const crateRoom = (l) => Math.max(0, CRATE_CAP - crateCount(l));
-export const crateShown = (l) => tableAvailable(l) && (crateCount(l) > 0 || tableFull(l));
+// v0.30 (Tiffany: "The crate disappeared"): it stands beside the tables from the first table on,
+// as in v0.28. v0.29 took it away whenever it was empty and a table had room, so the first yard
+// sale that emptied it took it off the farm (and the finished farm never showed it). It still
+// takes crops only while every table is full (`stow`).
+export const crateShown = (l) => tableAvailable(l);
 export const crateFull = (l) => crateCount(l) >= CRATE_CAP;
 // can she take one more unit of this resource now: wood and stone up to CAPACITY each on her head;
 // crops up to HEAD_CROPS, all crops together (v0.28; v0.25-v0.27: a crop always, past her head's
@@ -494,8 +504,9 @@ export function tickQuiet(l, now, calm = false) {
   if (calm || done || over || !isCommitted(l, REGROW.after)) { if (l.regrowAt !== null) return false; } else if (l.regrowAt === null || now >= l.regrowAt) return false;
   if (l.yardWeedAt !== null || l.yardBack.some((t) => now >= t)) return false;
   let standing = 0;
-  for (const id of YARD_WEED_SLOTS) if (l.yardWeeds[id]) standing++;
-  if (YARD_WEEDS.max - standing - l.yardBack.length > 0 && (mainComplete(l) ? YARD_WEED_SLOTS : YARD_WEEDS.early).some((id) => !l.yardWeeds[id])) return false;
+  for (const id of YARD_WEED_SLOTS) if (id !== YARD_WEEDS.fixed && l.yardWeeds[id]) standing++;
+  if (YARD_WEEDS.max - standing - l.yardBack.length > 0 && (mainComplete(l) ? YARD_WEED_SLOTS.filter((id) => id !== YARD_WEEDS.fixed) : YARD_WEEDS.early).some((id) => !l.yardWeeds[id])) return false;
+  if (fixedDue(l, now)) return false; // (v0.30: the weeds by the raised bed come up)
   return true;
 }
 
@@ -591,8 +602,8 @@ function tick(l0, ms, calm = false) {
   {
     const back = l.yardBack.filter((t) => now >= t).length;
     if (back) l.yardBack = l.yardBack.filter((t) => now < t);
-    const places = mainComplete(l) ? YARD_WEED_SLOTS : YARD_WEEDS.early;
-    const standing = YARD_WEED_SLOTS.filter((id) => l.yardWeeds[id]).length;
+    const places = mainComplete(l) ? YARD_WEED_SLOTS.filter((id) => id !== YARD_WEEDS.fixed) : YARD_WEEDS.early;
+    const standing = YARD_WEED_SLOTS.filter((id) => id !== YARD_WEEDS.fixed && l.yardWeeds[id]).length;
     const want = Math.max(back, YARD_WEEDS.max - standing - l.yardBack.length);
     for (let k = 0; k < want; k++) {
       const free = places.filter((id) => !l.yardWeeds[id]);
@@ -603,9 +614,19 @@ function tick(l0, ms, calm = false) {
       events.push({ type: 'yardWeedSprouted', id, ...(k < back ? { back: true } : {}) });
     }
     l.yardWeedAt = null;
+    // v0.30: the weeds by the raised bed, on the finished farm: there, or back once their time is up
+    const fx = YARD_WEEDS.fixed;
+    if (fixedDue(l, now)) {
+      events.push({ type: 'yardWeedSprouted', id: fx, ...(l.yardFixedAt !== null ? { back: true } : {}) });
+      l.yardWeeds[fx] = true;
+      l.yardFixedAt = null;
+    }
   }
   return { ok: true, l, events };
 }
+// v0.30: the weeds by the raised bed come up now (the farm is finished, they are not standing, and
+// they were never raked or their 30 s are up)
+const fixedDue = (l, now) => mainComplete(l) && !l.yardWeeds[YARD_WEEDS.fixed] && (l.yardFixedAt === null || l.yardFixedAt === undefined || now >= l.yardFixedAt);
 
 // weeding needs the rake in her hands (A25-5)
 function clearWeed(l0, id) {
@@ -615,7 +636,8 @@ function clearWeed(l0, id) {
     const l = clone(l0);
     // v0.24: gone, and up again in a moment (tick)
     l.yardWeeds[id] = false;
-    l.yardBack = [...l.yardBack, l.activeMs + YARD_WEEDS.backMs];
+    if (id === YARD_WEEDS.fixed) l.yardFixedAt = l.activeMs + YARD_WEEDS.backMs; // (v0.30: in their own place)
+    else l.yardBack = [...l.yardBack, l.activeMs + YARD_WEEDS.backMs];
     l.yardRaked += 1;
     return { ok: true, l, events: [{ type: 'weedCleared', id, yard: true, backMs: YARD_WEEDS.backMs }] };
   }
@@ -1024,6 +1046,7 @@ export function validateLedger(l) {
   if (!sameKeys(l.yardWeeds, YARD_WEED_SLOTS) || !YARD_WEED_SLOTS.every((id) => typeof l.yardWeeds[id] === 'boolean')) e('yard weeds');
   if (!isTime(l.yardWeedAt) || !isInt(l.yardWeedSeq)) e('yard weed clock');
   if (!Array.isArray(l.yardBack) || l.yardBack.length > YARD_WEED_SLOTS.length || !l.yardBack.every((t) => isInt(t)) || !isInt(l.yardRaked)) e('yard weeds coming back');
+  if (!isTime(l.yardFixedAt)) e('the weeds by the raised bed'); // (v0.30)
   if (!sameKeys(l.since, ['sales', 'gather']) || !isInt(l.since.sales) || !isInt(l.since.gather)) e('since');
   return errors;
 }
