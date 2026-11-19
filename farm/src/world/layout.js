@@ -109,7 +109,7 @@ export const STATIONS = [
   // the corn; world.js places the site there exactly, from the fitted house; this is where it
   // lands at the play fit)
   { id: 'G3', kind: 'site', u: 47, v: 44.5, r: 0.6, label: 'stepping stones' },
-  { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'tree-border stones' },
+  { id: 'G4', kind: 'site', u: 28, v: 80, r: 0.6, label: 'stones around the tree' },
   // A1: the archer's post beside the path between the crop approaches (§7)
   { id: 'A1', kind: 'site', u: 66, v: 66, r: 0.6, label: 'archer post' },
   // v0.29 (Tiffany: "When it has the yellow circle to stand in and it says to plant, or plant
@@ -155,4 +155,9 @@ export const YARD_WEED_PLACES = {
 // walkable region of the composition ground (world-bounds recovery clamps inside it)
 // v0.29 (Tiffany: "Don't allow her to walk in the sky"): she keeps to the ground, in front of its
 // drawn horizon (projection.js HORIZON_V 38.5); vMin was 30, 22 m back, out over the paper sky
-export const BOUNDS = { uMin: 1, uMax: 99, vMin: 40, vMax: 99 };
+// v0.31 (Tiffany's "Edits #5": "I still can't run everywhere. For instance to the right of the raised
+// garden bed or to the left of the tree. Allow her to run anywhere"): the bounds were the drawing's
+// own edges (u 1-99, v to 99), and a phone shows grass well beyond them, at the sides and below. Now
+// they are the grass itself, as far as any screen shows it round the drawing: from 22 past its left
+// edge to 22 past its right, and down to v 125. The horizon stays the far edge.
+export const BOUNDS = { uMin: -22, uMax: 122, vMin: 40, vMax: 125 };

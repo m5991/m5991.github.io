@@ -22,7 +22,7 @@ export function createSongPlayer({ makeAudio = () => new Audio(), onActive = () 
   let unlocked = false;
   let pendingFrom = 0; // where the song loading now starts (s)
   let prepared = null; // { id, src, from } loaded ahead, not playing
-  const s = { id: null, title: '', src: '', error: false, blocked: false };
+  const s = { id: null, title: '', src: '', error: false, blocked: false, next: null };
   const subs = new Set();
   const state = () => ({
     id: s.id,
@@ -48,7 +48,13 @@ export function createSongPlayer({ makeAudio = () => new Audio(), onActive = () 
       pendingFrom = 0;
       if (s.id !== null) emit();
     });
-    el.addEventListener('ended', () => { if (s.id !== null) stop(); }); // the theme comes back when the song is over
+    // the theme comes back when the song is over; v0.31: a song played from the list goes on to the
+    // next one (`next`), and after the last back to the first
+    el.addEventListener('ended', () => {
+      if (s.id === null) return;
+      const n = s.next?.(s.id);
+      if (n) play({ ...n, from: 0, next: s.next }); else stop();
+    });
     el.addEventListener('error', () => { if (s.id !== null) { s.error = true; emit(); } });
     return el;
   }
@@ -76,17 +82,22 @@ export function createSongPlayer({ makeAudio = () => new Audio(), onActive = () 
       el.removeAttribute?.('src');
       el.load?.(); // let go of the file
     }
-    Object.assign(s, { id: null, title: '', src: '', error: false, blocked: false });
+    Object.assign(s, { id: null, title: '', src: '', error: false, blocked: false, next: null });
     if (was) onActive(false);
     emit();
   }
-  // { id, src, title, from }: `from` (s) is where it starts; a song already loaded just goes on
-  function play({ id, src, title, from = 0 }) {
-    if (s.id === id && el) { if (el.paused) start(); emit(); return; }
+  // { id, src, title, from, next }: `from` (s) is where it starts; a song already loaded just goes on.
+  // v0.31 (Tiffany's "Edits #5": "On the drop-down list of the songs, allow for playing one song,
+  // and it leads into another. One after another Then they could start from the beginning and just
+  // have it playing in the background of their car or house"): `next(id)` gives the song that
+  // follows `id` ({ id, src, title }, or null to stop there); a song played with it plays on through
+  // the list. A found song in the hunt has none and stops at its end, as before.
+  function play({ id, src, title, from = 0, next = null }) {
+    if (s.id === id && el) { if (next) s.next = next; if (el.paused) start(); emit(); return; }
     const was = s.id !== null;
     const ready = prepared && prepared.id === id && prepared.src === src && prepared.from === from;
     prepared = null;
-    Object.assign(s, { id, title, src, error: false, blocked: false });
+    Object.assign(s, { id, title, src, error: false, blocked: false, next });
     if (!ready) load(src, from);
     if (!was) onActive(true);
     start();

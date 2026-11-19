@@ -33,7 +33,7 @@ export const PARTS = {
   D08: { d: 'D08', what: 'path', stage: 'G1', before: 'ghost' },
   D09: { d: 'D09', what: 'tree', stage: null },
   D10: { d: 'D10', what: 'bench', stage: 'G2', before: 'outline' },
-  D11: { d: 'D11', what: 'tree-border stones', stage: 'G4', before: 'outline' },
+  D11: { d: 'D11', what: 'stones around the tree', stage: 'G4', before: 'outline' },
   D12: { d: 'D12', what: 'stepping stones', stage: 'G3', before: 'ghost' },
   D13: { d: 'D13', what: 'shovel', stage: null },
   D14: { d: 'D14', what: 'rake', stage: null },

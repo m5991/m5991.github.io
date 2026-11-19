@@ -215,7 +215,15 @@ export const crateFull = (l) => crateCount(l) >= CRATE_CAP;
 // can she take one more unit of this resource now: wood and stone up to CAPACITY each on her head;
 // crops up to HEAD_CROPS, all crops together (v0.28; v0.25-v0.27: a crop always, past her head's
 // six it went into the crate)
-export const canTake = (l, res) => (CROPS.includes(res) ? cropsCarried(l) < HEAD_CROPS : l.carried[res] < CAPACITY);
+// v0.31 (Tiffany's "Edits #5": "Don't allow her to collect more than what can fit on the table and
+// just a little more in the crate. She should never be able to do more than one yard sale at a
+// time"): and the crops she holds in all (her head, the tables, the crate) stay within what the
+// tables and the crate hold together (`storeCap`): once she has a sale's worth and the crate's few,
+// the next crop waits for the yard sale
+export const cropsHeld = (l) => cropsCarried(l) + tableCount(l) + crateCount(l);
+export const storeCap = (l) => tableCap(l) + CRATE_CAP;
+export const storeFull = (l) => tableAvailable(l) && cropsHeld(l) >= storeCap(l);
+export const canTake = (l, res) => (CROPS.includes(res) ? cropsCarried(l) < HEAD_CROPS && !storeFull(l) : l.carried[res] < CAPACITY);
 // the tables can be filled from the crate now: something is in it and a table has room
 export const restockReady = (l) => tableAvailable(l) && crateCount(l) > 0 && tableRoom(l) > 0;
 // ---------- v0.29: the pacing gate ----------
@@ -262,7 +270,7 @@ export const wishMet = (l, w = saleWish(l)) => !!w && l.table[w.crop] >= w.n;
 export const mainComplete = (l) => ROUTE.every((id) => isCommitted(l, id));
 // ---------- v0.17 birds: what can be taken now (spec §7 caps, §6.6 point 4) ----------
 // the most a save's theft record may hold: v0.17's cap of 8, which older saves reached
-export const THEFT_SAVED_MAX = 8;
+export const THEFT_SAVED_MAX = 10; // (v0.31: ten thefts a farm, data.js BIRDS.totalMax)
 // theft is possible from the second crop plot until the home, while the caps allow it
 // (v0.23: and from the house foundation on: the raised bed, a second plot, is built first now)
 export const birdsActive = (l) => plotsPlanted(l) >= 2 && isCommitted(l, BIRDS_AFTER);
@@ -280,6 +288,16 @@ export function carriedTarget(l) {
     const n = l.carried[c];
     if (n <= 0) continue;
     if (!best || n > l.carried[best] || (n === l.carried[best] && PRICES[c] < PRICES[best])) best = c;
+  }
+  return best;
+}
+// v0.31: the crop a bird takes off the yard-sale tables: the one most set out, ties to the dearest
+export function tableTarget(l) {
+  let best = null;
+  for (const c of CROPS) {
+    const n = l.table?.[c] ?? 0;
+    if (n <= 0) continue;
+    if (!best || n > l.table[best] || (n === l.table[best] && PRICES[c] > PRICES[best])) best = c;
   }
   return best;
 }
@@ -359,9 +377,14 @@ export function patchWorkable(l, stage) {
 // (v0.11-v0.23: the weeds of a patch that was not open yet, the other two crops' before her first
 // harvest, just waited there: "Opens after your first harvest".) Raked early they are gone for
 // good, as ever: the patch still opens, and costs, when it did.
+// v0.31 (Tiffany's "Edits #5": "Don't allow weeding a crop initially unless they are able to be
+// planted as well at that time"): a crop patch's weeds can be raked once the patch is hers to work
+// (`patchWorkable`: any patch before she has chosen her first crop, then her own, the other two
+// after her first harvest, more corn and more sunflowers once Dwight is hired), not before. The
+// weeds on the open grass and the weeds over her crops can be raked any time, as before.
 export const weedOpen = (l, id) => {
   if (regrowNode(id) || isYardWeed(id)) return weedPresent(l, id);
-  return l.weeds[id] === false && weedPresent(l, id);
+  return l.weeds[id] === false && weedPresent(l, id) && patchWorkable(l, WEED_PLOT[id]);
 };
 export const openWeeds = (l) => [...WEEDS, ...REGROW_WEEDS, ...YARD_WEED_SLOTS].filter((id) => weedOpen(l, id));
 // v0.24: the weeds the farm asks her to rake, which are the rake's jobs: a weed over a crop, and
@@ -646,6 +669,8 @@ function clearWeed(l0, id) {
   if (node ? !weedPresent(l0, id) : l0.weeds[id]) return fail('alreadyCleared');
   if (!weedPresent(l0, id)) return fail('notPresent');
   // (v0.24: no 'patchLocked' any more: a weed that stands can be raked)
+  // (v0.31: 'patchLocked' again: a patch's weeds wait until it can be planted)
+  if (!node && !patchWorkable(l0, WEED_PLOT[id])) return fail('patchLocked');
   if (l0.tool !== 'rake') return fail('needRake');
   const l = clone(l0);
   if (node) {
@@ -897,6 +922,12 @@ function steal(l0, from, src) {
     res = carriedTarget(l0);
     if (!res) return fail('noCrops');
     l.carried[res] -= 1;
+  } else if (from === 'table') {
+    // v0.31 (Tiffany: "Every once in a while birds steal from the yardsale table"): one crop off the
+    // tables, the one there is most of (ties to the dearest: it is the one that shows)
+    res = tableTarget(l0);
+    if (!res) return fail('noCrops');
+    l.table[res] -= 1;
   } else return fail('unknownTarget');
   l.theft.log = [...l.theft.log.filter((t) => l.activeMs - t < BIRDS.windowMs), l.activeMs].slice(-BIRDS.totalMax);
   l.theft.totalBeforeH4 += 1;

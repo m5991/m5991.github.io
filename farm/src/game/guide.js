@@ -61,9 +61,17 @@
 import { BASE_STAGE, BASE_STAGES, CAPACITY, CROPS, HAMMERED, MATERIALS, NODES, PILES, PRICES, REGROW, RESOURCE_NAMES, RESOURCE_UNIT, ROCK_IDS, STAGES, STICK_SLOTS } from './data.js';
 import {
   available, cropsCarried, firstStage, gateShort, headRoom, recipe, isCommitted, isFirstCrop, isFree, mainComplete, missingPrereqs, nodeEstablished, patchWorkable,
-  plotWeeds, regrowWeeds, saleReady, shortage, stageState, tableAvailable, tableFull, tableRoom, toolComes, undug,
+  plotWeeds, regrowWeeds, saleReady, shortage, stageState, storeFull, tableAvailable, tableFull, tableRoom, toolComes, undug,
 } from './ledger.js';
 
+// v0.31 (Tiffany's "Edits #5": "When you first click on the wood and stone it says to put it in the
+// 'pile by the house' which doesn't make sense because there isn't a house yet. Maybe say something
+// like 'the highlighted pile' or 'this pile' or 'next to where the house will be'"): until the
+// foundation stands, the pile (and the tools beside it) are "where the house will be", and the pile
+// is "the circled pile"; from the foundation on, "by the house" as before.
+export const houseThere = (l) => isCommitted(l, 'H1');
+export const byHouse = (l) => (houseThere(l) ? 'by the house' : 'where the house will be');
+export const pileWords = (l) => (houseThere(l) ? 'the pile by the house' : 'the circled pile, where the house will be');
 export const WOOD_PILES = Object.keys(PILES).filter((k) => PILES[k].res === 'W'); // the starter logs by the path
 export const WOOD_SOURCES = [...WOOD_PILES, ...STICK_SLOTS];
 // rocks in the order the goal line names them: the recovery rock (only ever there when a save
@@ -77,12 +85,12 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 // short names for the goal line, so a build and its needs fit one line on a phone
 export const SHORT_LABEL = {
   C0: 'Corn patch', S0: 'Sunflowers', T0: 'Raised bed', H1: 'Foundation', G1: 'Path', H2: 'Walls', A1: 'Archer', C1: 'More corn',
-  S1: 'More sunflowers', G2: 'Bench', G3: 'Step stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
+  S1: 'More sunflowers', G2: 'Bench', G3: 'Step stones', G4: 'Stones around the tree', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
 };
 // v0.23: where a build is, for the DIY line ("DIY · Path") and the note when DIY is pressed away from it
 export const PLACE_LABEL = {
   C0: 'Corn patch', S0: 'Sunflower patch', T0: 'Raised bed', H1: 'Foundation', G1: 'Path', H2: 'Walls', A1: 'Archer', C1: 'More corn',
-  S1: 'More sunflowers', G2: 'Bench', G3: 'Stepping stones', G4: 'Tree stones', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
+  S1: 'More sunflowers', G2: 'Bench', G3: 'Stepping stones', G4: 'Stones around the tree', H3: 'Roof', H4: 'Chimney', H5: 'Windows & doors',
 };
 const NEED_ORDER = ['W', 'R', 'coins'];
 // the line of a build that still needs things: its short name, each need with its number, the
@@ -114,7 +122,8 @@ const sellNow = (l) => saleReady(l);
 export { outValue };
 // the planted crops she can pick: all of them while her head has room (v0.28: twelve crops; v0.25-
 // v0.27 took every harvest, past six into the crate; v0.13-v0.24: room for twelve of each crop)
-const pickable = (l) => (headRoom(l) > 0 ? planted(l) : []);
+// (v0.31: and while she holds less than the tables and the crate take: one sale at a time, `storeFull`)
+const pickable = (l) => (headRoom(l) > 0 && !storeFull(l) ? planted(l) : []);
 // her crops go onto the tables now: what she carries fills them, pays for the build, her head is
 // full (v0.28), or nothing more she can pick is ready
 const setOutNow = (l, short, cropReady) => cropsCarried(l) > 0 && tableAvailable(l) && tableRoom(l) > 0
@@ -176,11 +185,13 @@ function coinsGoal(l, label, short, head = `${label} · ${short} more coins`) {
   const cropReady = anyReady(l, nodes);
   // to the table once what she carries fills it, or nothing more is ready to pick
   if (setOutNow(l, short, cropReady)) {
-    return { text: `${head}: set your crops out on the yard-sale table that has room`, target: 'table' };
+    return { text: `${head}: set your crops out on the yard-sale tables (walk up to any of them)`, target: 'table' };
   }
   const all = planted(l);
   return { text: `${head}: ${cropReady ? 'harvest your crops' : 'your crops are growing'}, then set them out on the yard-sale table`, target: bestHarvest(l, nodes) ?? nodes[0] ?? all[0] ?? null, ...(cropReady ? {} : { wait: 'crops growing' }) };
 }
+// v0.31: stone before wood, every other build (counted by the builds she has hammered up)
+export const stoneFirst = (l) => HAMMERED.filter((id) => isCommitted(l, id)).length % 2 === 1;
 // v0.29: the pacing gate's goal: everything for the build is here, and it waits for a yard sale or a
 // little gathering since the build before (ledger.js gateShort). Wood first (it never runs out),
 // stone while no wood is lying about.
@@ -192,7 +203,8 @@ function gateGoal(l, id, label, gate) {
   }
   const woodNow = anyReady(l, WOOD_SOURCES);
   const stoneNow = anyReady(l, ROCK_IDS);
-  const r = woodNow || !stoneNow ? 'W' : 'R';
+  // (v0.31: wood and stone take turns from build to build, where both can be had)
+  const r = stoneFirst(l) ? (stoneNow || !woodNow ? 'R' : 'W') : woodNow || !stoneNow ? 'W' : 'R';
   const g = gather(l, label, r, gate.gather);
   const what = r === 'W' ? 'wood' : 'stone';
   return { ...g, text: `${label} · every build waits for a little gathering: pick up ${gate.gather} ${what}${g.wait ? ', a stick falls from the tree soon' : ''}`, gate: 'gather', line: { icon: r === 'W' ? 'wood' : 'stone', label: short, tail: g.wait ? 'a stick falls soon' : `gather ${gate.gather} ${what} first` } };
@@ -223,13 +235,13 @@ function cropSteps(l, id, label, come = false) {
   const weeds = plotWeeds(id).filter((w) => !l.weeds[w]);
   const where = isFirstCrop(l, id) ? null : (SHORT_LABEL[id] ?? STAGES[id].label).toLowerCase(); // a later patch is named, her first one is the only one
   if (weeds.length) {
-    if (mustFetch(l, 'rake', come)) return { text: `${label} · Take the rake: it leans by the house`, target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
+    if (mustFetch(l, 'rake', come)) return { text: `${label} · Take the rake: it leans ${byHouse(l)}`, target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
     return { text: `${label} · Stand still beside the weeds to remove them with the rake`, target: weeds[0], line: { icon: 'weed', label: 'Remove the weeds', ...(where ? { tail: where } : {}) } };
   }
   if (!isCommitted(l, id)) return null; // plant it (or DIY the bed) at its spot first (the caller)
   const spots = undug(l).filter((n) => NODES[n].stage === id);
   if (spots.length) {
-    if (mustFetch(l, 'shovel', come)) return { text: `${label} · ${spots.some((n) => l.wilted?.[n]) ? 'Replant: take' : 'Now take'} the shovel by the house`, target: 'tools', tool: 'shovel', line: { icon: 'shovel', label: 'Take the shovel' } };
+    if (mustFetch(l, 'shovel', come)) return { text: `${label} · ${spots.some((n) => l.wilted?.[n]) ? 'Replant: take' : 'Now take'} the shovel ${byHouse(l)}`, target: 'tools', tool: 'shovel', line: { icon: 'shovel', label: 'Take the shovel' } };
     const re = l.wilted?.[spots[0]];
     if (re) return { text: `${label} · Replant: dig the wilted spot with the shovel`, target: spots[0], line: { icon: 'shovel', label: 'Replant the wilted spot' } };
     return { text: `${label} · Stand still beside a spot to dig it`, target: spots[0], line: { icon: 'shovel', label: spots.length > 1 ? 'Dig the spots' : 'Dig the spot', ...(where ? { tail: where } : {}) } };
@@ -311,7 +323,7 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   if (mainComplete(l)) return { text: 'The farm is finished. Keep exploring, gathering and selling if you like.', target: null, line: { icon: 'check', label: 'The farm is finished' } };
   // the free first crop: rake any crop patch
   if (!l.crop) {
-    if (mustFetch(l, 'rake', toolsCome)) return { text: 'Take the rake: it leans by the house', target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
+    if (mustFetch(l, 'rake', toolsCome)) return { text: `Take the rake: it leans ${byHouse(l)}`, target: 'tools', tool: 'rake', line: { icon: 'rake', label: 'Take the rake' } };
     const choice = choiceTargets(l);
     return { text: 'Choose your first crop: remove the weeds on the corn, the sunflowers or the tomato bed with the rake', target: choice[0]?.target ?? null, choice, line: { icon: 'weed', label: 'Choose a crop', tail: 'remove its weeds' } };
   }
@@ -333,20 +345,20 @@ export function nextGoal(l, { toolsCome = false } = {}) {
     // v0.29: the weed that choked a plant stands on at its empty spot: raked, the spot is dug again
     const gone = !l.nodes[node].dug;
     const said = gone ? `A weed choked a ${RESOURCE_UNIT[NODES[node].res]} plant: remove it, then replant the spot` : line;
-    if (mustFetch(l, 'rake', toolsCome)) return { text: `${said} · Take the rake by the house`, target: 'tools', tool: 'rake', weed: true, line: { icon: 'rake', label: 'Take the rake', tail: `${what} weeds` } };
+    if (mustFetch(l, 'rake', toolsCome)) return { text: `${said} · Take the rake ${byHouse(l)}`, target: 'tools', tool: 'rake', weed: true, line: { icon: 'rake', label: 'Take the rake', tail: `${what} weeds` } };
     return { text: said, target: over[0], weed: true, line: { icon: 'weed', label: 'Remove the weeds', tail: gone ? 'then replant' : choking ? `${what}: wilting soon!` : `in the ${what}` } };
   }
   // v0.29 (Tiffany: "Now I have successfully piled a lot of stuff on my head and don't know what to
   // do with it"): a head full of wood or stone goes to the pile by the house, which builds take from
   const full = MATERIALS.find((r) => l.carried[r] >= CAPACITY);
-  if (full) return { text: `${CAPACITY} ${RESOURCE_NAMES[full]} on her head, the most she carries: walk through the pile by the house to leave it there. Builds take it from the pile.`, target: 'yard', carry: full, line: { icon: full === 'W' ? 'wood' : 'stone', label: 'Leave it at the pile', tail: 'by the house' } };
+  if (full) return { text: `${CAPACITY} ${RESOURCE_NAMES[full]} on her head, the most she carries: walk through ${pileWords(l)} to leave it there. Builds take it from the pile.`, target: 'yard', carry: full, line: { icon: full === 'W' ? 'wood' : 'stone', label: 'Leave it at the pile', tail: houseThere(l) ? 'by the house' : 'the circled one' } };
   // v0.30 (Tiffany's "Farm changes #4": "When you first pick up stones and rocks the drop off pile
   // should be the only one highlighted. THEN it highlights the shovel"): her first wood or stone, as
   // long as none has ever gone to the pile (or into a build), takes her to the pile first: the line,
   // the one arrow and the one circle are the pile's. Once she has left a load there, the line goes
   // on to what is next (the shovel, for her first crop). (v0.29 circled the pile beside the goal's
   // own circle, the shovel's.)
-  if (firstLoad(l)) return { text: 'Wood and stone go to the pile by the house: walk through it to leave them there. Every build takes from her head and from that pile.', target: 'yard', carry: l.carried.W ? 'W' : 'R', first: true, line: { icon: l.carried.W ? 'wood' : 'stone', label: 'Leave it at the pile', tail: 'by the house' } };
+  if (firstLoad(l)) return { text: `Wood and stone go to ${pileWords(l)}: walk through it to leave them there. Every build takes from her head and from that pile.`, target: 'yard', carry: l.carried.W ? 'W' : 'R', first: true, line: { icon: l.carried.W ? 'wood' : 'stone', label: 'Leave it at the pile', tail: houseThere(l) ? 'by the house' : 'the circled one' } };
   const first = firstStage(l);
   const firstLabel = cap(PATCH_NAME[l.crop]);
   const own = cropSteps(l, first, firstLabel, toolsCome);
@@ -389,7 +401,10 @@ export function nextGoal(l, { toolsCome = false } = {}) {
     const tail = g.wait ? 'a stick falls soon' : `only ${what} missing`;
     return { ...lined(g, r), only: r, text: `${g.text}${only ? ` (the coins are here: only the ${what} is missing)` : ''}`, line: { ...needsLine(id, short, r, only || g.wait ? tail : null) } };
   };
-  if (short.W > 0) return onlyLine(gather(l, label, 'W', short.W), 'W');
-  if (short.R > 0) return onlyLine(gather(l, label, 'R', short.R), 'R');
+  // (v0.31, Tiffany's "Edits #5": "It regularly says to gather wood to do the DIY but it should
+  // also say to gather stones sometimes": with both missing, every other build asks for its stone
+  // first; v0.12-v0.30 always asked for the wood first)
+  const order = stoneFirst(l) && anyReady(l, ROCK_IDS) ? ['R', 'W'] : ['W', 'R'];
+  for (const r of order) if (short[r] > 0) return onlyLine(gather(l, label, r, short[r]), r);
   return lined(coinsGoal(l, label, short.coins), 'coins');
 }

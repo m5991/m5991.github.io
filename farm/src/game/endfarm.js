@@ -25,6 +25,8 @@ export function finishedFarm() {
   settled();
   for (const stage of STAGE_ORDER) {
     if (!l.stages[stage].committed) {
+      // (v0.31: a patch's weeds can be raked once it can be planted: after the first harvest)
+      l = { ...l, harvested: true };
       rake(plotWeeds(stage));
       const need = recipe(l, stage);
       // funded from nothing (a farm made for a look, not played): the coins, the wood and the

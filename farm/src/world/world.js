@@ -107,7 +107,13 @@ const SIGN_AT = { along: 0.55, behind: 1.75 };
 // them (m: along the line of the two, and across it)
 // v0.30: where the weeds by the raised bed stand, from the weeds' song spot (m)
 const FIXED_WEED = { at: [1.4, -1.5] };
-const PATCH_PAD = { along: 0.75, across: 0.75, corn: 0.75, sunflowers: 0.7, bed: 0.3, rim: 0.07 }; // (v0.30: the plots' margins round what stands on them, and the pencilled edge, m)
+// v0.31 (Tiffany's "Edits #5": "The patches of ground under the corn and the flowers should be
+// smaller. Just big enough to go around them but not lots of extra. Don't connect it directly to the
+// stepping stones"; "The patch of land under the raised garden bed should be exactly the size of the
+// raised garden bed"; "The sunflower patch should be a circle"): the corn's margin is 0.3 m (0.75)
+// and it keeps `clear` m off the stepping stones' edge; the sunflowers' circle reaches 0.45 m past the
+// farthest flower; the bed's patch is the bed's own footprint (0.3 m round it).
+const PATCH_PAD = { along: 0.75, across: 0.75, corn: 0.3, sunflowers: 0.45, bed: 0, rim: 0.07, clear: 0.25 }; // (v0.30: the plots' margins round what stands on them, and the pencilled edge, m)
 // v0.29: where the easel stands from her for "Put it on Paper" (m: to her right, behind her)
 const EASEL_AT = [0.62, -0.5];
 export const EGG = { cross: 7, high: 4.2, dropAt: 2.6, flyMs: 2200, fallMs: 520, size: 1.9, birdSize: 2.1 };
@@ -118,6 +124,8 @@ export const ARCHER_AIM = { everyMs: 7000, holdMs: 1600 };
 // (off the picture at `off`, a drawing point beyond its right edge; to the bench, where he sits at
 // `seatX` along it): his pace (m/s), his stride (m) and the swing of his legs (rad)
 export const ARCHER_STROLL = { everyMs: 8500, firstMs: 3500, speed: 0.55, spots: [[0.75, 0.2], [0.1, 0.5], [-0.55, -0.1], [0, 0]] };
+export const WHO_KNOWS_SCALE = 1.5; // v0.31 (Tiffany: "Make The Who knows plant larger")
+export const DWIGHT_R = 0.32; // v0.31: how far round him she keeps (m)
 export const ARCHER_WALK = { speed: 1.5, leave: 2.6, stride: 0.72, swing: 0.5, off: [108, 79], seatX: 0.47 };
 const PUFF_SIZE = 2.4; // a dust puff read at phone size: about 0.6 m across at its fullest
 // v0.15: the house model's node for each stage's part (greybox.js house())
@@ -178,7 +186,11 @@ export const THIEF = { size: 2.3, crop: 2.6, away: [9, 4.2, -5] };
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
-export const RING = { spacing: 0.34, gap: 1.9, grow: 0.15 };
+// v0.31 (Tiffany's "Edits #5": "Put a couple more tree stones on the edges so the connect with the
+// end of the path"): the gap is no wider than the path's end (0.8 m; it was 1.9 m, which left a
+// stone's width or two of bare ground on each side of the path): the ring's stones come up to the
+// path's edges on both sides (each still keeps off the path itself, PATH_STONES)
+export const RING = { spacing: 0.34, gap: 0.8, grow: 0.15 };
 // v0.17 the path into the ring: the drawn curve runs on `past` m beyond its drawn end, and the
 // path ends `into` m inside the ring's gap along it, half
 // `door` m wide at the door and `end` m at the gap (the gap is RING.gap wide), rounded over its
@@ -534,8 +546,24 @@ export class World {
     this.patches = {};
     const plot = (name, pts, pad) => {
       const xs = pts.map((q) => q.x); const zs = pts.map((q) => q.z);
-      const x0 = Math.min(...xs) - pad; const x1 = Math.max(...xs) + pad;
-      const z0 = Math.min(...zs) - pad; const z1 = Math.max(...zs) + pad;
+      plotBox(name, { x0: Math.min(...xs) - pad, x1: Math.max(...xs) + pad, z0: Math.min(...zs) - pad, z1: Math.max(...zs) + pad });
+    };
+    // v0.31: a round plot (the sunflowers'): a disc round the middle of `pts`, reaching `pad` past the farthest
+    const roundPlot = (name, pts, pad) => {
+      const cx = pts.reduce((n, q) => n + q.x, 0) / pts.length; const cz = pts.reduce((n, q) => n + q.z, 0) / pts.length;
+      const r = Math.max(...pts.map((q) => Math.hypot(q.x - cx, q.z - cz))) + pad;
+      const t = PATCH_PAD.rim;
+      const g = new THREE.Group(); g.name = `patch:${name}`;
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48), soil);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - t, r, 48), edge);
+      for (const m of [disc, ring]) { m.rotation.x = -Math.PI / 2; m.renderOrder = 1; m.userData.noOutline = true; m.userData.noFit = true; g.add(m); }
+      g.position.set(cx, 0.012, cz);
+      g.userData.box = { x0: cx - r, x1: cx + r, z0: cz - r, z1: cz + r };
+      g.userData.circle = { x: cx, z: cz, r };
+      this.root.add(g);
+      this.patches[name] = g;
+    };
+    const plotBox = (name, { x0, x1, z0, z1 }) => {
       const w = x1 - x0; const d = z1 - z0; const t = PATCH_PAD.rim;
       const g = new THREE.Group(); g.name = `patch:${name}`;
       const bed = new THREE.Mesh(new THREE.PlaneGeometry(w, d), soil);
@@ -548,8 +576,18 @@ export class World {
       this.root.add(g);
       this.patches[name] = g;
     };
-    plot('corn', CORN_PLANTS.map((c) => this.proj.groundAt(c.u, c.v)), PATCH_PAD.corn);
-    plot('sunflowers', SUNFLOWER_NODES.map((id) => this.stations[id].pos), PATCH_PAD.sunflowers);
+    // (v0.31: the corn's rectangle stops short of the stepping stones: the stones' end at the corn
+    // is a step of grass away from it)
+    const corn = CORN_PLANTS.map((c) => this.proj.groundAt(c.u, c.v));
+    const xs = corn.map((q) => q.x); const zs = corn.map((q) => q.z);
+    const box = { x0: Math.min(...xs) - PATCH_PAD.corn, x1: Math.max(...xs) + PATCH_PAD.corn, z0: Math.min(...zs) - PATCH_PAD.corn, z1: Math.max(...zs) + PATCH_PAD.corn };
+    const stones = this.root.getObjectByName('D12_Stones');
+    if (stones) {
+      const sb = new THREE.Box3().setFromObject(stones);
+      if (!sb.isEmpty() && sb.max.z > box.z0 && sb.min.z < box.z1 && sb.max.x < box.x1) box.x0 = Math.max(box.x0, sb.max.x + PATCH_PAD.clear);
+    }
+    plotBox('corn', box);
+    roundPlot('sunflowers', SUNFLOWER_NODES.map((id) => this.stations[id].pos), PATCH_PAD.sunflowers);
     const b = new THREE.Box3().setFromObject(this.objects.D18);
     plot('bed', [new THREE.Vector3(b.min.x, 0, b.min.z), new THREE.Vector3(b.max.x, 0, b.max.z)], PATCH_PAD.bed);
   }
@@ -682,6 +720,19 @@ export class World {
       q.userData = { seed };
       places.push(q);
     }
+    // v0.31 (Tiffany: "Put a couple more tree stones on the edges so the connect with the end of the
+    // path"): on each side of the path, a stone right where the ring meets the path's edge, so the
+    // ring runs up to the path with no bare ground between (the even spacing left up to a stone's
+    // width or two there)
+    for (const side of [1, -1]) {
+      for (let k = 1; k <= 180; k++) {
+        const q = on(gapA + side * (k / 180) * Math.PI * 0.6);
+        const seed = 60 + (side > 0 ? 1 : 2);
+        if (!this.offPath(q, ringStoneReach(seed))) continue;
+        if (places.every((p) => p.distanceTo(q) > RING.spacing * 0.7)) { q.userData = { seed }; places.push(q); }
+        break;
+      }
+    }
     this.ring.places = places;
     return places;
   }
@@ -698,6 +749,28 @@ export class World {
     return [h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, -0.24))).setY(0), h.localToWorld(step.clone().add(new THREE.Vector3(0, 0, 1.4))).setY(0)];
   }
 
+  // v0.31 (Tiffany's "Edits #5": "Allow her to go in and out of the house"; with Tiffany: "it is
+  // enough that she walks through the door, disappears inside, and comes back out"): the door's way
+  // in, in world space: `step` the middle of the door step, `inside` a little way in through the
+  // door, `out` a step out onto the path, `yaw` facing out of the house, and `local(p)` a world
+  // point in the house's own frame (x along the front, z out of it; `front` the front wall's z)
+  doorWay() {
+    const h = this.objects.D01;
+    h.updateMatrixWorld(true);
+    const step = h.userData.doorStep;
+    const front = G.HOUSE.d / 2;
+    const at = (z) => h.localToWorld(new THREE.Vector3(step.x, 0, z)).setY(0);
+    return {
+      step: at(step.z - 0.12), inside: at(front - 0.45), out: at(step.z + 0.85), yaw: h.rotation.y,
+      doorX: step.x, front, stepZ: step.z,
+      local: (p) => h.worldToLocal(new THREE.Vector3(p.x, 0, p.z)),
+    };
+  }
+  // the door swung open by `k` (0 shut, 1 wide open)
+  setDoorOpen(k) {
+    const door = this.objects.D01?.getObjectByName('D01_House_Door');
+    if (door) door.rotation.y = -1.75 * Math.max(0, Math.min(1, k));
+  }
   // the drawn path on the ground: out of the door step, then through the drawing's path points to
   // its drawn end at the bench (centripetal, so it never overshoots a bend)
   // where the drawn path enters the ring (the ellipse c, rx, rz): its first point inside, or, if it
@@ -1058,6 +1131,9 @@ export class World {
   // ---------- presentation of ledger state ----------
   // `animate`: a live transaction (weeds shrink away); false on load (they are simply gone)
   sync(l, animate = false) {
+    // v0.31 (Tiffany: "It shouldn't show after the garden is built"): the bed's patch marks its place
+    // until the raised bed stands
+    if (this.patches?.bed) this.patches.bed.visible = !l.stages?.T0?.committed;
     for (const [id, s] of Object.entries(this.stations)) {
       const { kind } = s.def;
       if (kind === 'weed') {
@@ -2115,6 +2191,18 @@ export class World {
     // (v0.23: his post, not where his few steps have taken him; none once he sits on the bench)
     return Object.values(this.archers ?? {}).filter((a) => isCommitted(l, a.id) && a.mode === 'post').map((a) => ({ id: a.id, pos: { x: a.post.x, z: a.post.z } }));
   }
+  // v0.31 (Tiffany's "Edits #5": "Vanessa shouldn't be able to walk through Dwight. Only around"):
+  // Dwight is solid: a post the size of him stands where he stands and goes where he walks, while
+  // he is in the picture on his feet (on the bench the bench is solid already)
+  syncDwightBody() {
+    const a = this.archer;
+    if (!a) return;
+    if (!this.dwightBody) this.dwightBody = new CANNON.Body({ mass: 0, shape: new CANNON.Cylinder(DWIGHT_R, DWIGHT_R, 3, 12) });
+    const want = a.root.visible && a.mode !== 'seated' && a.mode !== 'gone' && !this.playHidden;
+    if (want) this.dwightBody.position.set(a.root.position.x, 1.5, a.root.position.z);
+    if (want && !this.dwightBody.world) this.physics.addBody(this.dwightBody);
+    if (!want && this.dwightBody.world) this.physics.removeBody(this.dwightBody);
+  }
   // ---------- v0.23: Dwight moves ----------
   // Tiffany: "Have Dwight walking around just a little. He is too stiff. Not too distracting
   // though": on watch he takes a few slow steps to a place close by every ARCHER_STROLL.everyMs or
@@ -2241,6 +2329,7 @@ export class World {
   // more), and every ARCHER_AIM.everyMs raises his bow for a moment; drawing at a bird he turns
   // to it and holds the bow up
   updateArcher(dtMs) {
+    this.syncDwightBody();
     const sky = this.objects.D21?.position;
     const still = this.reducedMotion();
     for (const a of Object.values(this.archers ?? {})) {
@@ -2819,6 +2908,13 @@ export class World {
     this.keepsakes = {};
     for (const [id, k] of Object.entries(KEEPSAKES)) {
       const obj = G.keepsake(id);
+      // v0.31: the faces that carry Vanessa's drawing (or, the phone's screen, a photo) get their picture
+      obj.traverse((m) => {
+        if (m.userData.drawingFace) this.drawingMap((t) => { m.material.map = t; m.material.needsUpdate = true; });
+        if (m.userData.photoFace && typeof document !== 'undefined' && typeof document.createElementNS === 'function') {
+          new THREE.TextureLoader().load(m.userData.photoFace, (t) => { t.colorSpace = THREE.SRGBColorSpace; m.material.map = t; m.material.needsUpdate = true; });
+        }
+      });
       const p = this.proj.groundAt(k.u, k.v);
       obj.position.copy(p);
       obj.scale.setScalar(KEEPSAKE_SIZE);
@@ -3100,8 +3196,10 @@ export class World {
       case 'sketch': {
         // the paper comes up off the grass into her hand (hero.js shows it there), then the word
         say(0.6);
+        // (v0.31, Tiffany's "Edits #5": "When she picks up the sketch (the action) make the crumbled
+        // up paper disappear when she picks it up": it stays gone, kept by her, while the bird comes
+        // with its song; v0.22-v0.30 laid it back on the grass as the act ended)
         after(0.33, () => { if (this.sketchProp) { this.sketchProp.userData.taken = true; this.sketchProp.visible = false; } });
-        after(0.98, () => { if (this.sketchProp) this.sketchProp.userData.taken = false; });
         break;
       }
       case 'pose': say(0.35); break;
@@ -3268,14 +3366,15 @@ export class World {
     const still = this.reducedMotion();
     w.t += dtMs;
     w.wiggle = Math.max(0, w.wiggle - dtMs);
-    if (still) { o.rotation.set(0, 0, 0); o.scale.setScalar(1); return; }
+    const K = WHO_KNOWS_SCALE; // (v0.31: drawn bigger)
+    if (still) { o.rotation.set(0, 0, 0); o.scale.setScalar(K); return; }
     // a gentle sway, a breath every 5 s or so
     const sway = 0.05 * Math.sin((w.t / 5000) * Math.PI * 2) * (0.6 + 0.4 * Math.sin(w.t / 3100));
     const glad = happy && near ? 0.12 * Math.sin(w.t / 160) : 0;
     const wig = w.wiggle > 0 ? 0.22 * Math.sin(w.wiggle / 55) * (w.wiggle / 1500) : 0;
     o.rotation.z = sway + glad + wig;
     o.rotation.y = w.face * (w.wiggle / 1500); // the leaves turn toward her while it wiggles
-    o.scale.set(1, 1 + 0.06 * Math.abs(wig) / 0.22, 1);
+    o.scale.set(K, K * (1 + 0.06 * Math.abs(wig) / 0.22), K);
   }
   whoKnowsHello(heroPos) {
     const o = this.whoKnowsObj();

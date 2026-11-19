@@ -328,11 +328,17 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     lift = reduced ? 0 : 0.05 * Math.abs(beat) * k;
     smile = k; prop = k;
   } else if (kind === 'lean') {
-    const k = span(u, 0.05, 0.35, 0.7, 0.97);
-    const sway = reduced ? 0 : 0.04 * Math.sin(u * Math.PI * 4);
-    roll = (0.3 + sway) * k;
-    bones.Spine1_M = [0, 0, -0.32 * k]; bones.Head_M = [0, 0, -0.3 * k];
-    bones.Shoulder_R = [0.15 * k, 0, 0.1 * k]; bones.Shoulder_L = [-0.5 * k, 0, 0.75 * k]; bones.Elbow_L = [-0.2 * k];
+    // v0.31 (Tiffany's "Edits #5": "When she has the lean action make her look more like she's
+    // leaning"): a big lean from the ankles toward the sunflowers (0.5 rad, it was 0.3), her body
+    // bending further into it, the near arm reaching out to them and the far one arched over her
+    // head, the far leg out to the side to hold her up
+    const k = span(u, 0.05, 0.3, 0.72, 0.97);
+    const sway = reduced ? 0 : 0.035 * Math.sin(u * Math.PI * 4);
+    roll = (0.5 + sway) * k;
+    bones.Spine1_M = [0, 0, -0.22 * k]; bones.Head_M = [0.05 * k, 0, -0.18 * k];
+    bones.Shoulder_L = [-0.35 * k, 0, 1.0 * k]; bones.Elbow_L = [-0.15 * k];
+    bones.Shoulder_R = [-2.75 * k, 0, -0.35 * k]; bones.Elbow_R = [-0.45 * k];
+    bones.Hip_R = [0, 0, -0.42 * k]; bones.Knee_R = [0.12 * k];
   } else if (kind === 'pockets') {
     const dig = span(u, 0.03, 0.16, 0.42, 0.5); // hands deep in her pockets, rummaging
     const fling = span(u, 0.46, 0.56, 0.84, 0.98); // and out they come

@@ -29,7 +29,7 @@
 // warning, no Wave, no arrow, no stain: nothing to do about it and nothing lost. (v0.17-v0.22: after
 // the home, birds only perched on the bench.) And the birds come from the house foundation on.
 import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, END_BIRDS, NODES } from './data.js';
-import { birdsActive, carriedTarget, isCommitted, mainComplete, nodeEstablished, readyNodes, theftAllowed } from './ledger.js';
+import { birdsActive, carriedTarget, isCommitted, mainComplete, nodeEstablished, readyNodes, tableTarget, theftAllowed } from './ledger.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 // the plural the warnings use for each crop
@@ -73,6 +73,13 @@ export function targetFor(kind, ctx) {
     }
     return best && { kind, id: best.id, pos: best.pos, res: best.res };
   }
+  // v0.31 (Tiffany's "Edits #5": "Every once in a while birds steal from the yardsale table"): the
+  // crops set out on the tables (`ctx.tablePos`: over the first table). Dwight keeps to the corn.
+  if (kind === 'table') {
+    const res = tableTarget(l);
+    if (!res || !ctx.tablePos || ctx.saleOn) return null;
+    return { kind, id: 'table', pos: ctx.tablePos, res };
+  }
   if (kind === 'carried') {
     const res = carriedTarget(l);
     if (!res || ctx.heroSafe || coveringArcher(ctx.archers, ctx.hero)) return null;
@@ -99,6 +106,7 @@ export function warningText(t) {
   if (t.kind === 'visit') return 'A bird has come to look at the farm';
   if (t.kind === 'perch') return 'A bird is eyeing the bench';
   if (t.kind === 'carried') return `A bird is after the ${CROP_WORD[t.res]} on your head! Wave it off`;
+  if (t.kind === 'table') return 'A bird is eyeing the yard-sale table! Wave it off';
   return t.res === 'C' ? 'A bird is circling your corn' : `A bird is eyeing the ${CROP_WORD[t.res]}`;
 }
 
@@ -131,6 +139,7 @@ export function createBirds() {
     if (s.target.kind === 'perch') return isCommitted(ctx.l, 'G2') && !ctx.l.theft.stain;
     if (ctx.calm || !theftAllowed(ctx.l)) return false;
     if (s.target.kind === 'node') return readyNodes(ctx.l).includes(s.target.id);
+    if (s.target.kind === 'table') return !!tableTarget(ctx.l) && !ctx.saleOn;
     return !!carriedTarget(ctx.l) && !ctx.heroSafe;
   };
   // a hired archer whose cover the bird has entered draws, then shoots (never at the bird)
@@ -206,7 +215,8 @@ export function createBirds() {
       if (!still(ctx)) { leave(out, 'gone'); return out; }
       s.guarded = guardedNow(ctx); // he may be hired while the bird is on its way
       // Let plant birds land and visibly perch before Dwight draws his bow.
-      if (s.target.kind !== 'visit' && (s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
+      // (v0.31: not the tables: he keeps to the corn)
+      if (s.target.kind !== 'visit' && s.target.kind !== 'table' && (s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
       if (s.phase === 'warn' && s.t >= BIRDS.warnMs) {
         s.phase = 'approach'; s.t = 0;
       } else if (s.phase === 'approach') {
@@ -223,7 +233,7 @@ export function createBirds() {
         const k = s.target.kind;
         if (k === 'visit') { if (s.t >= END_BIRDS.sitMs) leave(out, 'gone'); return out; }
         if (s.t >= (k === 'perch' ? BIRDS.perchMs : BIRDS.sitMs)) {
-          if (k === 'perch') { out.push({ a: 'stain' }); leave(out, 'stained'); } else { out.push({ a: 'take', tx: { t: 'steal', from: 'node', src: s.target.id } }); leave(out, 'took'); }
+          if (k === 'perch') { out.push({ a: 'stain' }); leave(out, 'stained'); } else if (k === 'table') { out.push({ a: 'take', tx: { t: 'steal', from: 'table' } }); leave(out, 'took'); } else { out.push({ a: 'take', tx: { t: 'steal', from: 'node', src: s.target.id } }); leave(out, 'took'); }
         }
       }
       return out;

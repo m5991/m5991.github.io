@@ -101,7 +101,7 @@ export function drawPostcard(canvas, img, stats, { width = 1400 } = {}) {
 // v0.30 (Tiffany's "Farm changes #4": "When you can share the picture make it just the picture and
 // make it have a disclaimer 'Vanessa drew this!'"): what Share sends is Vanessa's drawing alone,
 // edge to edge, with "Vanessa drew this!" pencilled in her pen's blue on a slip of paper in its
-// lower right corner: no title, no numbers, no signature or stamp (v0.23-v0.29 sent the postcard,
+// lower left corner (v0.31; v0.30: the lower right): no title, no numbers, no signature or stamp (v0.23-v0.29 sent the postcard,
 // `drawPostcard`: the drawing with the farm's numbers under it).
 export const SHARED_NOTE = 'Vanessa drew this!';
 export function drawShared(canvas, img, { width = 1600 } = {}) {
@@ -116,10 +116,13 @@ export function drawShared(canvas, img, { width = 1600 } = {}) {
   const tw = g.measureText?.(SHARED_NOTE)?.width ?? size * SHARED_NOTE.length * 0.5;
   const padX = Math.round(size * 0.55); const padY = Math.round(size * 0.35);
   const bw = tw + padX * 2; const bh = size + padY * 2;
-  const x = w - bw - Math.round(w * 0.02); const y = h - bh - Math.round(w * 0.02);
+  // v0.31 (Tiffany's "Edits #5": "Move the Vanessa drew this caption on the actual drawing to the
+  // bottom left ish"): the slip lies in the lower left corner, under the bench's ring of stones
+  // (v0.30: the lower right)
+  const x = Math.round(w * 0.03); const y = h - bh - Math.round(w * 0.02);
   g.save();
   g.translate(x + bw / 2, y + bh / 2);
-  g.rotate(-0.04);
+  g.rotate(0.04);
   g.fillStyle = 'rgba(255, 247, 229, 0.94)';
   g.fillRect(-bw / 2, -bh / 2, bw, bh);
   g.strokeStyle = '#2b2a5e'; g.lineWidth = Math.max(2, w / 600);

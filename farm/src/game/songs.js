@@ -411,10 +411,14 @@ export function huntGoal({ discoveries = {}, egg = null, othersFound = true, res
   if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
   // (v0.30: the circles stay out while she listens; only their actions wait: Tiffany, "There should
   // never be a time that there aren't any red circles if there are more songs to collect")
-  if (egg === 'rest') return { text: `Listen a while: the next song can be fetched from a red circle in ${restS} seconds. A keepsake can be found meanwhile.`, line: { icon: 'note', label: 'Listen a while', tail: `next song in ${restS} s` } };
+  // (v0.31, Tiffany's "Edits #5": 'Where it says "listen a while the next song will come in…" you
+  // can't read the rest of the song. Don't write that button at all, just don't have a red circle
+  // until the time is up': no count; the line only says to enjoy the song, and the circles come
+  // back on the grass when the time is up)
+  if (egg === 'rest') return { text: 'Enjoy the song. The red circles come back in a moment.', line: { icon: 'note', label: 'Enjoy the song' } };
   if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
   // (v0.30: its red circle is out all the while; its action waits for the keepsakes)
-  if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: its red circle is out, and its action waits until the keepsakes still on the farm are found.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
+  if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: its red circle comes out once the keepsakes still on the farm are found.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
   if (left.length === 1 && left[0] === LAST_SONG) return { text: `The last song: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'The last song', tail: 'at the red circle' } };
   if (left.length === 1) return { text: `One song left: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'One song left', tail: 'at the red circle' } };
   return { text: 'Walk to a red circle on the farm and do what it says: a bird brings its song as an egg, in a yellow circle.', line: { icon: 'note', label: 'Walk to a red circle' } };

@@ -135,11 +135,13 @@ export function tutorialStep(l, { moved = false, toolsCome = false } = {}) {
 // DROP_NOTE_M of the yard pile carrying wood or stone, before any drop or DIY (main.js shows it
 // once). -> the note's text, or null
 export const DROP_NOTE_M = 6;
-export const DROP_NOTE = 'Walk through the pile by the house to drop your load';
+// (v0.31: before the house stands the pile is where it will be: Tiffany's "Edits #5")
+export const DROP_NOTE = 'Walk through the circled pile, where the house will be, to drop your load';
+export const DROP_NOTE_HOUSE = 'Walk through the pile by the house to drop your load';
 export function dropLesson(l, distToYardM) {
   const k = learned(l);
   if (k.delivered || k.dropped || k.built || !MATERIALS.some((r) => l.carried[r] > 0)) return null;
-  return distToYardM <= DROP_NOTE_M ? DROP_NOTE : null;
+  return distToYardM <= DROP_NOTE_M ? (isCommitted(l, 'H1') ? DROP_NOTE_HOUSE : DROP_NOTE) : null;
 }
 
 const VERB = { weed: 'remove the weeds', source: 'gather', node: 'harvest', dig: 'dig' };

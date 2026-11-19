@@ -21,6 +21,8 @@ import { isCommitted, recipe } from '../game/ledger.js';
 import { nextStage } from '../game/guide.js';
 
 export const counterText = (n) => String(Math.min(9999, n));
+// v0.31: how long a note needs to be read: two seconds, and a quarter of a second for each word
+export const readMs = (text) => 2000 + 250 * String(text ?? '').split(/\s+/).filter(Boolean).length;
 
 // v0.20 (audit 2: "a note cut off by a bird warning does not replay"): what becomes of the note an
 // urgent warning interrupts. It used to come back afterwards and run its whole time again. Now a
@@ -146,17 +148,16 @@ export function createHud(root = document) {
   const live = $('live');
   const toast = $('toast');
   const toastText = toast.querySelector('.text');
-  let folded = false; // the player's choice for this session: later notes arrive folded (P29-2)
-  const showFold = () => {
-    toast.classList.toggle('folded', folded);
-    toast.setAttribute('aria-expanded', String(!folded));
-    toast.title = folded ? 'Unfold the note' : 'Fold the note to one line';
-  };
-  // a tap (or Enter / Space with it focused: it is a button) folds and unfolds it; it never
-  // moves Vanessa or starts the stick
-  toast.addEventListener('click', (e) => { e.stopPropagation(); folded = !folded; showFold(); });
+  // v0.31 (Tiffany's "Edits #5": "On the word instruction bubbles at the top, show the whole text
+  // and take down the arrow at the top and change it to an X, or have it disappear automatically
+  // after a reasonable amount of reading time"): the note shows all its words (v0.13-v0.30 cut it
+  // at two lines, and its arrow folded it to one); the arrow is an × that closes it, and it goes by
+  // itself once it has been up long enough to read (`readMs`). (`folded` stays false: kept for
+  // the code that asks.)
+  const folded = false;
+  // a tap on the note (its ×, or anywhere on it) closes it; it never moves Vanessa or starts the stick
+  toast.addEventListener('click', (e) => { e.stopPropagation(); dismissNote(); });
   toast.addEventListener('pointerdown', (e) => e.stopPropagation());
-  showFold();
   let leaving = 0;
   const buildbar = $('buildbar');
   const diy = $('btn-diy');
@@ -186,11 +187,15 @@ export function createHud(root = document) {
     toast.hidden = false;
     onNote?.();
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.classList.add('leaving');
-      clearTimeout(leaving);
-      leaving = setTimeout(() => { toastQueue.shift(); showNext(); }, 200);
-    }, (toastQueue.length > 1 ? Math.min(q.ms, 2200) : q.ms) + 1000);
+    toastTimer = setTimeout(dismissNote, toastQueue.length > 1 ? Math.max(Math.min(q.ms, 2200), readMs(q.text) * 0.6) : Math.max(q.ms + 1000, readMs(q.text)));
+  }
+  // the note on show slides up and away, and the next comes in
+  function dismissNote() {
+    if (toast.hidden || !toastQueue.length) return;
+    clearTimeout(toastTimer);
+    toast.classList.add('leaving');
+    clearTimeout(leaving);
+    leaving = setTimeout(() => { toastQueue.shift(); showNext(); }, 200);
   }
   let onNote = null;
   // v0.17c: the coin counter counts up to a sale's total over about 0.8 s, with a "+N" that floats
@@ -327,6 +332,8 @@ export function createHud(root = document) {
     // main.js: the note opened, changed or closed (the play area's top moves under it)
     set onNote(fn) { onNote = fn; },
     get noteFolded() { return folded; },
+    // v0.31: close the note on show (its ×)
+    dismissNote() { dismissNote(); },
     triggerDiy() { if (!diy.hidden && !buildbar.hidden) diyHandler?.(); },
     // v0.12: the Yard Sale button, shown while the table is full
     // v0.14 (captain: "yard sale button should also go yellow"): like the DIY button, flower

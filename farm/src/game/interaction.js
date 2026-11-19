@@ -275,9 +275,12 @@ export function createInteraction({ getLedger, commit, timing = TIMING }) {
       // (v0.23: at the table that has room, and only what that table still holds)
       // (v0.30: the crate stands beside the tables all the time again; walking past it while the
       // tables have room sets her crops out on them, as the tables themselves do)
-      const byCrate = !atFillTable(l, ctx.hero, ctx.targets) && atCrate(ctx.hero, ctx.targets);
-      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && (atFillTable(l, ctx.hero, ctx.targets) || byCrate)) {
-        const res = commit({ t: 'stock', max: byCrate ? tableRoom(l) : fillRoom(l) });
+      // (v0.31, Tiffany's "Edits #5": "She should be able to drop off crops by standing right next to
+      // any table": at any table, or the crate, her crops go out onto whatever room the tables have;
+      // v0.23-v0.30 only the table that had room took them)
+      const atStand = atTable(ctx.hero, ctx.targets) || atCrate(ctx.hero, ctx.targets);
+      if (!ctx.tableBusy && hasCrops(l) && tableAvailable(l) && !tableFull(l) && atStand) {
+        const res = commit({ t: 'stock', max: tableRoom(l) });
         events.push({ type: 'stock', result: res });
         l = getLedger();
       }

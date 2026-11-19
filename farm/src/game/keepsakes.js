@@ -11,15 +11,52 @@
 // the thing itself, with no ring and no yellow glint, and its prints show no year. Three of them
 // moved a step, clear of the song spots (the CD, the novel, the Peep farmer).
 
-// id -> what it is, the credits prints it shows (gift ids), where it lies (drawing u, v), and the
-// hint once every song but the last is found (v0.27: the last one waits for the keepsakes)
+// v0.31 (Tiffany's "Edits #5": "Don't include #17 in the keepsakes, just the slideshow"; "Don't
+// write days or anything other than the titles I give you for the keepsakes and slideshow. Here are
+// the numbers that refer to the order I would like them to appear. Don't show the numbers in the
+// captions"; with Tiffany: "all should be keepsakes except number 17 the invitation to the party";
+// "the ceiling photo can go with the poster"): every item of her numbered list but #17, in her
+// order: 24 keepsakes. Each is the thing itself on the grass (props.js keepsake), its card shows
+// her photos of it (`gifts`: the slideshow's photos, assets/credits/credits.json) under her title
+// alone. Five keep the ids of v0.17c-v0.30's keepsakes (jello, novel, ornament, peep, cd), so a farm
+// that found them keeps them found. `n` is her number (never shown). `u`, `v`: where it lies, spread
+// over the farm and the grass round it (she can run anywhere now), clear of the song circles, the
+// crops, the stations and the weeds on the grass (test/v031-world.test.mjs).
+// `title` is her title; #6.5's photo caption leaves out the family name (the public site shows no
+// surname: TITLE_SHOWN).
+const K = (n, title, label, gifts, u, v, hint) => ({ n, title, label, gifts, u, v, hint });
+const ph = (...k) => k.map((i) => `photo-${String(i).padStart(2, '0')}`);
 export const KEEPSAKES = {
-  jello: { label: 'the jello', gifts: ['gift-03', 'gift-05'], u: 84, v: 63, hint: 'Something red and wobbly by the sunflowers.' },
-  ornament: { label: 'the ornament', gifts: ['gift-30'], u: 20, v: 67.5, hint: 'Something hangs about under the tree.' },
-  cd: { label: 'the CD', gifts: ['gift-42', 'gift-43'], u: 41, v: 79.1, hint: 'A soundtrack lies out in the open grass.' },
-  novel: { label: 'the novel', gifts: ['gift-32'], u: 19.8, v: 85.1, hint: 'Somebody left a bestseller by the bench.' },
-  peep: { label: 'the Peep farmer', gifts: ['gift-40'], u: 60.6, v: 73.2, hint: 'A tiny farmer hides behind the raised bed.' },
+  masterpiece: K('1', 'The Masterpiece', 'the masterpiece', ph(1), 45, 81.5, 'Something lies in the open grass below the path.'),
+  card: K('2', 'The Greeting Card', 'the greeting card', ph(2), 102, 57.5, 'Something lies out past the right edge of the corn.'),
+  flyer: K('3', 'The Moms Night Out Flyer', 'the flyer', ph(3), -3, 56, 'Something lies out past the far left edge, behind the tree.'),
+  book: K('4', 'The Children’s Picture Book', 'the picture book', ph(4), 66, 56, 'Something lies between the yard-sale tables and the corn.'),
+  blanket: K('4.5', 'The Blanket', 'the blanket', ph(5, 6), 102, 92, 'Something lies out past the right edge, below the sunflowers.'),
+  jello: K('5', 'The Jello', 'the jello', ph(7), 19.5, 63.5, 'Something red and wobbly sits under the old tree.'),
+  present: K('6', 'The 3D White Elephant Present', 'the 3D present', ph(8, 9), -3, 95, 'Something lies out past the far left edge, at the front.'),
+  xmascard: K('6.5', 'The Christmas Card', 'the Christmas card', ph(10), 54, 65, 'Something lies just in front of the yard-sale tables.'),
+  tree: K('7', 'The Secret Santa Christmas Tree', 'the Christmas tree', ph(11, 12, 13), 85.5, 59, 'Something stands between the corn and the sunflowers.'),
+  earrings: K('7.5', 'The Earrings', 'the earrings', ph(14), 16.5, 56, 'Something small lies behind the old tree.'),
+  bookmarks: K('8', 'The Bookmarks', 'the bookmarks', ph(15), 69, 74, 'Something lies in the grass above the raised bed.'),
+  backdrop: K('9', 'The Tutor Photo Backdrop', 'the photo backdrop', ph(16), 102, 66.5, 'Something stands out past the right edge, by the sunflowers.'),
+  wrapping: K('10', 'The Wrapping Paper', 'the wrapping paper', ph(17), -1.5, 62, 'Something lies at the far left edge.'),
+  novel: K('11', 'The Full Length “Who Done It” Novel', 'the novel', ph(18, 19), 13.5, 104, 'Somebody left a bestseller out at the very front, on the left.'),
+  ornament: K('12', 'The Car Ornament', 'the car ornament', ph(20), 93, 104, 'Something hangs about out at the very front, on the right.'),
+  puzzle: K('13', 'The Surprise Puzzle Competition', 'the puzzle', ph(21, 22, 23), 97.5, 60.5, 'Something lies at the right edge, past the corn.'),
+  peep: K('13.5', 'The Peeps Diorama', 'the Peeps diorama', ph(24, 25), 76.5, 56, 'A tiny farmer hides at the end of the tables, by the corn.'),
+  shirts: K('14', 'The Twin Day T-Shirts', 'the T-shirts', ph(26, 27), 13.5, 60.5, 'Something lies behind the old tree, on the left.'),
+  yearbook: K('15', 'The Yearbook Background', 'the yearbook', ph(28, 29), 57, 71, 'Something lies below the yard-sale tables.'),
+  cd: K('16', 'The CD', 'the CD', ph(30, 31), 22.5, 59, 'A soundtrack lies by the path, near the old tree.'),
+  party: K('18', 'The Farm Party', 'the farm party', ph(33, 34, 35, 36, 37, 38), 0, 104, 'Something lies out at the very front, far left.'),
+  barbie: K('19', 'The Barbie Clothes', 'the doll clothes', ph(39), 22.5, 56, 'Something lies by the path, behind the tree.'),
+  poster: K('20', 'The Poster', 'the poster', ph(40, 41), 96, 57.5, 'Something lies at the right edge, past the corn.'),
+  game: K('21', 'The Video Game', 'the video game', ph(42), 102, 101, 'Something lies out at the very front, far right.'),
 };
+// what a keepsake's title says on screen: her title, but #6.5 without the family name
+export const TITLE_SHOWN = { xmascard: 'The Christmas Card' };
+export const keepsakeTitle = (id) => TITLE_SHOWN[id] ?? KEEPSAKES[id]?.title ?? '';
+// v0.31: the slideshow's one item that is not a keepsake (#17, the invitation)
+export const SLIDESHOW_ONLY = ['photo-32'];
 export const KEEPSAKE_IDS = Object.keys(KEEPSAKES);
 export const KEEPSAKE_REACH_M = 0.9; // walking this close picks one up
 export const KEEPSAKE_NEAR_M = 4; // within this, it gives a small hop now and then (no glint: v0.22)
@@ -34,10 +71,13 @@ export const visibleKeepsakes = (saved = {}, n = KEEPSAKES_AT_ONCE) => KEEPSAKE_
 // for each song found: the first comes out with the first song, and the next only once another
 // song has been found (so with n songs found, n keepsakes have come out at most). `songsFound`: the
 // number of songs found. (v0.23-v0.29: two at a time from the start, `visibleKeepsakes`.)
-export function keepsakesNow(saved = {}, songsFound = 0) {
+// v0.31: 24 keepsakes and 23 songs, the last of which waits for every keepsake: once every song but
+// the last is found (`allButLast`), the ones still left come out one after another, each as the one
+// before is picked up (without it the last two would never come out).
+export function keepsakesNow(saved = {}, songsFound = 0, allButLast = false) {
   const left = KEEPSAKE_IDS.filter((id) => !saved?.[id]);
   const out = KEEPSAKE_IDS.length - left.length;
-  return left.length && songsFound > out ? [left[0]] : [];
+  return left.length && (songsFound > out || allButLast) ? [left[0]] : [];
 }
 
 // they are out on the farm in the exploring phase only
@@ -49,7 +89,8 @@ export function keepsakeLine(saved = {}) {
   return n >= KEEPSAKE_IDS.length ? `Every keepsake found (${n} of ${n})` : `${n} of ${KEEPSAKE_IDS.length} keepsakes found`;
 }
 // the prints of a keepsake, from the credits content (missing ones are left out)
+// (v0.31: each print shows her title only; the card's own heading is the title too)
 export function keepsakePrints(id, credits) {
   const byId = new Map([...(credits?.gifts ?? []), ...(credits?.keepsakes ?? [])].map((g) => [g.id, g]));
-  return (KEEPSAKES[id]?.gifts ?? []).map((g) => byId.get(g)).filter(Boolean);
+  return (KEEPSAKES[id]?.gifts ?? []).map((g) => byId.get(g)).filter(Boolean).map((g) => ({ ...g, title: keepsakeTitle(id), caption: '' }));
 }

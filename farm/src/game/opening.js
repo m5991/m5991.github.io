@@ -116,7 +116,7 @@ export const OPENING_SKIPPABLE = false;
 export const WELCOME = Object.freeze({
   title: 'You have imagined this house. Let’s make your dreams come true!',
   who: 'You are Vanessa. This farm is your drawing, and you build it yourself, one DIY at a time.',
-  first: 'First, take the rake that leans by the house and clear the weeds from a crop patch. The line at the top always says what comes next.',
+  first: 'First, take the rake that leans where the house will be and clear the weeds from a crop patch. The line at the top always says what comes next.',
   go: 'Let’s go',
 });
 // the welcome is due: a farm nothing has been done on, that has not shown it yet

@@ -44,7 +44,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   function cardHtml(c) {
     if (c.kind === 'title') return `<div class="credits-paper title"><h2>${esc(c.title)}</h2><p class="song">♪ ${esc(c.song)}</p></div>`;
     if (c.kind === 'gift') {
-      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"><figcaption><span class="t">${esc(c.title)}</span>${c.year ? `<span class="y">${c.year}</span>` : ''}${c.of ? `<span class="n" aria-hidden="true">${c.n} / ${c.of}</span>` : ''}${c.caption ? `<q>${esc(c.caption)}</q>` : ''}</figcaption></figure>`;
+      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"><figcaption><span class="t">${esc(c.title)}</span>${c.caption ? `<q>${esc(c.caption)}</q>` : ''}</figcaption></figure>`; // (v0.31, Tiffany: "Don't write days or anything other than the titles ... Don't show the numbers": no year, no count)
     }
     if (c.kind === 'prints') return `<div class="credits-paper prints">${c.items.map((g) => `<img src="${esc(g.image)}" alt="${esc(g.alt)}">`).join('')}</div>`;
     if (c.kind === 'message') return `<div class="credits-paper message"><p class="from">${esc(c.from)}</p><p class="text">${esc(c.text)}</p></div>`;

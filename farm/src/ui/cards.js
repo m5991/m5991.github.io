@@ -24,15 +24,27 @@ export function createCards(dialog, { player = null } = {}) {
   // top corner"): a card with a closing button at its foot (Close, Lovely, Keep this farm) also has
   // a small × in its top corner that does the same. `corner: false`: none (the welcome, whose one
   // button starts the game).
-  const CORNER_X = '<button type="button" class="card-x" data-close aria-label="Close">×</button>';
+  // v0.31 (Tiffany's "Edits #5": "The top x to close the menus is a half circle. Make it an x and
+  // also allow clicking the background to close the menu"): the × was a ring that scrolled away
+  // under the card's title, which stays put, so it showed as half a circle. Now it is a plain drawn
+  // X that rides with the title (it sits in the title's own sticky band), and a tap outside any
+  // card with an × closes it, as the song card has since v0.29.
+  const X_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+  const CORNER_X = `<button type="button" class="card-x" data-close aria-label="Close">${X_SVG}</button>`;
   function open(html, handlers, closeCb, { corner = true } = {}) {
     // a card closed just now whose close event has not fired yet: run its close first, so a card
     // opened straight after one (the songbook after a song) never swallows it
     if (!dialog.open && onClose) { const f = onClose; onClose = null; f(dialog.returnValue); }
-    dialog.classList.remove('tap-out');
+    dialog.classList.remove('tap-out', 'no-x');
     if (corner && !html.includes('class="card-x"') && /data-close/.test(html)) html = CORNER_X + html;
     dialog.classList.toggle('has-x', html.includes('class="card-x"'));
     dialog.innerHTML = html;
+    // (v0.31: the × goes into the title's band, so it is always whole and always there; and a tap
+    // on the dimmed farm round the card closes it)
+    const x = dialog.querySelector('.card-x');
+    const h = dialog.querySelector('h2');
+    if (x && h) h.append(x);
+    if (x) dialog.classList.add('tap-out');
     onClose = closeCb;
     for (const [sel, fn] of Object.entries(handlers)) {
       dialog.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b)));
@@ -50,27 +62,27 @@ export function createCards(dialog, { player = null } = {}) {
   // song. You can download at the end under the extras the songs tab"): the found card has no
   // Listen, no download and no link: the song is already playing, and the card says so with a
   // small moving equaliser. The songbook's rows have Play (the row's seek bar shows while its song
-  // is loaded), Download MP3 and, where the song has a public page, Open in Suno.
+  // is loaded) and Download MP3 (v0.31: and no link to the song's Suno page any more, Tiffany's "Edits #5").
   let unsubs = [];
   // a line of the song's own words; " / " in it is a line break in the song
   const lyricLine = (line) => (line ? `<blockquote class="song-lyric"><span aria-hidden="true">“</span>${esc(line)}<span aria-hidden="true">”</span></blockquote>` : '');
   const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>';
-  function songActions({ src, download, suno, available }) {
+  function songActions({ src, download, available }) {
+    // (v0.31, Tiffany: 'Remove the "open in suno" option': Play and Download only)
     return `<div class="song-actions">
       <button type="button" class="primary" data-act="play" ${available ? '' : 'disabled'} aria-pressed="false"><span class="ic" aria-hidden="true">▶</span> <span class="lbl">Play</span></button>
       ${available ? `<a class="button" data-act="download" href="${esc(src)}" download="${esc(download)}"><span aria-hidden="true">⬇</span> Download MP3</a>` : '<button type="button" disabled>⬇ Download MP3</button>'}
-      ${suno ? `<a class="button" data-act="suno" href="${esc(suno)}" target="_blank" rel="noopener noreferrer">Open in Suno ↗</a>` : ''}
     </div>${available ? '' : '<p class="small song-missing">The song files are not in this build.</p>'}
     <div class="song-seek" hidden><input type="range" min="0" max="1" step="0.5" value="0" aria-label="Where in the song"><span class="song-time small" aria-live="off"></span></div>`;
   }
-  function wirePlay(root, { id, src, title }) {
+  function wirePlay(root, { id, src, title, next = null }) {
     const btn = root.querySelector('[data-act="play"]');
     const seek = root.querySelector('.song-seek');
     const range = seek?.querySelector('input');
     const time = seek?.querySelector('.song-time');
     if (!btn || !player) return;
     let dragging = false;
-    btn.addEventListener('click', () => { if (player.state.id === id) player.toggle(); else player.play({ id, src, title }); });
+    btn.addEventListener('click', () => { if (player.state.id === id) player.toggle(); else player.play({ id, src, title, next }); });
     range.addEventListener('input', () => { dragging = true; time.textContent = `${fmtTime(Number(range.value))} / ${fmtTime(Number(range.max))}`; });
     range.addEventListener('change', () => { dragging = false; player.seek(Number(range.value)); });
     unsubs.push(player.subscribe((st) => {
@@ -98,7 +110,11 @@ export function createCards(dialog, { player = null } = {}) {
     // v0.29: no Lovely: a tap outside the card closes it (a small × in its corner too, for a
     // keyboard or a screen reader; Escape as before); the song plays on until it is stopped
     song(o) {
-      open(`<button type="button" class="card-x" data-close autofocus aria-label="Back to the farm (the song plays on)">×</button><h2 id="card-title">${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden>${EQ} Now playing</p><p>${esc(o.text)}</p><div class="song-actions tap" hidden><button type="button" data-act="tap"><span aria-hidden="true">▶</span> Play it</button></div><p class="small tap-hint">Tap outside this card to go back to the farm. The song plays on.</p>`, {}, o.onClose);
+      // v0.31 (Tiffany's "Edits #5": "When you first click on the Easter egg, that first screen that
+      // comes up should be closed by clicking on the background instead of having an X. The X comes
+      // on the smaller song box that comes 2nd"): no × on this card; a tap outside it (or Escape)
+      // closes it, and the song bar below has the ×
+      open(`<h2 id="card-title" tabindex="-1" autofocus>${esc(o.title)}</h2>${lyricLine(o.lyric)}<p class="song-taste" role="status" hidden>${EQ} Now playing</p><p>${esc(o.text)}</p><div class="song-actions tap" hidden><button type="button" data-act="tap"><span aria-hidden="true">▶</span> Play it</button></div><p class="small tap-hint">Tap outside this card to go back to the farm. The song plays on.</p>`, {}, o.onClose);
       dialog.classList.add('tap-out');
       const taste = dialog.querySelector('.song-taste');
       const tap = dialog.querySelector('.song-actions.tap');
@@ -116,13 +132,15 @@ export function createCards(dialog, { player = null } = {}) {
       // v0.23: every song is listed, found or not; a found one carries a small mark
       const rows = o.songs.map((x) => `<li class="song-row${x.found ? ' found' : ''}" data-id="${esc(x.id)}"><span class="song-title">${esc(x.title)}${x.found ? ' <span class="song-found" title="Found on the farm"><span aria-hidden="true">✓</span><span class="sr-only"> found on the farm</span></span>' : ''}</span>${lyricLine(x.lyric)}${songActions({ ...x, available: o.available })}</li>`).join('');
       open(`<h2 id="card-title">${esc(o.title)}</h2>${o.stamp ? `<p class="stamp" role="img" aria-label="${esc(o.stamp)}">${esc(o.stamp)}</p>` : ''}<p>${esc(o.intro)}</p>${rows ? `<ol class="songbook">${rows}</ol>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>Close</button></div>`, {}, o.onClose);
-      dialog.querySelectorAll('.song-row').forEach((row) => { const x = o.songs.find((y) => y.id === row.dataset.id); wirePlay(row, { id: x.id, src: x.src, title: x.playTitle ?? x.title }); });
+      // (v0.31: each song plays on into the next of the list, and the last into the first)
+      const next = (id) => { const i = o.songs.findIndex((y) => y.id === id); if (i < 0) return null; const y = o.songs[(i + 1) % o.songs.length]; return { id: y.id, src: y.src, title: y.playTitle ?? y.title }; };
+      dialog.querySelectorAll('.song-row').forEach((row) => { const x = o.songs.find((y) => y.id === row.dataset.id); wirePlay(row, { id: x.id, src: x.src, title: x.playTitle ?? x.title, next: o.available ? next : null }); });
     },
     // v0.17c a keepsake found, or the list of them: { title, text, prints: [{ image, alt, title, caption }], left, onClose }
     // v0.22 (Tiffany: "Remove the dates on the keepsakes"): a print shows its title and the words
     // on it, never its year
     prints(o) {
-      const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy"><figcaption><span class="t">${esc(g.title)}</span>${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption></figure>`).join('');
+      const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy">${g.title || g.caption ? `<figcaption>${g.title ? `<span class="t">${esc(g.title)}</span>` : ''}${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption>` : ''}</figure>`).join('');
       open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
     },
     // a picture and a link that saves it ({ title, text, src, alt, download, save, onClose }).

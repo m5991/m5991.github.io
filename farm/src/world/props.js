@@ -677,8 +677,134 @@ export function keepsake(kind) {
     const o = mesh(overalls, PAL.denim); o.material = o.material.clone(); o.material.side = THREE.DoubleSide;
     g.add(at(o, 0, 0.08, 0));
     for (const sd of [-1, 1]) g.add(at(mesh(box(0.012, 0.09, 0.01), PAL.denim, { ink: false }), sd * 0.035, 0.16, 0.075)); // the straps
+  } else {
+    keepsake31(g, kind);
   }
   return g;
+}
+
+// v0.31 (Tiffany's "Edits #5": every item of her numbered list but the invitation is a keepsake, each
+// "lying on the farm as the thing itself"): the nineteen that are new. Small, about 0.2-0.4 m before
+// KEEPSAKE_SIZE, readable from the play camera. Where the thing carries Vanessa's drawing (a card, a
+// flyer, a book, the blanket, the backdrop, a T-shirt, the poster) that face is the drawing itself:
+// a plane marked `drawingFace` that the world gives the drawing's picture (world.js buildKeepsakes).
+const face = (w, h) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  m.userData.drawingFace = true; m.userData.noOutline = true;
+  return m;
+};
+const flat = (o, y = 0.004) => { o.rotation.x = -Math.PI / 2; o.position.y = y; return o; };
+function keepsake31(g, kind) {
+  const paper = 0xfbf7ee;
+  if (kind === 'masterpiece') { // #1: the drawing in a wooden frame, leaning back on its stand
+    const f = new THREE.Group();
+    f.add(mesh(box(0.34, 0.27, 0.025), PAL.wood));
+    f.add(at(face(0.3, 0.23), 0, 0, 0.014));
+    f.add(at(mesh(box(0.025, 0.2, 0.02), PAL.woodLight), 0, -0.06, -0.09, 0.6, 0, 0)); // the stand behind it
+    f.position.set(0, 0.15, 0); f.rotation.x = -0.25;
+    g.add(f);
+  } else if (kind === 'card') { // #2: a folded greeting card standing open, the drawing on its front
+    const front = new THREE.Group(); front.add(mesh(box(0.2, 0.15, 0.006), paper)); front.add(at(face(0.18, 0.13), 0, 0, 0.004));
+    front.position.set(0.05, 0.075, 0.03); front.rotation.y = 0.5; g.add(front);
+    g.add(at(mesh(box(0.2, 0.15, 0.006), paper), -0.05, 0.075, -0.04, 0, -0.5, 0));
+  } else if (kind === 'flyer') { // #3: a sheet flat on the grass, its navy heading over the drawing
+    g.add(flat(mesh(box(0.26, 0.34, 0.004), paper), 0.003));
+    { const f = flat(face(0.22, 0.17), 0.007); f.position.z = 0.04; g.add(f); }
+    g.add(at(mesh(box(0.18, 0.004, 0.035), PAL.ink, { ink: false, shadow: false }), 0, 0.007, -0.13));
+    g.add(at(mesh(box(0.12, 0.004, 0.015), PAL.ink, { ink: false, shadow: false }), 0, 0.007, 0.13));
+  } else if (kind === 'book') { // #4: a square picture book, the drawing on its cover
+    g.add(at(mesh(box(0.26, 0.04, 0.26), 0xe9dcc0), 0, 0.02, 0, 0, 0.3, 0));
+    g.add(at(mesh(box(0.25, 0.034, 0.25), paper, { ink: false }), 0.006, 0.02, 0, 0, 0.3, 0));
+    const c = flat(face(0.22, 0.18), 0.041); c.rotation.z = 0.3; c.position.x = 0; g.add(c);
+  } else if (kind === 'blanket') { // #4.5: the fleece folded in a soft stack, the drawing on top
+    for (let i = 0; i < 3; i++) { const fold = new THREE.BoxGeometry(0.34, 0.04, 0.26, 2, 1, 2); g.add(at(mesh(fold, 0xf7f4ee), 0, 0.022 + i * 0.042, 0, 0, i * 0.04, 0)); }
+    g.add(flat(face(0.28, 0.21), 0.13));
+  } else if (kind === 'present') { // #6: the 3D painting: a green canvas with paper sunflowers and a little crate
+    const c = new THREE.Group();
+    c.add(mesh(box(0.34, 0.26, 0.03), 0x6dbb4a));
+    c.add(at(mesh(box(0.34, 0.08, 0.032), 0xd8e05a, { ink: false }), 0, -0.07, 0.002));
+    for (const [x, y] of [[0.08, 0.06], [0.12, 0.09], [0.04, 0.1]]) { c.add(at(mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 10), PAL.flower), x, y, 0.025, Math.PI / 2, 0, 0)); c.add(at(mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.014, 8), PAL.hair, { ink: false }), x, y, 0.032, Math.PI / 2, 0, 0)); }
+    c.add(at(mesh(box(0.08, 0.05, 0.05), PAL.wood), -0.09, -0.07, 0.04)); // the crate of vegetables
+    c.add(at(mesh(new THREE.SphereGeometry(0.018, 8, 6), 0x9c2a46), -0.11, -0.04, 0.05));
+    c.position.set(0, 0.14, 0); c.rotation.x = -0.22; g.add(c);
+  } else if (kind === 'xmascard') { // #6.5: a Christmas card standing, its red border round the snowy farm
+    const c = new THREE.Group();
+    c.add(mesh(box(0.28, 0.2, 0.006), PAL.red));
+    c.add(at(mesh(box(0.25, 0.17, 0.004), 0xffffff, { ink: false }), 0, 0, 0.004));
+    c.add(at(face(0.12, 0.1), -0.055, 0.02, 0.007));
+    for (const x of [0.03, 0.07, 0.1]) c.add(at(mesh(new THREE.ConeGeometry(0.018, 0.05, 6), 0x2f6b46, { ink: false }), x, -0.05, 0.01));
+    c.position.set(0, 0.1, 0); c.rotation.x = -0.18; g.add(c);
+  } else if (kind === 'tree') { // #7: a little Christmas tree, sunflowers on it and a farmer on top
+    g.add(at(mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.05, 8), PAL.bark), 0, 0.025, 0));
+    for (const [y, r] of [[0.09, 0.13], [0.17, 0.1], [0.24, 0.07]]) g.add(at(mesh(new THREE.ConeGeometry(r, 0.12, 9), 0x2f7a3e), 0, y, 0));
+    for (const [x, y, z] of [[0.07, 0.1, 0.07], [-0.06, 0.16, 0.06], [0.04, 0.2, -0.05], [-0.08, 0.08, -0.05]]) g.add(at(mesh(new THREE.SphereGeometry(0.018, 8, 6), PAL.flower, { ink: false }), x, y, z));
+    g.add(at(mesh(box(0.03, 0.05, 0.02), PAL.denim), 0, 0.33, 0)); g.add(at(mesh(new THREE.SphereGeometry(0.014, 8, 6), PAL.skin, { ink: false }), 0, 0.37, 0));
+  } else if (kind === 'earrings') { // #7.5: two clear square charms on their hooks, the drawing on each
+    for (const sd of [-1, 1]) {
+      const e = new THREE.Group();
+      const sq = mesh(box(0.09, 0.09, 0.008), 0xeaf2f6); sq.material = sq.material.clone(); sq.material.transparent = true; sq.material.opacity = 0.8;
+      e.add(sq); e.add(at(face(0.07, 0.07), 0, 0, 0.005));
+      e.add(at(mesh(new THREE.TorusGeometry(0.03, 0.004, 5, 12, Math.PI * 1.3), 0xc9c9c9, { ink: false }), 0, 0.07, 0));
+      e.position.set(sd * 0.07, 0.1, 0); e.rotation.set(-0.3, sd * 0.3, 0); g.add(e);
+    }
+  } else if (kind === 'bookmarks') { // #8: three wooden bookmarks fanned on the grass, each with its tassel
+    for (const [i, ry] of [[0, -0.35], [1, 0], [2, 0.35]]) {
+      const b = new THREE.Group(); b.add(mesh(box(0.06, 0.008, 0.3), 0xe6cf9f)); { const f = flat(face(0.045, 0.12), 0.005); f.position.z = 0.06; b.add(f); }
+      b.add(at(mesh(box(0.008, 0.004, 0.06), [PAL.red, 0xe46aa5, PAL.leaf][i], { ink: false }), 0, 0, -0.18));
+      b.position.set(0, 0.006 + i * 0.009, 0); b.rotation.y = ry; g.add(b);
+    }
+  } else if (kind === 'backdrop') { // #9: the huge sheet of the drawing on its two poles, here small
+    for (const sd of [-1, 1]) g.add(at(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.36, 6), PAL.charcoal), sd * 0.19, 0.18, 0));
+    g.add(at(mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.4, 6), PAL.charcoal), 0, 0.35, 0, 0, 0, Math.PI / 2));
+    g.add(at(mesh(box(0.36, 0.26, 0.004), paper), 0, 0.21, 0)); g.add(at(face(0.34, 0.24), 0, 0.21, 0.004));
+  } else if (kind === 'wrapping') { // #10: a roll of the drawing's wrapping paper, a length unrolled
+    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 18), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    roll.userData.drawingFace = true; roll.userData.noOutline = true; roll.rotation.z = Math.PI / 2; roll.position.y = 0.05; g.add(roll);
+    g.add(at(mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.34, 18, 1, true), 0xffffff, { ink: true }), 0, 0.05, 0, 0, 0, Math.PI / 2));
+    g.children.at(-1).material = g.children.at(-1).material.clone(); g.children.at(-1).material.visible = false; // (its ink hull only)
+    { const f = flat(face(0.34, 0.2), 0.003); f.position.z = 0.15; g.add(f); }
+    g.add(at(mesh(box(0.36, 0.006, 0.006), PAL.red, { ink: false }), 0, 0.1, 0.0)); // a ribbon round it
+  } else if (kind === 'puzzle') { // #13: the puzzle's box, a farm at sunset on its lid, and loose pieces
+    g.add(at(mesh(box(0.3, 0.05, 0.22), 0xf2efe8), 0, 0.025, 0, 0, -0.2, 0));
+    g.add(at(mesh(box(0.27, 0.004, 0.13), 0xf09a3e, { ink: false }), 0, 0.052, -0.02, 0, -0.2, 0));
+    g.add(at(mesh(box(0.27, 0.004, 0.06), 0x6f8a3c, { ink: false }), 0.01, 0.052, 0.07, 0, -0.2, 0));
+    g.add(at(mesh(box(0.04, 0.03, 0.035), 0xfbf7ee, { ink: false }), -0.04, 0.066, 0.02, 0, -0.2, 0)); // the little white house
+    g.add(at(mesh(new THREE.ConeGeometry(0.03, 0.025, 4), PAL.red, { ink: false }), -0.04, 0.093, 0.02, 0, Math.PI / 4 - 0.2, 0));
+    for (const [x, z, c, r] of [[0.2, 0.08, 0xf09a3e, 0.4], [0.17, -0.13, 0x6f8a3c, -0.7], [-0.2, 0.12, 0xe2b04a, 1.1]]) g.add(at(mesh(box(0.05, 0.01, 0.05), c), x, 0.005, z, 0, r, 0));
+  } else if (kind === 'shirts') { // #14: a folded white T-shirt with the drawing printed on its front
+    g.add(at(mesh(box(0.3, 0.05, 0.26), 0xffffff), 0, 0.025, 0));
+    g.add(at(mesh(box(0.14, 0.05, 0.05), 0xffffff), 0, 0.03, -0.14)); // the folded sleeves and collar
+    g.add(flat(face(0.2, 0.15), 0.052));
+  } else if (kind === 'yearbook') { // #15: a thick yearbook, blue, the drawing on its cover
+    g.add(at(mesh(box(0.24, 0.06, 0.3), 0x3d5f9a), 0, 0.03, 0, 0, 0.25, 0));
+    g.add(at(mesh(box(0.23, 0.05, 0.29), paper, { ink: false }), 0.006, 0.03, 0, 0, 0.25, 0));
+    const c = flat(face(0.18, 0.14), 0.061); c.rotation.z = 0.25; g.add(c);
+  } else if (kind === 'party') { // #18: a giant paper sunflower with two party balloons tied to it
+    g.add(at(mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 6), PAL.leaf), 0, 0.18, 0));
+    g.add(at(mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 14), PAL.flower), 0, 0.38, 0.01, Math.PI / 2 - 0.2, 0, 0));
+    g.add(at(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.025, 12), PAL.hair, { ink: false }), 0, 0.38, 0.02, Math.PI / 2 - 0.2, 0, 0));
+    for (const [x, c] of [[-0.12, PAL.red], [0.12, 0x3f9bd8]]) {
+      const b = new THREE.SphereGeometry(0.06, 14, 10); b.scale(1, 1.2, 1);
+      g.add(at(mesh(b, c), x, 0.46, -0.02));
+      g.add(at(mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.22, 4), PAL.ink, { ink: false, shadow: false }), x * 0.5, 0.29, -0.01, 0, 0, x > 0 ? -0.5 : 0.5));
+    }
+  } else if (kind === 'barbie') { // #19: tiny denim overalls in their pack, with a little shovel
+    g.add(at(mesh(box(0.2, 0.3, 0.02), 0x86c3d8), 0, 0.15, 0, -0.25, 0, 0));
+    const o = new THREE.Group();
+    o.add(mesh(box(0.09, 0.08, 0.015), PAL.denim));
+    for (const sd of [-1, 1]) { o.add(at(mesh(box(0.04, 0.09, 0.015), PAL.denim), sd * 0.025, -0.08, 0)); o.add(at(mesh(box(0.012, 0.05, 0.012), PAL.denim, { ink: false }), sd * 0.03, 0.06, 0)); }
+    o.position.set(-0.02, 0.17, 0.02); o.rotation.x = -0.25; g.add(o);
+    g.add(at(mesh(box(0.01, 0.1, 0.01), PAL.tool, { ink: false }), 0.06, 0.15, 0.03, -0.25, 0, 0.3));
+  } else if (kind === 'poster') { // #20: a poster of the drawing, part unrolled, its end still curled
+    g.add(flat(mesh(box(0.36, 0.26, 0.004), paper), 0.003));
+    g.add(flat(face(0.34, 0.24), 0.007));
+    g.add(at(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.36, 14), paper), 0, 0.035, -0.15, 0, 0, Math.PI / 2));
+  } else if (kind === 'game') { // #21: a phone, the farm game on its screen
+    g.add(at(mesh(box(0.16, 0.016, 0.3), PAL.charcoal), 0, 0.008, 0, 0, 0.35, 0));
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.27), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    scr.userData.photoFace = 'assets/credits/photos/photo-42.jpg'; scr.userData.noOutline = true;
+    scr.rotation.set(-Math.PI / 2, 0, 0.35); scr.position.y = 0.017; g.add(scr);
+  }
 }
 
 // v0.22 the crumpled sketch of "Don't You Worry" ("why you throwin' all your sketches away?"): a

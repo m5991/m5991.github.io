@@ -136,11 +136,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #toast { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: var(--note-top, 30%); display: flex; align-items: flex-start; gap: 6px; min-height: 0; min-width: 0; margin: 0; padding: 5px 2px 6px 10px; background: rgba(255, 247, 229, 0.95); color: var(--ink); border: 0; border-bottom: 1.5px solid var(--ink); border-radius: 0; box-shadow: none; font-size: 15px; line-height: 1.3; font-weight: 400; text-align: left; pointer-events: auto; cursor: pointer; animation: note-in 0.2s ease-out; transition: opacity 0.2s ease-out, transform 0.2s ease-out; }
 #toast[hidden] { display: none; }
 #toast.leaving { opacity: 0; transform: translateY(-10px); }
-#toast .text { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-#toast.folded .text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#toast .fold { flex: none; width: 22px; height: 20px; display: grid; place-items: center; }
-#toast .fold svg { width: 14px; height: 14px; transition: transform 0.15s ease-out; }
-#toast.folded .fold svg { transform: rotate(180deg); }
+/* v0.31 (Tiffany: "show the whole text ... change it to an X"): every word shows; the × closes it */
+#toast .text { flex: 1; min-width: 0; display: block; overflow-wrap: anywhere; }
+#toast .fold { flex: none; width: 28px; height: 24px; display: grid; place-items: center; }
+#toast .fold svg { width: 14px; height: 14px; }
 @keyframes note-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes note-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #toast { animation: note-fade 0.15s linear; transition: opacity 0.15s linear; } #toast.leaving { transform: none; } }
@@ -398,6 +397,9 @@ body.credits #evening, body.backdrop #evening, body.finale #evening, body.openin
 /* ---------- v0.17b the song player bar: above the controls, while a found song plays ---------- */
 #now-playing { position: fixed; left: var(--edge); bottom: calc(var(--edge-b) + 104px); z-index: 4; display: flex; align-items: center; gap: 8px; width: min(360px, calc(100vw - var(--edge) - var(--edge-r))); padding: 6px 8px; background: rgba(255, 253, 247, 0.96); color: var(--ink); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
 #now-playing[hidden] { display: none; }
+/* v0.31 (Tiffany's "Edits #5": "Never have any words pop up behind the song rectangle"): while the
+   song's bar is up, the status pill and the coach's tip stand above it, not under it */
+body.song-bar #progress, body.song-bar #coach-tip { bottom: calc(var(--edge-b) + 104px + var(--np-h, 64px) + 10px); }
 #now-playing button { min-width: 44px; min-height: 44px; padding: 0; border-radius: 12px; font-size: 18px; }
 #now-playing .np-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
 #now-playing .np-title { grid-column: 1 / -1; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -539,11 +541,14 @@ dl.credits-list dd { margin: 0; }
    an action's button is the red of its circle on the ground */
 #context.act { background: #d33a2c; border-color: var(--ink); color: #fffdf7; box-shadow: 0 4px 0 var(--ink); }
 /* "Instead of a button that says back to the farm, just have a black X in the top left" */
-.x-close, .screen button.x-close { position: fixed; left: var(--edge); top: var(--edge-t); width: 52px; height: 52px; min-width: 52px; min-height: 52px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--paper); color: #111; border: 2.5px solid #111; border-radius: 50%; box-shadow: 0 3px 0 rgba(17, 17, 17, 0.5); z-index: 2; }
-.x-close svg { width: 26px; height: 26px; display: block; }
-.x-close:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(17, 17, 17, 0.5); }
+/* v0.31 (Tiffany: "The top x to close the menus is a half circle. Make it an x and also allow
+   clicking the background to close the menu"): a plain black X, no ring; a tap on the paper round
+   the menu's buttons closes it too (main.js) */
+.x-close, .screen button.x-close { position: fixed; left: var(--edge); top: var(--edge-t); width: 52px; height: 52px; min-width: 52px; min-height: 52px; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; color: #111; border: 0; border-radius: 8px; box-shadow: none; z-index: 2; }
+.x-close svg { width: 30px; height: 30px; display: block; }
+.x-close:active { transform: translateY(2px); }
 body.whole #btn-back.x-close { display: flex; }
-#extras { padding-top: calc(var(--edge-t) + 64px); }
+#extras, #pause { padding-top: calc(var(--edge-t) + 64px); }
 /* the Sound switch in Pause and in Extras */
 .sound-switch { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .sound-switch .state { font-weight: 700; }
@@ -601,11 +606,16 @@ figure.keepsake-print.drawing .gold-stamp { position: absolute; left: 4%; bottom
 
 /* v0.29: the song card closes with a tap outside it; its small × in the corner */
 dialog#card.tap-out { position: fixed; }
+/* v0.31: the song card's title takes the focus (it has no ×): no focus box drawn round it */
+dialog#card h2[tabindex="-1"]:focus { outline: none; }
 dialog#card.has-x #card-title { padding-right: 40px; } /* (v0.30: clear of the corner ×) */
 /* (v0.30: the × over the card, on paper, and the crop's sprig of a themed card beside it, not on it) */
 html:is([data-theme="corn"], [data-theme="sunflower"], [data-theme="tomato"]) dialog#card.has-x h2::after { right: 34px; }
-dialog#card .card-x { position: absolute; top: 6px; right: 8px; width: 40px; height: 40px; min-height: 0; padding: 0; font-size: 26px; line-height: 1; border-radius: 50%; background: transparent; border: 2px solid var(--ink); }
-dialog#card .card-x { z-index: 2; min-width: 40px; background: var(--paper); } /* (v0.30: over the themed card's sprig, round) */
+/* v0.31 (Tiffany: "The top x to close the menus is a half circle. Make it an x"): a plain drawn X in
+   the title's band (which stays at the top while the card scrolls), no ring */
+dialog#card h2 .card-x { position: absolute; top: 0; right: -8px; width: 44px; height: 44px; min-width: 44px; min-height: 0; padding: 0; display: grid; place-items: center; color: var(--ink); background: var(--paper); border: 0; border-radius: 8px; box-shadow: none; z-index: 2; }
+dialog#card h2 .card-x svg { width: 24px; height: 24px; display: block; }
+dialog#card h2 .card-x:active { transform: translateY(1px); }
 dialog#card.tap-out h2 { padding-right: 40px; }
 dialog#card .tap-hint { opacity: 0.75; margin-bottom: 0; }
 

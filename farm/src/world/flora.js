@@ -421,7 +421,9 @@ export function bedPlants() {
     plant.position.set(x, SOIL_Y, z);
     tomatoes.add(plant);
   }
-  const who = whoKnows(); who.position.set(0.1, 0, -0.02);
+  // v0.31 (Tiffany's "Edits #5": "Make The Who knows plant larger and a little to the left"): half
+  // as big again (world.js WHO_KNOWS_SCALE keeps it so while it sways), and 0.15 m to the left
+  const who = whoKnows(); who.position.set(-0.05, 0, -0.02); who.scale.setScalar(1.5);
   g.add(greens, tomatoes, who);
   return g;
 }

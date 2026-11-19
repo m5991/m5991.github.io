@@ -52,7 +52,7 @@
   </header>
   <div id="progress" role="status" hidden></div>
   <!-- v0.13: the lesson note, pinned to the top edge under the HUD; a tap folds it to one line -->
-  <button id="toast" type="button" aria-expanded="true" hidden><span class="text" aria-live="polite"></span><span class="fold" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 10.5l4-4 4 4" fill="none" stroke="#253347" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+  <button id="toast" type="button" aria-label="Close the note" hidden><span class="text" aria-live="polite"></span><span class="fold" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="#253347" stroke-width="2" stroke-linecap="round"/></svg></span></button>
   <!-- v0.13 DIY hint: a sparkle over the part, 10 s after she has everything for it -->
   <div id="diy-sparkle" class="coach" aria-hidden="true"><svg viewBox="0 0 60 60"><g class="twinkle" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M30 7c1.2 9 3.4 17.6 4.6 22.4C39.6 30.8 46 31.6 53 30c-7 1.4-13.6 2.6-18.4 3.6C33 39.4 31.4 46 30.2 53c-1.4-7-3-13.6-4.6-19.4C20.4 32.4 14 31.4 7 30.4c7-1.2 13.4-2.2 18.6-3.4C27 21 28.6 14.4 30 7z" fill="#e6b83e" stroke="#253347" stroke-width="1.7"/><path d="M28.6 22.5c.5 2.6 1 5 1.5 7.1" stroke="#c08a2c" stroke-width="1.2"/></g></svg></div>
 
@@ -131,6 +131,8 @@
        options"): Pause is the word and the way back, nothing else -->
   <section id="pause" class="screen" aria-labelledby="pause-h" hidden>
     <h2 id="pause-h">Paused</h2>
+    <!-- v0.31: an X to close it, as Extras has, and a tap on the paper round the buttons -->
+    <button id="btn-pause-back" type="button" class="x-close" aria-label="Close Pause: back to the farm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
     <button id="btn-resume" type="button" class="primary">Resume</button>
     <!-- v0.23: with no Sound button on the screen, its switch is here (and in Extras, with the volumes) -->
     <!-- v0.24 (the captain: "were sound effects removed? ... can we add them to the pause menu?
