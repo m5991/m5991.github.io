@@ -209,6 +209,12 @@ export const COSTS_V031 = {
   H2: [86, 5, 3], H5: [90, 6, 2], H3: [94, 7, 0], H4: [96, 0, 5], C0: [10, 0, 0], S0: [10, 0, 0], C1: [12, 0, 0], S1: [12, 0, 0],
 };
 for (const [id, [coins, W, R]] of Object.entries(COSTS_V031)) Object.assign(STAGES[id], { coins, W, R });
+// v0.32 (Tiffany's "Edits #6": "get her to carry wood AND stones to the pile ... BEFORE it allows for
+// the First DIY"; "Have her build the 3rd crop sooner in the game"): the raised bed, the first DIY,
+// takes stone as well as wood (3 wood and 2 stone; it took 4 wood), and the third crop patch, which
+// now comes right after it, costs what the first sale leaves after the bed (2 coins; it cost 10)
+export const COSTS_V032 = { T0: [10, 3, 2], S0: [2, 0, 0] };
+for (const [id, [coins, W, R]] of Object.entries(COSTS_V032)) Object.assign(STAGES[id], { coins, W, R });
 // v0.23: Tiffany's DIY order, exactly: the ten things Vanessa hammers up, first to last
 export const DIY_ORDER = ['T0', 'H1', 'G1', 'G3', 'G4', 'G2', 'H2', 'H5', 'H3', 'H4'];
 // Reserved for optional stages; the phone playtest removed the second archer.
@@ -384,7 +390,9 @@ export const WISH = { every: 3, n: 2, tip: 1, crops: ['T', 'C', 'S'] };
 // v0.31 (Tiffany's "Edits #5": "Weeds need to start growing and chocking out plants again"; "Weeds
 // need to grow back faster"): a weed creeps over a crop 40 s after the last one was raked (75 s),
 // and chokes its plant 60 s after it came (90 s); its warnings come at 10 s and 25 s
-export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 40000, warnMs: 10000, growMs: 25000, wiltMs: 60000 };
+// v0.32 (Tiffany's "Edits #6": "Bring back ... weeds that keep growing back and Choking out plants"):
+// one creeps over a crop 30 s after the last (40 s), on a plant on her screen where there is one
+export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 30000, warnMs: 10000, growMs: 25000, wiltMs: 60000 };
 // a regrowth weed's id: `wr-` and the crop node it covers
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
@@ -410,15 +418,20 @@ export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null ||
 // tug at the crop) before it takes off, so there is time to see it and wave. It leaves slowly
 // enough to watch (`leaveMs`).
 // v0.31: up to ten thefts on a farm (five), still two at most in any two minutes
+// v0.32 (Tiffany's "Edits #6": "Bring back the birds steeling crops (animation of them flying with the
+// crop away)"): a visit every 12 s at most (16 s), three thefts in any two minutes (two), fourteen a
+// farm (ten), always on her screen (birds.js)
 export const BIRDS = {
-  everyMs: 16000, firstMs: 8000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3600, leaveMs: 2200,
-  windowMs: 120000, windowMax: 2, totalMax: 10,
+  everyMs: 12000, firstMs: 8000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3600, leaveMs: 2200,
+  windowMs: 120000, windowMax: 3, totalMax: 14,
   coverM: 3.5, drawMs: 800, fireMs: 3000, perchMs: 3000, cleanMs: 1800,
 };
 // v0.31 (Tiffany's "Edits #5": "Every once in a while birds steal from the yardsale table"): a bird
 // now and then goes for the crops set out on the tables ('table'), once in every five visits, and
 // plants come up twice as often
-export const BIRD_KINDS = ['node', 'perch', 'table', 'node', 'carried'];
+// v0.32: and now and then one only rests on the roof or in the old tree (Tiffany's "Edits #6")
+export const BIRD_KINDS = ['node', 'roof', 'perch', 'table', 'node', 'treetop', 'carried'];
+export const END_BIRD_KINDS = ['visit', 'roof', 'perch', 'treetop'];
 // v0.23: the birds come from the house foundation on (with the raised bed built first, the second
 // crop plot is there before the first build; they came "from the second crop plot on")
 export const BIRDS_AFTER = 'H1';

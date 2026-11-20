@@ -141,7 +141,7 @@ export function createCards(dialog, { player = null } = {}) {
     // on it, never its year
     prints(o) {
       const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy">${g.title || g.caption ? `<figcaption>${g.title ? `<span class="t">${esc(g.title)}</span>` : ''}${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption>` : ''}</figure>`).join('');
-      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose);
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose, { corner: false }); // (v0.32, Tiffany's "Edits #6": "When the keepsake pictures come up, remove the x in the top right corner": the button at its foot, or a tap outside)
     },
     // a picture and a link that saves it ({ title, text, src, alt, download, save, onClose }).
     // v0.22 "The drawing": Vanessa's own drawing, to download
@@ -150,7 +150,29 @@ export function createCards(dialog, { player = null } = {}) {
     // with that strip to `onShare(img, say)`: `say` puts a word under the buttons.
     // v0.25: `signature` ("The Farm, complete", pencilled in the drawing's corner) and `stamp` (a
     // gold "100%"), once everything on the farm is found
+    // v0.32 (Tiffany's "Edits #6": "on that page where you can download the drawing, remove all of the
+    // other information like 'keepsakes, finished in, songs' etc. The only options at the bottom should
+    // be share and download [and] close. Remove the X at the top right as well"): `plain`: the drawing
+    // signed "by Vanessa" (`byline`), Share, Download (`onDownload`: the signed picture) and Close; no
+    // words, no numbers, no corner ×
     picture(o) {
+      if (o.plain) {
+        open(`<h2 id="card-title">${esc(o.title)}</h2><figure class="keepsake-print drawing signed"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}">${o.byline ? `<span class="by-vanessa">${esc(o.byline)}</span>` : ''}</figure><div class="actions">${o.share ? `<button type="button" class="primary" data-act="share"><span aria-hidden="true">↗</span> ${esc(o.share)}</button>` : ''}<button type="button" data-act="download">⬇ ${esc(o.save ?? 'Download')}</button><button type="button" data-close autofocus>Close</button></div><p class="small share-said" role="status"></p>`, {
+          '[data-act="share"]': async (b) => {
+            const img = dialog.querySelector('figure img'); const said = dialog.querySelector('.share-said');
+            b.disabled = true;
+            try { await o.onShare?.(img, (t) => { said.textContent = t; }); } catch { said.textContent = 'That did not work here. Download the drawing instead.'; }
+            b.disabled = false;
+          },
+          '[data-act="download"]': async (b) => {
+            const img = dialog.querySelector('figure img'); const said = dialog.querySelector('.share-said');
+            b.disabled = true;
+            try { await o.onDownload?.(img, (t) => { said.textContent = t; }); } catch { said.textContent = ''; }
+            b.disabled = false;
+          },
+        }, o.onClose, { corner: false });
+        return;
+      }
       const signed = o.signature ? `<span class="signature">${esc(o.signature)}</span>${o.stamp ? `<span class="gold-stamp" role="img" aria-label="${esc(o.stamp)} complete">${esc(o.stamp)}</span>` : ''}` : '';
       const strip = o.stats?.length ? `<dl class="stats-strip" aria-label="${esc(o.statsText ?? '')}">${o.stats.map(([k, v]) => `<div><dd>${esc(v)}</dd><dt>${esc(k)}</dt></div>`).join('')}</dl>` : '';
       open(`<h2 id="card-title">${esc(o.title)}</h2><p>${esc(o.text)}</p><figure class="keepsake-print drawing${o.signature ? ' complete' : ''}"><img src="${esc(o.src)}" alt="${esc(o.alt ?? '')}">${signed}</figure>${strip}<div class="actions">${o.share ? `<button type="button" class="primary" data-act="share"><span aria-hidden="true">↗</span> ${esc(o.share)}</button>` : ''}<a class="button${o.share ? '' : ' primary'}" href="${esc(o.src)}" download="${esc(o.download)}">⬇ ${esc(o.save ?? 'Save the picture')}</a><button type="button" data-close autofocus>Close</button></div><p class="small share-said" role="status"></p>`, {

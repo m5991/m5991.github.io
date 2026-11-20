@@ -178,7 +178,7 @@ export class Finale {
 
 // the static colliders she walks around: the house, the tree, the bench, the bed, the tables
 // (circles on the ground: x, z, r), never her own body or the ground
-function obstaclesOf(world, hero) {
+export function obstaclesOf(world, hero) {
   const out = [];
   for (const b of world.physics.bodies) {
     if (b === hero.body || b.mass !== 0) continue;

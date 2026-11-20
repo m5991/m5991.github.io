@@ -90,7 +90,8 @@ const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function goalHtml(line) {
   if (!line) return '';
   const ico = line.icon && GOAL_ICONS[line.icon] ? `<span class="g-ico">${GOAL_ICONS[line.icon]}</span>` : '';
-  const needs = (line.needs ?? []).map(([k, n]) => `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>`).join('');
+  // v0.32: every need of the build, the ones she has with the build's number and a tick
+  const needs = (line.needs ?? []).map(([k, n, of = n]) => (n > 0 ? `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>` : `<span class="g-need got">${ICONS[k]}<b>${of}</b><i class="tick">✓</i></span>`)).join('');
   // v0.23: at DIY time the label is the word itself, set as a tag ("DIY"), and the place follows
   const tail = line.tail ? `<span class="g-tail${line.hot ? ' place' : ''}">${esc(line.tail)}</span>` : '';
   return `${ico}<span class="g-label${line.hot ? ' tag' : ''}">${esc(line.label)}</span>${needs}${tail}`;
@@ -163,6 +164,7 @@ export function createHud(root = document) {
   const diy = $('btn-diy');
   const sale = $('btn-sale');
   let diyHandler = null;
+  let diyHere = false; // v0.32: she stands at the build (the button looks the same either way)
   let saleHandler = null;
   let buildKey = '';
   let contextKey = null; // v0.26: what the context button, the Yard Sale button and the race clock
@@ -309,6 +311,7 @@ export function createHud(root = document) {
     // buildBar); `onDiy` runs when its DIY button is pressed (shown only when ready and here)
     setBuild(bar, onDiy = null) {
       diyHandler = onDiy;
+      diyHere = !!bar?.here;
       const key = bar ? JSON.stringify([bar.label, bar.short, bar.ready, bar.here, bar.verb]) : '';
       if (key === buildKey) return;
       buildKey = key;
@@ -320,14 +323,17 @@ export function createHud(root = document) {
       const button = bar.ready;
       diy.hidden = !button;
       buildbar.hidden = !button;
-      diy.classList.toggle('away', bar.ready && !bar.here);
+      // v0.32 (Tiffany's "Edits #6": "When she is able to DIY something, let the button you click on be
+      // yellow"; "just hit the button and she runs over there to build it"): the button is yellow
+      // wherever she stands (main.js runs her to the spot); v0.13-v0.31 turned it paper away from it
+      diy.classList.remove('away');
       if (!button) return;
       diy.querySelector('.verb').textContent = bar.verb === 'DIY' ? 'DIY!' : bar.verb;
-      diy.querySelector('.what').textContent = bar.here ? bar.label : `${bar.label} · go there`;
-      diy.setAttribute('aria-label', bar.here ? `${bar.verb}: ${bar.label}` : bar.text);
+      diy.querySelector('.what').textContent = bar.label;
+      diy.setAttribute('aria-label', `${bar.verb}: ${bar.label}`);
     },
     get diyShown() { return !diy.hidden && !buildbar.hidden; },
-    get diyHere() { return !diy.hidden && !buildbar.hidden && !diy.classList.contains('away'); },
+    get diyHere() { return !diy.hidden && !buildbar.hidden && !!diyHere; },
     get noteRect() { return toast.hidden ? null : toast.getBoundingClientRect(); },
     // main.js: the note opened, changed or closed (the play area's top moves under it)
     set onNote(fn) { onNote = fn; },

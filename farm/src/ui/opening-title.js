@@ -15,6 +15,9 @@
     text: 'The Farm',
     lines: ['The', 'Farm'], // where the words break when the title stands beside the drawing
     image: null, // e.g. 'assets/title/the-farm.png'
+    // v0.32 (Tiffany's "Edits #6": "In the beginning animation, have it say 'by Vanessa Bailey' in
+    // smaller letters under 'The Farm'"; the captain: "Yes its okay to use her name")
+    byline: 'by Vanessa Bailey',
   };
   var PREFS_KEY = 'vanessas-farm/view';
 
@@ -37,6 +40,13 @@
         el.appendChild(s);
         if (i < TITLE.lines.length - 1) el.appendChild(document.createTextNode(' '));
       });
+    }
+    if (TITLE.byline) {
+      var by = document.createElement('span');
+      by.className = 'byline';
+      by.textContent = TITLE.byline;
+      el.appendChild(by);
+      el.setAttribute('aria-label', TITLE.text + ', ' + TITLE.byline);
     }
   }
 

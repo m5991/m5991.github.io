@@ -16,8 +16,11 @@ export const CREDITS_URL = 'assets/credits/credits.json';
 const AHEAD = 3; // photos loaded ahead of the one on show
 const FADE_MS = 700; // a card fades out under the next one
 
+// v0.32: the weird squiggle plant after "and this" in the story (an inline drawing, as an emoji is drawn)
+export const SQUIGGLE = '<span class="squiggle-plant" role="img" aria-label="a weird squiggly plant"><svg viewBox="0 0 24 32" width="1.3em" height="1.7em" aria-hidden="true"><path d="M7 29c3-1 9-1 11 0" fill="none" stroke="#7a5233" stroke-width="2.4" stroke-linecap="round"/><path d="M12 29c-5-3 5-6 0-9s6-5 0-8 5-6 1-8c-2-1-4 1-3 3" fill="none" stroke="#3f9b3a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17c2-2 5-2 6 0-2 1-4 1-6 0zM11 24c-2-2-5-2-6 0 2 1 4 1 6 0z" fill="#6cbf4a" stroke="#2d6e2a" stroke-width="0.8"/><circle cx="9.5" cy="5" r="0.9" fill="#253347"/></svg></span>';
 export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, onEnd, holdMusic, releaseMusic, photos = () => true }) {
   const card = el.querySelector('.credits-card');
+  const caption = el.querySelector('.credits-caption') ?? document.createElement('div'); // v0.32
   const now = el.querySelector('.credits-lyrics .now');
   const next = el.querySelector('.credits-lyrics .next');
   const live = el.querySelector('.credits-live');
@@ -44,11 +47,18 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   function cardHtml(c) {
     if (c.kind === 'title') return `<div class="credits-paper title"><h2>${esc(c.title)}</h2><p class="song">♪ ${esc(c.song)}</p></div>`;
     if (c.kind === 'gift') {
-      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"><figcaption><span class="t">${esc(c.title)}</span>${c.caption ? `<q>${esc(c.caption)}</q>` : ''}</figcaption></figure>`; // (v0.31, Tiffany: "Don't write days or anything other than the titles ... Don't show the numbers": no year, no count)
+      // (v0.31, Tiffany: "Don't write days or anything other than the titles ... Don't show the numbers": no year, no count)
+      // v0.32 (Tiffany's "Edits #6": "In the slideshow, just have the caption appear in a box at the bottom
+      // not attached to each photo. This is so it doesn't seem as repetitive in captions"): the photo
+      // alone; its title is in one box at the foot of the screen (`.credits-caption`, render), which
+      // stays put while the photos of one title follow each other
+      return `<figure class="credits-print ${c.side}"><span class="tape" aria-hidden="true"></span><img src="${esc(c.image)}" alt="${esc(c.alt)}"></figure>`;
     }
     if (c.kind === 'prints') return `<div class="credits-paper prints">${c.items.map((g) => `<img src="${esc(g.image)}" alt="${esc(g.alt)}">`).join('')}</div>`;
     if (c.kind === 'message') return `<div class="credits-paper message"><p class="from">${esc(c.from)}</p><p class="text">${esc(c.text)}</p></div>`;
-    return `<div class="credits-paper closing" tabindex="0" role="region" aria-label="Closing text; scroll to read"><h2>${esc(c.title)}</h2><p>${esc(c.text)}</p></div>`;
+    // v0.32 (Tiffany's "Edits #6": 'At the end where it tells the story, when it says "and this" after
+    // make an emoji of a weird squiggle plant'): a little drawn Who-Knows plant, green, after "and this"
+    return `<div class="credits-paper closing" tabindex="0" role="region" aria-label="Closing text; scroll to read"><h2>${esc(c.title)}</h2><p>${esc(c.text).replace(/and this([.,])/, `and this ${SQUIGGLE}$1`)}</p></div>`;
   }
   // what a screen reader hears once per card (the lyric lines are not announced one by one)
   function cardSpeech(c) {
@@ -74,6 +84,12 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
         live.textContent = cardSpeech(at.card);
         preload(s.plan, s.plan.cards.indexOf(at.card) + 1);
       }
+      // v0.32: the caption box: the photo's title, changed only when the title does
+      const title = at.card?.kind === 'gift' ? at.card.title ?? '' : '';
+      if (title !== caption.textContent || caption.hidden !== !title) {
+        caption.hidden = !title;
+        if (title && title !== caption.textContent) { caption.textContent = title; caption.classList.remove('in'); void caption.offsetWidth; caption.classList.add('in'); }
+      }
     }
     const key = at.line ? at.line.t : null;
     if (key !== s.lineShown) {
@@ -91,6 +107,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
     s.active = true; s.paused = false; s.t = 0; s.shown = undefined; s.lineShown = undefined;
     el.hidden = false;
     card.innerHTML = '';
+    caption.textContent = ''; caption.hidden = true;
     now.textContent = ''; next.textContent = '';
     pauseBtn.textContent = 'Pause';
     onStart?.();

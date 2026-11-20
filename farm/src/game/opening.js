@@ -19,7 +19,12 @@ export const OPENING = Object.freeze({
   hold: [0, 2 * BAR_MS], // 1. the page holds while the intro begins; the tap mark and Sound fade
   dive: [2 * BAR_MS, 4 * BAR_MS], // 2. the camera sinks until the drawing fills its frame
   handoff: [3.75 * BAR_MS, 4.25 * BAR_MS], // the paper gives way to the live world, drawn the same
-  lift: [4 * BAR_MS, 5 * BAR_MS], // parts not built yet turn into blueprint ghosts; play elements come up
+  // v0.32 (Tiffany's "Edits #6": "then when it fades to the screen where she plays, it doesn't show a
+  // house or anything briefly"): the live world is in its start state (the parts not built yet are
+  // blueprint ghosts, the play elements are up) before the paper gives way to it, so the drawing's
+  // house fades out with the paper and no finished house shows in the world for a moment (v0.10-v0.31
+  // lifted the finished farm into its start state after the handoff, 4 to 5 bars)
+  lift: [2.5 * BAR_MS, 3.5 * BAR_MS], // parts not built yet turn into blueprint ghosts; play elements come up (under the page)
   wash: [4.5 * BAR_MS, 4.5 * BAR_MS + 800], // what is usable from the start takes its colour, rising from the ground
   camera: [4 * BAR_MS, 6 * BAR_MS], // from the drawing framing down to the play camera behind D17
   stepIn: [6 * BAR_MS, 6 * BAR_MS + 500], // 3. Vanessa fills with colour (the 0.5 s wash), into her idle

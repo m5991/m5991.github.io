@@ -26,11 +26,17 @@ import * as THREE from 'three';
 import * as G from './greybox.js';
 import { LOOKS } from '../game/crowd.js';
 import { recolour } from './thief.js';
+import { addOutline } from './greybox.js';
 import { planWalk } from './walk.js';
 
 export const GIVEAWAY = Object.freeze({
-  leadMs: 1800, // she runs in and snatches the drawing; the song starts then
+  leadMs: 1500, // she runs in and snatches the drawing (v0.32: the song starts as she comes, at 0)
   songMs: 135616, // "I gave it to the world" (E01), when the player cannot say
+  // v0.32: she is off the farm by this time into the song: "They made it into earrings" is sung from
+  // 41.0 s (heard with a speech-to-text pass over assets/songs/E01.mp3: the line starts at 41.02 s)
+  earringsMs: 41020,
+  exitMs: 40300,
+  chaseMs: [8000, 16000], // the chase over the whole farm, at the least and at the most
   speed: 5.3, // m/s: the farmer runs
   chase: 4.7, // m/s: Vanessa, never quite as fast
   lagMs: 1150, // how far behind her Vanessa runs
@@ -50,7 +56,7 @@ const rnd = (i) => { const x = Math.sin(i * 91.17 + 7.3) * 43758.5453; return x 
 
 // the lines on screen (ink words over their heads, and Dwight's speech)
 export const GIVEAWAY_WORDS = Object.freeze({
-  snatch: 'Mine!', hey: 'Hey!', tables: 'Copies for everyone!', ooh: ['Ooh!', 'For me?', 'Lovely!', 'Framing it!'],
+  snatch: 'Mine!', hey: 'Hey!', catch: 'Come back here!', paint: 'Bigger!', tables: 'Copies for everyone!', ooh: ['Ooh!', 'For me?', 'Lovely!', 'Framing it!'],
   lunge: ['Got y—', 'Almost!', 'Nope!'], dodge: ['Too slow!', 'Missed me!', 'Wheee!'], birds: 'Tweet!', roof: 'Up here!', down: 'Come down!',
   chimney: 'Special delivery!', door: 'Knock knock!', inside: 'Hello in there!', tree: 'Round and round!', last: 'For you!', bye: 'Bye!',
   dwight: 'Fact: this is the finest drawing ever made. I will be framing it. In a frame.',
@@ -70,6 +76,10 @@ export class Giveaway {
     const m = this.registry.instance('Vanessa');
     m.name = 'GiveawayFarmer';
     recolour(m);
+    // v0.32 (Tiffany's "Edits #6": "Make the blond farmer the same size and weight as Vanessa"): the
+    // same model and size, and now the same ink line round her as Vanessa has (hero.js), which made
+    // Vanessa look the bigger and fuller of the two (v0.29-v0.31: drawn without it)
+    addOutline(m, 0.012);
     m.visible = false;
     m.traverse((o) => { o.userData.noFit = true; });
     this.world.root.add(m);
@@ -143,76 +153,53 @@ export class Giveaway {
       ...row.map((t) => ({ x: t.pos.x, z: t.pos.z, r: 0.75 })),
     ];
     const W = GIVEAWAY_WORDS;
-    const words = (k, i) => W[k][i % W[k].length];
     const steps = [];
     const run = (to, at = []) => steps.push({ kind: 'run', to: to.clone(), at });
     const stand = (ms, o = {}) => steps.push({ kind: 'stand', ms, ...o, at: o.at ?? [] });
-    // 1. the tables: the neighbours come back, and get a copy each
-    run(front(rowMid, 0.9), [[200, () => this.toss(3, { high: 3.5, spread: 2.5 })]]);
-    stand(5200, {
-      anim: 'V_Celebrate', face: 'camera', key: 'tables',
-      at: [[0, () => { this.say(W.tables, this.model.position, 1500); this.buyersIn(); }],
-        [1500, () => this.toss(4, { onto: 'tables' })],
-        ...T.buyerAt.map((_, i) => [2300 + i * 600, () => this.hand(i)])],
-    });
-    // 2. along the front of the corn, copies into the corn; the birds come for some
-    run(T.cornA, [[300, () => this.toss(2, { spread: 1.5 })]]);
-    stand(1400, { anim: 'V_Celebrate', face: T.cornB, at: [[100, () => this.toss(5, { around: T.cornA.clone().add(V3(2, 0, -1.5)), spread: 2.2, high: 3 })], [900, () => this.birdsIn()]] });
-    run(T.cornB, [[600, () => this.toss(3, { spread: 2 })]]);
-    stand(1600, { anim: 'V_Celebrate', face: 'camera', lunge: true, at: [[0, () => this.toss(4, { around: T.cornB.clone().add(V3(0, 0, -1.6)), spread: 2.2 })]] });
-    // 3. up onto the roof by the left wall, copies off the roof and one down the chimney
+    // v0.32 (Tiffany's "Edits #6": "The first part is that she grabs the paper and starts being chased
+    // all over the WHOLE farm, then when she starts spreading the paper copies, going in and out of the
+    // house, handing them to yard sale people (who leave as soon as the get get a picture by the way),
+    // giving one to Dwight, painting a huge version of it, throwing them everywhere throwing some from
+    // the roof, being chased by Vanessa in and out of the house, etc should happen much quicker ... the
+    // entire time she is doing everything Vanessa is chasing her. Make this an animation about 40
+    // seconds long"): about 12 s of chase round the whole farm with the drawing, then the copies,
+    // quickly, one place after another, Vanessa on her heels the whole way; she runs off the farm just
+    // before "They made it into earrings" (GIVEAWAY.exitMs). (v0.31: the whole song, 2 min 16 s.)
+    // 1. the chase over the whole farm, the drawing in her hand (it takes up whatever time is left)
+    const chase = [g(50, 100), g(76, 104), g(96, 92), g(98, 74), g(92, 60), g(70, 59.5), g(52, 62), g(44, 70), g(30, 84), g(12, 92), g(4, 74), g(14, 66), g(40, 58)];
+    steps.push({ kind: 'route', pts: [start.clone(), ...chase], speed: GIVEAWAY.speed, flex: true, key: 'chase', at: [[1500, () => this.say(W.catch, this.vPos, 1300)], [5200, () => { this.lungeAt = this.t; }], [9500, () => { this.lungeAt = this.t; }]] });
+    // 2. in through the front door and out again with an armful of copies
+    run(door.out, [[0, () => { this.armful.visible = true; }]]);
+    steps.push({ kind: 'route', pts: [door.out, door.step, door.inside], speed: 3.6, door: 'in' });
+    steps.push({ kind: 'inside', ms: 1100, at: [[300, () => this.say(W.door, door.out.clone(), 1000)], [600, () => this.windowCopy()]] });
+    steps.push({ kind: 'route', pts: [door.inside, door.step, door.out], speed: 3.8, door: 'out', at: [[200, () => this.toss(5, { spread: 2.5, high: 3 })]] });
+    // 3. the yard-sale tables: the neighbours run up, each gets a copy and is off with it at once
+    run(front(rowMid, 0.9), [[0, () => this.buyersIn()], [300, () => this.toss(3, { spread: 2, high: 3 })]]);
+    stand(2300, { anim: 'V_Celebrate', face: 'camera', key: 'tables', lunge: true,
+      at: [[0, () => this.say(W.tables, this.model.position, 1200)], [200, () => this.toss(4, { onto: 'tables' })], ...T.buyerAt.map((_, i) => [350 + i * 380, () => this.hand(i)])] });
+    // 4. Dwight on his bench gets one
+    run(T.benchFront, [[300, () => this.toss(2, { spread: 1.5 })]]);
+    stand(1500, { anim: 'V_Idle', face: T.bench, key: 'dwight', at: [[100, () => this.giveDwight()], [500, () => this.onSay('dwight', W.dwight)]] });
+    // 5. a huge copy, painted on the grass in a few big strokes
+    const paintAt = g(30, 95);
+    run(paintAt.clone().add(V3(-1.9, 0, 0.6)));
+    stand(2600, { anim: 'V_Celebrate', face: paintAt, key: 'paint', at: [[0, () => { this.paintHuge(paintAt, 2400); this.say(W.paint, this.model.position, 1300); }]] });
+    // 6. up onto the roof by the left wall, copies off the roof and one down the chimney
     run(climb[0]);
-    steps.push({ kind: 'route', pts: climb.slice(1), speed: 2.6, up: true, at: [[200, () => this.say(W.roof, this.model.position, 1400)]] });
-    stand(9500, {
-      anim: 'V_Celebrate', face: 'camera', up: true, key: 'roof',
-      at: [[400, () => this.toss(5, { from: 'here', around: w.objects.D01.position.clone().add(V3(0, 0, 3.4)), spread: 3.4, high: 2.5 })],
-        [2200, () => this.toss(4, { from: 'here', spread: 4.5, high: 3 })],
-        [3600, () => { this.chimneyDrop(); this.say(W.chimney, this.model.position, 1500); }],
-        [5200, () => this.toss(6, { from: 'here', around: w.objects.D01.position.clone(), spread: 5, high: 4 })],
-        [7400, () => this.toss(5, { from: 'here', spread: 5, high: 3.5 })]],
-    });
-    steps.push({ kind: 'route', pts: [...climb.slice(1)].reverse(), speed: 3.2, up: true });
-    // 4. into the house through the door, and out again with more
-    run(door.out, [[0, () => this.toss(2, { spread: 1.2 })]]);
-    steps.push({ kind: 'route', pts: [door.out, door.step, door.inside], speed: 3, door: 'in' });
-    steps.push({ kind: 'inside', ms: 3200, at: [[800, () => this.cue('knock')], [1100, () => this.say(W.door, door.out.clone(), 1300)], [2200, () => this.windowCopy()]] });
-    steps.push({ kind: 'route', pts: [door.inside, door.step, door.out], speed: 3.4, door: 'out', at: [[300, () => this.toss(4, { spread: 2.5, high: 3 })]] });
-    // 4b. once round the house, Vanessa on her heels, copies flying over her shoulder
-    {
-      const hb2 = new THREE.Box3().setFromObject(house);
-      const m = 1.25; const y = 0;
-      const ring = [[hb2.max.x + m, hb2.max.z + m], [hb2.max.x + m, hb2.min.z - m * 0.6], [hb2.min.x - m, hb2.min.z - m * 0.6], [hb2.min.x - m, hb2.max.z + m], [hb2.max.x + m * 0.4, hb2.max.z + m * 1.2]]
-        .map(([x, z]) => V3(x, y, z));
-      steps.push({ kind: 'route', pts: [door.out, ...ring], speed: GIVEAWAY.speed * 0.95, key: 'house',
-        at: [[700, () => this.toss(3, { spread: 2.4, high: 3.2 })], [2600, () => this.toss(3, { spread: 2.4, high: 3.6 })], [4200, () => { this.lungeAt = this.t; }]] });
-    }
-    // 5. Dwight on his bench gets one
-    run(T.benchFront, [[500, () => this.toss(2, { spread: 1.5 })]]);
-    stand(3600, { anim: 'V_Idle', face: T.bench, key: 'dwight', at: [[200, () => this.giveDwight()], [900, () => this.onSay('dwight', W.dwight)]] });
-    // 6. round and round the old tree
-    const lap = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => { const a = (i / 8) * Math.PI * 2 + 2.2; return T.tree.clone().add(V3(Math.cos(a) * 2.15, 0, Math.sin(a) * 1.75)); });
-    steps.push({ kind: 'route', pts: [T.benchFront, ...lap, ...lap.slice(1)], speed: GIVEAWAY.speed * 0.92, key: 'tree', at: [[300, () => this.say(W.tree, this.model.position, 1400)], [1500, () => this.toss(3, { into: 'tree' })], [3200, () => this.toss(3, { into: 'tree' })]] });
-    // 7. the sunflowers and the raised bed
-    run(T.sun.clone().add(V3(-1.4, 0, 1.2)), [[400, () => this.toss(2, { spread: 1.8 })]]);
-    stand(1800, { anim: 'V_Celebrate', face: T.sun, lunge: true, at: [[0, () => this.toss(5, { around: T.sun, spread: 2.2, high: 3.2 })]] });
-    run(T.bed.clone().add(V3(0, 0, 1.5)), [[300, () => this.toss(2, { spread: 1.5 })]]);
-    stand(1800, { anim: 'V_Celebrate', face: 'camera', at: [[0, () => this.toss(5, { around: T.bed, spread: 2.4, high: 3.2 })]] });
-    // 7b. in and out of the corn rows (copies caught on the stalks), then back past the neighbours
-    {
-      const zig = [g(80, 52.5), g(76, 47.5), g(71, 52), g(66, 47), g(61, 52), g(56, 47.5), g(52, 53)];
-      run(zig[0]);
-      steps.push({ kind: 'route', pts: zig, speed: GIVEAWAY.speed * 0.8, key: 'corn',
-        at: [[400, () => this.toss(3, { spread: 1.4, high: 2.6 })], [1800, () => this.toss(3, { spread: 1.6, high: 2.6 })], [3200, () => this.toss(3, { spread: 1.4, high: 2.6 })]] });
-      run(front(rowMid, 0.9));
-      stand(2600, { anim: 'V_Celebrate', face: 'camera', lunge: true, at: [[0, () => this.say(W.tables, this.model.position, 1300)], [200, () => this.toss(5, { onto: 'tables' })], ...T.buyerAt.map((_, i) => [700 + i * 300, () => this.hand(i)])] });
-    }
-    // 8. the last lap over the front of the farm, everything into the air (it stretches to fit)
-    const loop = [g(30, 92), g(18, 80), g(30, 68), g(46, 72), g(58, 84), g(78, 80), g(88, 92), g(64, 98), g(44, 90)];
-    steps.push({ kind: 'route', pts: [T.bed.clone().add(V3(0, 0, 1.5)), ...loop], speed: GIVEAWAY.speed * 0.95, flex: true, key: 'lap',
-      at: [600, 2200, 3800, 5400, 7000, 8600, 10200].map((ms, i) => [ms, () => this.toss(4, { spread: 3.2, high: 4.2, seed: i })]) });
-    // 9. the last copy is Vanessa's, and off she runs
-    stand(2600, { anim: 'V_Idle', face: 'vanessa', key: 'last', at: [[300, () => this.giveLast()]] });
-    run(g(118, 100), [[100, () => this.say(GIVEAWAY_WORDS.bye, this.model.position, 1200)]]);
+    steps.push({ kind: 'route', pts: climb.slice(1), speed: 3.4, up: true, at: [[100, () => this.say(W.roof, this.model.position, 1200)]] });
+    stand(2600, { anim: 'V_Celebrate', face: 'camera', up: true, key: 'roof',
+      at: [[100, () => this.toss(6, { from: 'here', around: w.objects.D01.position.clone().add(V3(0, 0, 3.4)), spread: 4, high: 3 })], [900, () => this.chimneyDrop()], [1500, () => this.toss(6, { from: 'here', spread: 5, high: 3.5 })]] });
+    steps.push({ kind: 'route', pts: [...climb.slice(1)].reverse(), speed: 4, up: true });
+    // 7. in and out of the house again, Vanessa right behind her through the door
+    run(door.out);
+    steps.push({ kind: 'route', pts: [door.out, door.step, door.inside], speed: 3.8, door: 'in', key: 'in2' });
+    steps.push({ kind: 'inside', ms: 700, key: 'in2', at: [[200, () => this.cue('knock')]] });
+    steps.push({ kind: 'route', pts: [door.inside, door.step, door.out], speed: 4, door: 'out', key: 'in2' });
+    // 8. everything into the air, over the front of the farm, the birds come for some
+    steps.push({ kind: 'route', pts: [door.out, g(46, 84), g(60, 92), g(74, 96)], speed: GIVEAWAY.speed, key: 'fountain',
+      at: [[100, () => this.toss(6, { spread: 3.5, high: 4.5, seed: 1 })], [700, () => this.birdsIn()], [1300, () => { this.toss(8, { spread: 4.5, high: 5.5, seed: 2 }); this.say(W.dodge[2], this.model.position, 1100); }], [2200, () => this.toss(6, { spread: 4, high: 4.5, seed: 3 })]] });
+    // 9. and off the farm she runs ("Bye!"), just before "They made it into earrings"
+    steps.push({ kind: 'run', key: 'bye', to: g(74, 96).add(V3(17, 0, 1.5)), at: [[100, () => { this.armful.visible = false; this.say(GIVEAWAY_WORDS.bye, this.model.position, 1200); }]] });
     return steps;
   }
 
@@ -227,7 +214,8 @@ export class Giveaway {
     this.camera = camera;
     this.lastCopy = null;
     this.events = [];
-    this.endMs = GIVEAWAY.leadMs + songMs;
+    this.endMs = GIVEAWAY.exitMs; // (v0.31: the whole song, GIVEAWAY.leadMs + songMs)
+    void songMs;
     const m = this.model;
     const h = this.hero;
     this.vPos = h.position.clone().setY(0);
@@ -249,53 +237,34 @@ export class Giveaway {
     m.visible = true;
     this.armful.visible = false;
     this.play('V_Run');
-    // the route, timed: runs and climbs take what their length takes; the stops and the last lap
-    // stretch (or shrink) so the whole of it ends with the song
-    const steps = this.plan(this.vPos);
+    // the route, timed: runs and climbs take what their length takes; the chase (`flex`) takes up the
+    // rest, between GIVEAWAY.chaseMs[0] and [1]; if the rest still does not fit, the stops shrink, and
+    // then everything runs faster, so that she is off the farm at GIVEAWAY.exitMs (v0.32)
+    const steps = this.plan(this.meetP.clone());
     let p = this.meetP.clone();
-    let fixed = 0; let stops = 0;
     const lenOf = (pts) => pts.reduce((n, q, i) => (i ? n + q.distanceTo(pts[i - 1]) : 0), 0);
     for (const s of steps) {
-      if (s.kind === 'run') { s.path = planWalk(p, s.to, this.obstacles, 40, Infinity); s.ms = (s.path.len / GIVEAWAY.speed) * 1000; p = s.to.clone(); fixed += s.ms; }
-      else if (s.kind === 'route') { s.len = lenOf(s.pts); s.ms = (s.len / s.speed) * 1000; p = s.pts.at(-1).clone().setY(0); if (!s.flex) fixed += s.ms; }
-      else stops += s.ms;
+      if (s.kind === 'run') { s.path = planWalk(p, s.to, this.obstacles, 40, Infinity); s.ms = (s.path.len / GIVEAWAY.speed) * 1000; p = s.to.clone(); }
+      else if (s.kind === 'route') { if (s.flex) s.pts[0] = p.clone(); s.len = lenOf(s.pts); s.ms = (s.len / s.speed) * 1000; p = s.pts.at(-1).clone().setY(0); }
     }
-    // the last lap round the front of the farm takes up whatever the song still has: it goes round
-    // as many times as that takes, at about her running speed (the stops shrink only if the song is
-    // short); so the stops keep their own length and the farm is never still for long
-    const lap = steps.find((s) => s.flex);
-    // (the stops first grow to half as long again, if the song has the time)
-    const spare0 = this.endMs - GIVEAWAY.leadMs - 600 - fixed - stops - 2600;
-    const grow = Math.max(1, Math.min(1.5, 1 + (spare0 * 0.5) / Math.max(1, stops)));
-    for (const s of steps) if (s.kind === 'stand' || s.kind === 'inside') s.ms *= grow;
-    stops *= grow;
-    const room = this.endMs - GIVEAWAY.leadMs - 600 - fixed - stops - 2600;
-    if (lap) {
-      const loop = lap.pts.slice(1);
-      const loopLen = lenOf([...loop, loop[0]]);
-      const want = Math.max(lap.len, (Math.max(0, room) / 1000) * lap.speed);
-      while (lenOf(lap.pts) + loopLen <= want + loopLen * 0.5) lap.pts.push(...loop);
-      lap.len = lenOf(lap.pts);
-      lap.ms = Math.max((lap.len / (lap.speed * 1.25)) * 1000, Math.max(0, room));
-      lap.speed = lap.len / (lap.ms / 1000);
-      lap.at = [];
-      for (let ms = 600, i = 0; ms < lap.ms - 800; ms += 1500, i++) lap.at.push([ms, () => this.toss(3 + (i % 3), { spread: 3.2, high: 3.4 + (i % 4) * 0.5, seed: i })]);
-      for (let ms = 7000, i = 0; ms < lap.ms - 3000; ms += 9000, i++) lap.at.push([ms, () => { this.lungeAt = this.t; }]);
-      // (now and then the birds come back for more, and a whole fountain of copies goes up)
-      for (let ms = 12000; ms < lap.ms - 4000; ms += 16000) lap.at.push([ms, () => this.birdsIn()]);
-      for (let ms = 20000, i = 0; ms < lap.ms - 4000; ms += 16000, i++) lap.at.push([ms, () => { this.toss(10, { spread: 4.5, high: 5.5, seed: 40 + i }); this.say(GIVEAWAY_WORDS.dodge[2], this.model.position, 1200); }]);
-    }
-    const over = room < 0 && stops > 0 ? Math.max(0.5, (stops + room) / stops) : 1;
-    let t = GIVEAWAY.leadMs + 600;
-    for (const s of steps) {
-      if (s.kind === 'stand' || s.kind === 'inside') s.ms *= over;
-      s.t0 = t; t += s.ms; s.t1 = t;
-      s.done = new Set();
-    }
+    const budget = this.endMs - GIVEAWAY.leadMs - 300;
+    const chase = steps.find((s) => s.flex);
+    const sum = (f) => steps.filter(f).reduce((n, s) => n + s.ms, 0);
+    const moving = () => sum((s) => s.kind === 'run' || (s.kind === 'route' && !s.flex));
+    const stops = () => sum((s) => s.kind === 'stand' || s.kind === 'inside');
+    chase.ms = Math.max(GIVEAWAY.chaseMs[0], Math.min(GIVEAWAY.chaseMs[1], budget - moving() - stops()));
+    let over = moving() + stops() + chase.ms - budget;
+    if (over > 0) { const k = Math.max(0.55, (stops() - over) / stops()); for (const s of steps) if (s.kind === 'stand' || s.kind === 'inside') s.ms *= k; }
+    over = moving() + stops() + chase.ms - budget;
+    if (over > 0) { const k = (moving() - over) / moving(); for (const s of steps) if (s.kind === 'run' || (s.kind === 'route' && !s.flex)) s.ms *= k; }
+    this.runRate = GIVEAWAY.speed; // (a run's own speed: its length over its time)
+    for (const s of steps) if (s.kind === 'run') s.speed = s.path.len / (s.ms / 1000);
+    let t = GIVEAWAY.leadMs;
+    for (const s of steps) { s.t0 = t; t += s.ms; s.t1 = t; s.done = new Set(); }
     this.steps = steps;
-    // the last run (off the farm) ends with the song
-    const last = steps.at(-1); const late = last.t1 - this.endMs;
-    if (late > 0) { last.t0 -= late; last.t1 -= late; }
+    // (she is off the farm at exitMs, whatever is left over)
+    const late = steps.at(-1).t1 - this.endMs;
+    if (late < 0) { const last = steps.at(-1); last.t0 -= late; last.t1 -= late; }
     this.trail = [{ t: 0, p: this.fromP.clone(), ground: true }];
   }
 
@@ -312,7 +281,7 @@ export class Giveaway {
     this.stepVanessa(dtMs);
     // the camera: between the two, nearer the farmer, up with her on the roof
     const m = this.model.position;
-    const k = this.lastStop || !this.model.visible ? 0.15 : 0.6; // (as she runs off, the camera stays with Vanessa)
+    const k = this.lastStop || this.cur?.key === 'bye' || !this.model.visible ? 0.15 : 0.6; // (as she runs off, the camera stays with Vanessa)
     this.fk = this.fk === undefined ? k : this.fk + (k - this.fk) * (1 - Math.exp(-dtMs / 600));
     this.focus.set(m.x * this.fk + this.vPos.x * (1 - this.fk), m.y * 0.5 * this.fk, m.z * this.fk + this.vPos.z * (1 - this.fk));
     if (this.t >= this.endMs) this.end();
@@ -344,7 +313,6 @@ export class Giveaway {
       this.say(GIVEAWAY_WORDS.hey, this.vPos, 1300);
       this.cue('squawk');
       this.events.push('snatch');
-      this.toss(3, { high: 3.2, spread: 1.6 });
     }
     const s = this.steps.find((x) => t >= x.t0 && t < x.t1) ?? null;
     if (!s) { if (t >= this.steps.at(-1).t1) { m.visible = false; } return this.record(true); }
@@ -352,7 +320,7 @@ export class Giveaway {
     for (const [ms, fn] of s.at ?? []) if (local >= ms && !s.done.has(ms)) { s.done.add(ms); fn(); }
     if (s !== this.cur) { this.cur = s; this.onStep(s); }
     if (s.kind === 'run') {
-      const d = Math.min(s.path.len, (local / 1000) * GIVEAWAY.speed);
+      const d = Math.min(s.path.len, (local / 1000) * (s.speed ?? GIVEAWAY.speed));
       const q = along(s.path.pts, s.path.cum, d);
       this.face(Math.atan2(q.dx, q.dz), dtMs);
       m.position.set(q.x, 0, q.z);
@@ -421,6 +389,9 @@ export class Giveaway {
     if (this.lastStop) target = this.model.position.clone().setY(0).add(V3(0.6, 0, 0.45)); // she comes up to take the last copy
     // (while the farmer is up on the house or inside it, Vanessa waits in front of it, in sight,
     // looking up: not behind it at the foot of the wall)
+    // (v0.32: the second time she runs after her in through the door and out again: "being chased by
+    // Vanessa in and out of the house")
+    else if (this.cur?.key === 'in2' && this.T) target = this.cur.door === 'out' ? this.T.door.out : this.T.door.inside;
     else if ((this.cur?.up || this.cur?.kind === 'inside' || this.cur?.door) && this.T) target = this.T.door.out.clone().add(V3(this.cur.kind === 'inside' || this.cur.door ? 0.2 : -1.3, 0, 0.9));
     if (!target) { this.placeV(dtMs, false); return; }
     const d = dist2(target, this.vPos);
@@ -459,6 +430,7 @@ export class Giveaway {
     h.yawTarget = h.yaw;
     h.view.rotation.y = h.yaw;
     h.view.position.set(this.vPos.x, 0, this.vPos.z);
+    h.view.visible = !(this.T && this.cur?.key === 'in2' && dist2(this.vPos, this.T.door.inside) < 0.7); // (v0.32: inside after her)
     h.body.position.set(this.vPos.x, h.body.position.y, this.vPos.z);
     h.body.velocity.set(0, 0, 0);
     h.anim.play(moving ? 'run' : this.t < GIVEAWAY.leadMs ? 'idle' : 'idle', 0.15, moving ? Math.max(0.8, speed / 4.7) : 1);
@@ -537,6 +509,28 @@ export class Giveaway {
   }
   lay(at, k) { const s = this.sheet(); s.position.copy(at).setY(0.012 + (k % 9) * 0.001); s.rotation.set(-Math.PI / 2, 0, rnd(k) * 6); }
 
+  // v0.32 (Tiffany's "Edits #6": "painting a huge version of it"): a huge copy of the drawing painted
+  // onto the grass at `at`, stroke by stroke from left to right over `ms`, with a paint pot beside it
+  paintHuge(at, ms = 2400) {
+    if (this.huge) this.world.root.remove(this.huge);
+    const g = new THREE.Group(); g.name = 'HugeCopy';
+    const W = 3.4; const H = 2.6;
+    const mat = this.paper.clone();
+    const geo = new THREE.PlaneGeometry(W, H); geo.translate(W / 2, 0, 0);
+    const sheet = new THREE.Mesh(geo, mat); sheet.rotation.x = -Math.PI / 2; sheet.position.set(-W / 2, 0.02, 0);
+    g.add(sheet);
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.24, 14), new THREE.MeshBasicMaterial({ color: 0x3f9bd8 }));
+    pot.position.set(-W / 2 - 0.35, 0.12, 0.8); g.add(pot);
+    g.traverse((o) => { o.userData.noFit = true; o.userData.noOutline = true; });
+    g.position.copy(at).setY(0);
+    this.world.root.add(g);
+    this.huge = g;
+    sheet.scale.x = 0.01;
+    if (this.reduced) { sheet.scale.x = 1; return; }
+    const strokes = 6;
+    this.tweens.run(ms, (k) => { const s2 = Math.floor(k * strokes + 0.5) / strokes; sheet.scale.x = Math.max(0.01, Math.min(1, s2 * 0.7 + k * 0.3)); });
+    for (let i = 0; i < strokes; i++) this.tweens.wait((i * ms) / strokes).then(() => this.cue('brush'));
+  }
   // one down the chimney: a puff of smoke answers
   chimneyDrop() {
     const top = this.world.smoke?.top ?? this.model.position.clone().setY(this.model.position.y + 1);
@@ -582,7 +576,7 @@ export class Giveaway {
       b.obj.visible = true;
       b.from = this.T.inBuyers[i] ?? this.T.buyerAt[0].clone().add(V3(i, 0, 8));
       b.to = this.T.buyerAt[i] ?? this.T.buyerAt[0].clone().add(V3(i * 0.7, 0, 0));
-      b.t0 = this.t + i * 220; b.ms = 1800;
+      b.t0 = this.t + i * 160; b.ms = 1100; b.away = null; // (v0.32: they come quicker)
       b.obj.position.copy(b.from);
     });
   }
@@ -599,13 +593,23 @@ export class Giveaway {
     }
     const s = this.fly(this.model.position.clone().setY(1.5), b.obj.position.clone().setY(1.2), { high: 0.5, k: 30 + i, ms: 700, stays: true });
     s.userData.held = true;
-    this.tweens.wait(720).then(() => { if (!s.parent) return; b.sheet = s; s.rotation.set(-0.15, 0, 0); this.say(GIVEAWAY_WORDS.ooh[i % 4], b.obj.position.clone().setY(2), 1200); b.cheer = this.t; });
+    // (v0.32, Tiffany's "Edits #6": the neighbours "leave as soon as the[y] get a picture"): off they go with it
+    this.tweens.wait(720).then(() => { if (!s.parent) return; b.sheet = s; s.rotation.set(-0.15, 0, 0); this.say(GIVEAWAY_WORDS.ooh[i % 4], b.obj.position.clone().setY(2), 1000); b.cheer = this.t; b.away = { t0: this.t + 250, ms: 1700, from: b.obj.position.clone().setY(0) }; });
   }
   stepBuyers(dtMs) {
     for (const b of this.buyers ?? []) {
       if (!b.obj.visible || b.t0 === undefined) continue;
       const k = Math.max(0, Math.min(1, (this.t - b.t0) / b.ms));
       b.obj.position.lerpVectors(b.from, b.to, ease(k));
+      if (b.away && this.t >= b.away.t0) {
+        const u = Math.min(1, (this.t - b.away.t0) / b.away.ms);
+        b.obj.position.lerpVectors(b.away.from, b.from, ease(u));
+        b.obj.position.y = Math.abs(Math.sin(u * Math.PI * 7)) * 0.05;
+        b.obj.rotation.y = Math.atan2(b.from.x - b.obj.position.x, b.from.z - b.obj.position.z);
+        if (b.sheet && !b.sheet.userData.flying) { b.sheet.position.copy(b.obj.position).add(V3(Math.sin(b.obj.rotation.y) * 0.28, 1.25, Math.cos(b.obj.rotation.y) * 0.28)); b.sheet.rotation.set(-0.15, b.obj.rotation.y, 0); }
+        if (u >= 1) { b.obj.visible = false; b.away = null; if (b.sheet) { b.sheet.parent?.remove(b.sheet); b.sheet = null; } }
+        continue;
+      }
       const hop = k < 1 ? Math.abs(Math.sin(k * Math.PI * 7)) * 0.05 : b.cheer !== undefined ? Math.max(0, Math.sin((this.t - b.cheer) / 140)) * 0.12 * Math.exp(-(this.t - b.cheer) / 2500) : 0;
       b.obj.position.y = hop;
       const look = k < 1 ? b.to : this.model.position;
@@ -659,7 +663,9 @@ export class Giveaway {
     this.active = false;
     if (this.model) { this.model.visible = false; for (const a of Object.values(this.acts)) a.stop(); this.armful.visible = false; }
     this.world.setDoorOpen(0);
-    for (const b of this.buyers ?? []) { b.obj.visible = false; b.t0 = undefined; b.sheet = null; }
+    for (const b of this.buyers ?? []) { b.obj.visible = false; b.t0 = undefined; b.sheet = null; b.away = null; }
+    // (the huge painted copy fades with the copies)
+    if (this.huge) { const hm = this.huge; this.huge = null; const mat = hm.children[0]?.material; this.tweens.wait(GIVEAWAY.fadeAfterMs).then(() => this.tweens.run(1200, (k) => { if (mat) { mat.transparent = true; mat.opacity = 1 - k; } })).then(() => this.world.root.remove(hm)); }
     for (const b of this.birds ?? []) { b.obj.visible = false; b.phase = null; }
     if (this.dwightSheet) { this.dwightSheet.parent?.remove(this.dwightSheet); this.dwightSheet = null; }
     if (this.lastCopy) { this.world.root.remove(this.lastCopy); this.copies.splice(this.copies.indexOf(this.lastCopy), 1); this.lastCopy = null; }
@@ -671,6 +677,7 @@ export class Giveaway {
     this.tweens.wait(GIVEAWAY.fadeAfterMs).then(() => this.tweens.run(1200, (k) => { fade.opacity = 1 - k; }))
       .then(() => { for (const c of copies) this.world.root.remove(c); fade.dispose(); });
     this.hero.body.position.set(this.vPos.x, this.hero.body.position.y, this.vPos.z);
+    this.hero.view.visible = true;
   }
   clear() { for (const c of this.copies) c.parent?.remove(c); this.copies = []; this.fk = undefined; this.hopAt = undefined; this.hopY = 0; this.snatched = false; this.cur = null; this.lastStop = false; this.saidDown = false; this.lungeAt = undefined; this.thrown = 0; }
 }

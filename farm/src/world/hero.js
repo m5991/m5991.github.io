@@ -19,7 +19,7 @@ import { MaskedAnimator, VANESSA_MASKS } from '../core/anim.js';
 import { addOutline } from './greybox.js';
 import { contactBlob } from './look.js';
 import { footfalls, gait, RUN_SPEED, STEP_PHASE, stepMover, turnToward } from './mover.js';
-import { actionPose, BENCH, finalePose, SIT, sitPose, stepUpHeight, toolPose } from './moments.js';
+import { actionPose, BENCH, finalePose, hopSpans, SIT, sitPose, stepUpHeight, toolPose } from './moments.js';
 import { CarryStack } from './carry.js';
 
 export const HERO_RADIUS = 0.3;
@@ -207,9 +207,9 @@ export class Hero {
   // bench; `route`: the chimney climb (there and back) or the stepping stones (one way: she ends
   // on the last one); `to`: the act's own place a step away (the tree's trunk, the window).
   // v0.29: `hold` (the bench): once seated she stays there until the stick moves her (Sit with Dwight)
-  startMoment(kind, { ms, seat, route, yaw, to, up, down, hold = false } = {}) {
+  startMoment(kind, { ms, seat, route, yaw, to, up, down, hold = false, endYaw = null } = {}) {
     this.restorePose();
-    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to, up, down, hold };
+    this.moment = { kind, ms, t: 0, from: this.position.clone(), seat, route, yaw, to, up, down, hold, endYaw };
     this.celebrateMs = 0;
     if (kind === 'clean' && !this.cloth) {
       this.cloth = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.16), new THREE.MeshLambertMaterial({ color: 0xfff4d6 }));
@@ -227,6 +227,7 @@ export class Hero {
     if (this.cloth) this.cloth.visible = false;
     for (const p of Object.values(this.props ?? {})) p.visible = false;
     this.view.rotation.z = 0;
+    this.view.rotation.x = 0; this.view.rotation.order = 'XYZ'; // (v0.32: up again from the towel)
     this.restorePose();
     if (hard) { this.rise = null; return; }
     if (m?.kind === 'bench' && m.seat && m.sat > 0) this.standUp(m.seat, m.yaw ?? this.yaw, { from: m.sat, ms: SIT.quickMs });
@@ -300,6 +301,24 @@ export class Hero {
     return this.props;
   }
   // v0.29: a pair of sunglasses on her head bone, over her eyes ("put sunglasses on")
+  // v0.32: the beach towel she lies on to sunbathe: bright stripes, on the grass (not on her)
+  towel() {
+    if (this.props?.towel) return this.props.towel;
+    this.momentProps();
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+    const g2 = c.getContext('2d');
+    const stripes = ['#e2574c', '#fbf7ee', '#f2b134', '#fbf7ee', '#3f9bd8', '#fbf7ee'];
+    for (let i = 0; i < 8; i++) { g2.fillStyle = stripes[i % stripes.length]; g2.fillRect(0, i * 16, 64, 16); }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 1.55), new THREE.MeshBasicMaterial({ map: tex }));
+    m.rotation.x = -Math.PI / 2;
+    const t = new THREE.Group(); t.name = 'MomentTowel'; t.add(m);
+    t.traverse((x) => { x.userData.noOutline = true; x.userData.noFit = true; });
+    t.visible = false;
+    (this.view.parent ?? this.view).add(t);
+    this.props.towel = t;
+    return t;
+  }
   sunglasses() {
     if (this.props?.glasses) return this.props.glasses;
     this.momentProps();
@@ -371,6 +390,14 @@ export class Hero {
       this.position.y = (this.groundY ?? 0) + q.lift;
       const d = m.route[i + 1].clone().sub(m.route[i]);
       this.yaw = Math.atan2(d.x, d.z); this.yawTarget = this.yaw;
+      // v0.32 (Tiffany's "Edits #6": "After she hops the stepping stones turn her around to the front"):
+      // on the last stone she turns round to face the viewer (`endYaw`), and stays so
+      if (m.endYaw != null && q.travel >= 1) {
+        const span = hopSpans(m.route.length).at(-1)[1];
+        const k = Math.min(1, (m.t / m.ms - span) / Math.max(0.01, (1 - span) * 0.6));
+        const turn = Math.atan2(Math.sin(m.endYaw - this.yaw), Math.cos(m.endYaw - this.yaw));
+        this.yaw += turn * Math.max(0, k); this.yawTarget = k >= 1 ? m.endYaw : this.yaw;
+      }
       this.view.rotation.y = this.yaw;
       this.body.position.x = this.position.x; this.body.position.z = this.position.z;
     } else if (m.kind === 'clean' && m.seat) {
@@ -388,6 +415,18 @@ export class Hero {
       this.position.y = (this.groundY ?? 0) + q.lift;
       this.view.rotation.y = this.yaw + q.spin;
       this.view.rotation.z = q.roll;
+      // v0.32: lying back (the sunbathing): tipped about her own side-to-side axis
+      if (q.pitch) { this.view.rotation.order = 'YXZ'; this.view.rotation.x = q.pitch; } else if (this.view.rotation.x) this.view.rotation.x = 0;
+    }
+    // v0.32: her beach towel, laid out on the grass under her while she sunbathes
+    if (m.kind === 'sunbathe') {
+      const t = this.towel();
+      t.visible = q.prop > 0.05;
+      const back = this.yaw + Math.PI;
+      t.position.set(this.position.x + Math.sin(back) * 0.72, (this.groundY ?? 0) + 0.012, this.position.z + Math.cos(back) * 0.72);
+      t.rotation.set(0, this.yaw, 0);
+      t.scale.set(1, 1, Math.max(0.05, q.prop));
+      const g = this.sunglasses(); g.visible = q.prop > 0.5;
     }
     // what she holds
     // v0.29: the sunglasses go on as her hands reach her temples

@@ -32,31 +32,36 @@ export const KEEPSAKES = {
   flyer: K('3', 'The Moms Night Out Flyer', 'the flyer', ph(3), -3, 56, 'Something lies out past the far left edge, behind the tree.'),
   book: K('4', 'The Children’s Picture Book', 'the picture book', ph(4), 66, 56, 'Something lies between the yard-sale tables and the corn.'),
   blanket: K('4.5', 'The Blanket', 'the blanket', ph(5, 6), 102, 92, 'Something lies out past the right edge, below the sunflowers.'),
-  jello: K('5', 'The Jello', 'the jello', ph(7), 19.5, 63.5, 'Something red and wobbly sits under the old tree.'),
-  present: K('6', 'The 3D White Elephant Present', 'the 3D present', ph(8, 9), -3, 95, 'Something lies out past the far left edge, at the front.'),
-  xmascard: K('6.5', 'The Christmas Card', 'the Christmas card', ph(10), 54, 65, 'Something lies just in front of the yard-sale tables.'),
-  tree: K('7', 'The Secret Santa Christmas Tree', 'the Christmas tree', ph(11, 12, 13), 85.5, 59, 'Something stands between the corn and the sunflowers.'),
-  earrings: K('7.5', 'The Earrings', 'the earrings', ph(14), 16.5, 56, 'Something small lies behind the old tree.'),
-  bookmarks: K('8', 'The Bookmarks', 'the bookmarks', ph(15), 69, 74, 'Something lies in the grass above the raised bed.'),
-  backdrop: K('9', 'The Tutor Photo Backdrop', 'the photo backdrop', ph(16), 102, 66.5, 'Something stands out past the right edge, by the sunflowers.'),
-  wrapping: K('10', 'The Wrapping Paper', 'the wrapping paper', ph(17), -1.5, 62, 'Something lies at the far left edge.'),
-  novel: K('11', 'The Full Length “Who Done It” Novel', 'the novel', ph(18, 19), 13.5, 104, 'Somebody left a bestseller out at the very front, on the left.'),
-  ornament: K('12', 'The Car Ornament', 'the car ornament', ph(20), 93, 104, 'Something hangs about out at the very front, on the right.'),
-  puzzle: K('13', 'The Surprise Puzzle Competition', 'the puzzle', ph(21, 22, 23), 97.5, 60.5, 'Something lies at the right edge, past the corn.'),
-  peep: K('13.5', 'The Peeps Diorama', 'the Peeps diorama', ph(24, 25), 76.5, 56, 'A tiny farmer hides at the end of the tables, by the corn.'),
-  shirts: K('14', 'The Twin Day T-Shirts', 'the T-shirts', ph(26, 27), 13.5, 60.5, 'Something lies behind the old tree, on the left.'),
-  yearbook: K('15', 'The Yearbook Background', 'the yearbook', ph(28, 29), 57, 71, 'Something lies below the yard-sale tables.'),
-  cd: K('16', 'The CD', 'the CD', ph(30, 31), 22.5, 59, 'A soundtrack lies by the path, near the old tree.'),
-  party: K('18', 'The Farm Party', 'the farm party', ph(33, 34, 35, 36, 37, 38), 0, 104, 'Something lies out at the very front, far left.'),
-  barbie: K('19', 'The Barbie Clothes', 'the doll clothes', ph(39), 22.5, 56, 'Something lies by the path, behind the tree.'),
-  poster: K('20', 'The Poster', 'the poster', ph(40, 41), 96, 57.5, 'Something lies at the right edge, past the corn.'),
-  game: K('21', 'The Video Game', 'the video game', ph(42), 102, 101, 'Something lies out at the very front, far right.'),
+  jello: K('5', 'The Jello', 'the jello', ph(7, 8), 19.5, 63.5, 'Something red and wobbly sits under the old tree.'),
+  present: K('6', 'The 3D White Elephant Present', 'the 3D present', ph(9, 10), -3, 95, 'Something lies out past the far left edge, at the front.'),
+  xmascard: K('6.5', 'The Christmas Card', 'the Christmas card', ph(11), 54, 65, 'Something lies just in front of the yard-sale tables.'),
+  tree: K('7', 'The Secret Santa Christmas Tree', 'the Christmas tree', ph(12, 13, 14, 15, 16), 85.5, 59, 'Something stands between the corn and the sunflowers.'),
+  earrings: K('7.5', 'The Earrings', 'the earrings', ph(17), 16.5, 56, 'Something small lies behind the old tree.'),
+  bookmarks: K('8', 'The Bookmarks', 'the bookmarks', ph(18), 69, 74, 'Something lies in the grass above the raised bed.'),
+  backdrop: K('9', 'The Tutor Photo Backdrop', 'the photo backdrop', ph(19, 20), 102, 66.5, 'Something stands out past the right edge, by the sunflowers.'),
+  wrapping: K('10', 'The Wrapping Paper', 'the wrapping paper', ph(21), -1.5, 62, 'Something lies at the far left edge.'),
+  novel: K('11', 'The Full Length “Who Done It” Novel', 'the novel', ph(22, 23), 13.5, 104, 'Somebody left a bestseller out at the very front, on the left.'),
+  puzzle: K('13', 'The Surprise Puzzle Competition', 'the puzzle', ph(25, 26, 27), 97.5, 60.5, 'Something lies at the right edge, past the corn.'),
+  peep: K('13.5', 'The Peeps Diorama', 'the Peeps diorama', ph(28, 29), 76.5, 56, 'A tiny farmer hides at the end of the tables, by the corn.'),
+  shirts: K('14', 'The Twin Day T-Shirts', 'the T-shirts', ph(30, 31, 32, 33), 13.5, 60.5, 'Something lies behind the old tree, on the left.'),
+  yearbook: K('15', 'The Yearbook Background', 'the yearbook', ph(34, 35), 57, 71, 'Something lies below the yard-sale tables.'),
+  cd: K('16', 'The CD', 'the CD', ph(36, 37), 22.5, 59, 'A soundtrack lies by the path, near the old tree.'),
+  whoknows: K('17.5', 'The Who Knows Plant', 'the Who-Knows plant', ph(39), 60, 92, 'Something green and wiggly lies on the grass.'),
+  party: K('18', 'The Farm Party', 'the farm party', ph(40, 41, 42, 43, 44, 45, 46), 0, 104, 'Something lies out at the very front, far left.'),
+  barbie: K('19', 'The Barbie Clothes', 'the doll clothes', ph(47), 22.5, 56, 'Something lies by the path, behind the tree.'),
+  poster: K('20', 'The Poster', 'the poster', ph(48, 49), 96, 57.5, 'Something lies at the right edge, past the corn.'),
 };
 // what a keepsake's title says on screen: her title, but #6.5 without the family name
 export const TITLE_SHOWN = { xmascard: 'The Christmas Card' };
 export const keepsakeTitle = (id) => TITLE_SHOWN[id] ?? KEEPSAKES[id]?.title ?? '';
 // v0.31: the slideshow's one item that is not a keepsake (#17, the invitation)
-export const SLIDESHOW_ONLY = ['photo-32'];
+// v0.32 (Tiffany's "Edits #6": "So that we keep the same keepsakes as songs, you can remove the car
+// decoration one and the video game one, but keep them in the slideshow"; "There is one new category,
+// #17.5, which should be titled, 'The Who Knows Plant'"): #12 The Car Ornament and #21 The Video Game
+// are in the slideshow only, with #17; #17.5 is a keepsake. 23 keepsakes, as many as the songs. Her
+// new photos (50 in all, tools/make-photos.mjs) renumber the prints. A farm that found the car ornament
+// or the video game keeps that in its save; they are no longer counted.
+export const SLIDESHOW_ONLY = ['photo-24', 'photo-38', 'photo-50'];
 export const KEEPSAKE_IDS = Object.keys(KEEPSAKES);
 export const KEEPSAKE_REACH_M = 0.9; // walking this close picks one up
 export const KEEPSAKE_NEAR_M = 4; // within this, it gives a small hop now and then (no glint: v0.22)
@@ -74,11 +79,20 @@ export const visibleKeepsakes = (saved = {}, n = KEEPSAKES_AT_ONCE) => KEEPSAKE_
 // v0.31: 24 keepsakes and 23 songs, the last of which waits for every keepsake: once every song but
 // the last is found (`allButLast`), the ones still left come out one after another, each as the one
 // before is picked up (without it the last two would never come out).
+// v0.32 (Tiffany's "Edits #6": "Play one song, then while the song plays have her find the keepsake,
+// then once the keepsake is found, then the next song becomes available. Stagger them so they are
+// timed evenly. End on a song (I gave it to the world.)"): a song and a keepsake take turns: each
+// song found brings out one keepsake (while it plays: main.js waits HUNT.restMs into the song), and
+// the next song's circle comes once it is found (`songTurn`). 23 songs and 23 keepsakes: the last
+// song ends the turns, and its keepsake comes out as she explores on with it playing.
+// (`allButLast`, v0.31's rule for the last ones, is no longer needed: one each, always.)
 export function keepsakesNow(saved = {}, songsFound = 0, allButLast = false) {
   const left = KEEPSAKE_IDS.filter((id) => !saved?.[id]);
   const out = KEEPSAKE_IDS.length - left.length;
-  return left.length && (songsFound > out || allButLast) ? [left[0]] : [];
+  return left.length && songsFound > out ? [left[0]] : [];
 }
+// v0.32: a song's circle can come out: every song found so far has had its keepsake found
+export const songTurn = (saved = {}, songsFound = 0) => foundKeepsakes(saved).length >= Math.min(songsFound, KEEPSAKE_IDS.length);
 
 // they are out on the farm in the exploring phase only
 export const keepsakesOut = (mainDone) => !!mainDone;

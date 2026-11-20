@@ -270,7 +270,7 @@ export const wishMet = (l, w = saleWish(l)) => !!w && l.table[w.crop] >= w.n;
 export const mainComplete = (l) => ROUTE.every((id) => isCommitted(l, id));
 // ---------- v0.17 birds: what can be taken now (spec §7 caps, §6.6 point 4) ----------
 // the most a save's theft record may hold: v0.17's cap of 8, which older saves reached
-export const THEFT_SAVED_MAX = 10; // (v0.31: ten thefts a farm, data.js BIRDS.totalMax)
+export const THEFT_SAVED_MAX = 14; // (v0.31: ten thefts a farm, data.js BIRDS.totalMax; v0.32: fourteen)
 // theft is possible from the second crop plot until the home, while the caps allow it
 // (v0.23: and from the house foundation on: the raised bed, a second plot, is built first now)
 export const birdsActive = (l) => plotsPlanted(l) >= 2 && isCommitted(l, BIRDS_AFTER);
@@ -316,21 +316,38 @@ export const maxYield = (id) => (NODES[id].res === 'T' ? Math.max(...TOMATO_YIEL
 
 // wood or stone she has for building: on her head plus at the pile
 export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
+// v0.32 (Tiffany's "Edits #6": "Then get her to carry wood AND stones to the pile ... BEFORE it allows
+// for the First DIY"): the first build she hammers up takes its wood and stone from the pile by the
+// house only, so what she gathered for it has to be carried there first (later builds take from her
+// head and the pile, as before)
+export const firstDiy = (l) => !(l.paymentEvents ?? []).some((id) => HAMMERED.includes(id));
+export const pileOnly = (l, id) => HAMMERED.includes(id) && firstDiy(l);
+const usable = (l, id, r) => (pileOnly(l, id) ? (l.yard?.[r] ?? 0) : onHand(l, r));
 // Shortage = recipe - what she has (purse; carried plus the pile), clamped at 0 (spec §11.2): the
 // bottom line's count of what is still to get, counting down as she gathers.
 export function shortage(l, id) {
   const need = recipe(l, id);
   return {
     coins: Math.max(0, need.coins - l.purse),
-    W: Math.max(0, need.W - onHand(l, 'W')),
-    R: Math.max(0, need.R - onHand(l, 'R')),
+    W: Math.max(0, need.W - usable(l, id, 'W')),
+    R: Math.max(0, need.R - usable(l, id, 'R')),
   };
 }
 // she has everything a stage takes (its DIY button can be pressed at the stage)
 export const affordable = (l, id) => { const s = shortage(l, id); return s.coins + s.W + s.R === 0; };
 
+// v0.32 (Tiffany's "Edits #6": "During the tutorial don't highlight or allow her to pick up wood or
+// stones until after she has weeded and planted a crop"): the logs, the sticks and the rocks give
+// nothing until a crop spot is dug (on a farm saved before v0.32 that has wood or stone already, or
+// has built something, they are open)
+export const materialsOpen = (l) => Object.values(l.nodes ?? {}).some((n) => n?.dug) || (l.paymentEvents ?? []).some((id) => HAMMERED.includes(id))
+  || MATERIALS.some((r) => (l.carried?.[r] ?? 0) > 0 || (l.yard?.[r] ?? 0) > 0)
+  // (a farm saved before v0.32 whose first crop is the tomatoes: its raised bed takes wood before
+  // anything can be dug there, so the wood and the stone are open from the start)
+  || (!!l.crop && !isCommitted(l, BASE_STAGE[l.crop]) && STAGES[BASE_STAGE[l.crop]].W + STAGES[BASE_STAGE[l.crop]].R > 0);
 // Units a source can give right now (piles, sticks, rocks, crop nodes).
 export function available(l, src) {
+  if (!(src in NODES) && !materialsOpen(l)) return 0; // v0.32: not before her first crop is planted
   if (src in PILES) return l.piles[src];
   if (src in l.sticks) return l.sticks[src].units;
   if (src in ROCKS) return l.rocks[src];
@@ -368,9 +385,44 @@ export function weedPresent(l, id) {
 // patch before she has chosen (raking one chooses it), her first crop's patch, another base patch
 // after her first harvest (the tomatoes' bed may still be unbuilt), and C1 and S1 after their
 // prerequisites.
+// v0.32 (Tiffany's "Edits #6": "Don't allow her multiple options of which crop to plant first. Make
+// it corn"; "Don't allow her to weed a crop that she isn't allowed to plant yet. It gets confusing
+// because then she doesn't know where to go to to plant"): before her first crop only the corn
+// patch can be worked (raking it makes corn her crop); after that a patch is hers to work once it
+// is its turn in the goal line's order (`plantTurn`: every build before it in `goalOrder` is done)
+// or it is planted already. (v0.31: any patch before the first crop, the other two after her first
+// harvest, more corn and more sunflowers once Dwight was hired.)
 export function patchWorkable(l, stage) {
-  if (STAGES[stage].base) return l.crop === null || isFirstCrop(l, stage) || l.harvested;
-  return !missingPrereqs(l, stage).length;
+  if (STAGES[stage].base) {
+    if (l.crop === null) return stage === FIRST_CROP_STAGE;
+    if (isFirstCrop(l, stage)) return true;
+    return !!l.harvested && plantTurn(l, stage);
+  }
+  return !missingPrereqs(l, stage).length && plantTurn(l, stage);
+}
+// v0.32: every new farm starts with corn
+export const FIRST_CROP_STAGE = 'C0';
+// The goal line's order (v0.23, Tiffany's DIY order with the plantings and Dwight's hire between;
+// moved here from guide.js in v0.32 so that a patch's weeds can wait for its turn).
+// v0.29: more corn right after Dwight is hired, more sunflowers right after the bench.
+// v0.32 (Tiffany's "Edits #6": "Have her build the 3rd crop sooner in the game"): the third crop
+// patch is planted right after the raised bed, before the foundation (v0.23-v0.31: after the path).
+export function goalOrder(l) {
+  const first = firstStage(l);
+  // the base crop patches still to plant; v0.29: the one she has weeded more of comes first
+  const cleared = (id) => plotWeeds(id).filter((w) => l.weeds[w]).length;
+  const others = BASE_STAGES.filter((id) => id !== first && id !== 'T0').sort((a, b) => cleared(b) - cleared(a));
+  const order = [
+    ...(first ? [first] : []), 'T0', others[0], 'H1', 'G1', 'G3', 'A1', 'C1', 'G4', ...(others[1] ? [others[1]] : []),
+    'G2', 'S1', 'H2', 'H5', 'H3', 'H4',
+  ];
+  return order.filter((id, i) => id && order.indexOf(id) === i);
+}
+// v0.32: it is this stage's turn: it is built, or every stage before it in the goal order is
+export function plantTurn(l, stage) {
+  if (isCommitted(l, stage)) return true;
+  for (const id of goalOrder(l)) { if (id === stage) return true; if (!isCommitted(l, id)) return false; }
+  return false;
 }
 // v0.24 (the captain: "I would like the weeds to be removable from the start. All the weeds should
 // be able to be removed"): a weed that stands can be raked, whatever its patch is waiting for.
@@ -477,7 +529,7 @@ export function settle(l0) {
 //   | { t: 'stain' } | { t: 'cleanBench' }
 export function apply(l0, tx) {
   switch (tx?.t) {
-    case 'tick': return tick(l0, tx.ms, !!tx.calm);
+    case 'tick': return tick(l0, tx.ms, !!tx.calm, tx.near ?? null);
     case 'clearWeed': return clearWeed(l0, tx.id);
     case 'pick': return pick(l0, tx.src);
     case 'takeTool': return takeTool(l0, tx.tool, !!tx.come);
@@ -537,7 +589,8 @@ export function tickQuiet(l, now, calm = false) {
 // It also drops the sticks, lets a stick left too long go, and lets weeds creep over her crops.
 // `calm` (Help me finish): no weed creeps in and nothing is lost: a lying stick or a weed's wilt
 // clock simply waits.
-function tick(l0, ms, calm = false) {
+// (v0.32: `near`, the crop spots on her screen now (main.js): a weed creeps over one of those first)
+function tick(l0, ms, calm = false, near = null) {
   if (!(Number.isFinite(ms) && ms >= 0)) return fail('badTime');
   // v0.26: nearly every tick moves the clock and nothing else. Such a tick gives back a ledger
   // that shares everything but the clock with the one before, in place of a copy of the whole
@@ -605,7 +658,11 @@ function tick(l0, ms, calm = false) {
     if (!regrowing) l.regrowAt = null;
     else if (l.regrowAt === null) l.regrowAt = now + REGROW.everyMs;
     else if (now >= l.regrowAt) {
-      const planted = Object.keys(NODES).filter((id) => nodeEstablished(l, id));
+      const planted0 = Object.keys(NODES).filter((id) => nodeEstablished(l, id));
+      // v0.32 (Tiffany's "Edits #6": "Bring back ... weeds that keep growing back and Choking out
+      // plants"): where she can see it, when one of her plants is on her screen
+      const seen = near ? planted0.filter((id) => near.includes(id)) : [];
+      const planted = seen.length ? seen : planted0;
       if (planted.length) {
         const id = planted[l.regrowSeq % planted.length];
         l.overgrown[id] = now;
@@ -703,9 +760,11 @@ function takeTool(l0, tool, come = false) {
 // v0.13 (P29-7): she has taken this tool once, read from the farm: the rake once any weed is
 // raked or it is in her hand, the shovel once any spot is dug (a wilted plant's spot was dug) or
 // it is in her hand. From then on it comes to her hand at the job.
+// v0.32 (Tiffany's "Edits #6": "She doesn't ever need to go to the shovel and rake to pick it up so
+// don't have a circle option to do so"): every tool comes to her hand at its job from the start;
+// she is never sent to the tools for one (v0.13-v0.31: once she had taken it there herself).
 export function toolComes(l, tool) {
-  if (l.tool === tool) return true;
-  return toolUsed(l, tool);
+  return TOOLS.includes(tool);
 }
 // v0.23: the tool has done a job on this farm (a weed raked, a spot dug), so from now on it comes
 // to her hand by itself. A tool she has only just fetched, and not yet used, stays in her hand
@@ -770,8 +829,9 @@ function build(l0, stage) {
   const need = recipe(l, stage);
   if (gated(stage)) l.since = { sales: 0, gather: 0 };
   const took = { carried: { W: 0, R: 0 }, yard: { W: 0, R: 0 }, coins: need.coins };
+  const fromPile = pileOnly(l0, stage); // (v0.32: the first DIY takes from the pile only)
   for (const r of MATERIALS) {
-    const head = Math.min(need[r], l.carried[r]);
+    const head = fromPile ? 0 : Math.min(need[r], l.carried[r]);
     l.carried[r] -= head;
     l.yard[r] -= need[r] - head;
     took.carried[r] = head;

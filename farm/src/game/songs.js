@@ -156,10 +156,17 @@ export const UNLISTED_SONGS = SONG_IDS.filter((id) => !SONG_LIST.includes(id));
 // the spot's own name) plus `offset` metres, or at the drawing point `uv`.
 // Tiffany: "Make sure she does everything it says to do": every verb names what she is seen doing.
 const act = (verb, kind, word, ms) => ({ verb, kind, word, ms });
+// v0.32 (Tiffany's "Edits #6": "Don't ever overlap circles, such as songs overlapping with crops /
+// stones / keepsakes etc"): every song spot stands at least 1.6 m (two circles' width) from every crop plant, rock, stick,
+// log pile, weed, table, the crate and the tools, and 1.7 m from every other spot (they were as near as
+// 0.35 m: a rock lay in "Show your drawing to the world"'s circle). Moved: the sunflowers' (79, 75), the
+// corn's (67.8, 51.2), the world's (49.5, 96), the paper's (32.4, 71.7), the path's (40, 60), the
+// field's (49.2, 74.3), the sketch's (10.1, 93.1), the flip-flops' (51, 50), the weeds' offset (1.9, 0.5).
+// The keepsakes keep clear of them all (world.keepsakeSpot). test/v032-world.test.mjs measures it.
 export const SPOTS = {
   // (v0.29: at its own place in front of the sunflowers, where the sunflower patch's place was: that
   // moved into the patch, and a red circle there would lie over the sunflowers' own rings)
-  sunflowers: { label: 'the sunflowers', uv: [79, 75], act: act('Dance with the sunflowers', 'dance', 'Ta-da!', 3000) },
+  sunflowers: { label: 'the sunflowers', uv: [73, 72.5], act: act('Dance with the sunflowers', 'dance', 'Ta-da!', 3000) },
   // v0.29 (Tiffany: "The action wave should always be at a bird not the sun. The action for the sun
   // should be 'put sunglasses on'")
   sun: { label: 'the field’s edge under the sun', act: act('Put your sunglasses on', 'sunglasses', 'Too bright!', 2800) },
@@ -169,11 +176,11 @@ export const SPOTS = {
   // song"): she wipes the bench with her cloth (it was "Rest on the bench", v0.22-v0.29)
   bench: { label: 'the bench', act: act('Clean the bench', 'clean', 'Squeaky clean!', 3200) },
   chimney: { label: 'the chimney', act: act('Climb to the chimney', 'chimney', 'Up we go!', 7200) },
-  weeds: { label: 'the weeds by the raised bed', anchor: 'bed', offset: [1.9, 0.5], act: act('Shake a fist at the weeds', 'fist', 'Not today!', 2400) },
+  weeds: { label: 'the weeds by the raised bed', anchor: 'bed', offset: [2.2, 0.7], act: act('Shake a fist at the weeds', 'fist', 'Not today!', 2400) },
   tree: { label: 'the old tree', act: act('Hug the old tree', 'hug', 'Good team!', 2600) },
   // v0.29 (Tiffany: "Make the corny song appear right next to the corn stalks instead of right
   // behind the table"): beside the front row of the corn, between two of its plants (not on one)
-  corn: { label: 'the corn', uv: [67.8, 51.2], act: act('Tell the corn a joke', 'joke', 'Corny!', 3000) },
+  corn: { label: 'the corn', uv: [63, 53], act: act('Tell the corn a joke', 'joke', 'Corny!', 3000) },
   stones: { label: 'the stepping stones', act: act('Hop the stepping stones', 'hop', 'Hop! Hop!', 3200) },
   door: { label: 'the front door', act: act('Knock on the door', 'door', 'Knock knock!', 1600) },
   birds: { label: 'the corner under the birds', act: act('Whistle to the birds', 'whistle', 'Tweet? Tweet!', 2400) },
@@ -181,27 +188,31 @@ export const SPOTS = {
   // different colored shirt) run in in a second pair of overalls, steal the drawing and throw copies
   // around then get chased off the screen by Vanessa"): the scene (world/thief.js), 9 s (v0.29: a
   // little left of 52.2, 95.5, to keep clear of the Who-Knows plant's circle)
-  world: { label: 'the front of the farm', uv: [49.5, 96], act: act('Show your drawing to the world', 'thief', 'Look, world!', 9000) },
+  world: { label: 'the front of the farm', uv: [49.5, 111.5], act: act('Show your drawing to the world', 'thief', 'Look, world!', 9000) },
   between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh…', 2800) },
   // v0.23: "Beet seeds in my pocket": the vegetables' end of the raised bed (the table it stood at is not in the drawing)
   // (v0.29, Tiffany: "Never have a red circle that overlaps a crop collecting": a step past the
   // bed's vegetable end and in front of it, off the tomato plants' rings; it stood at 78.4, 82.9)
-  pockets: { label: 'the vegetables in the raised bed', uv: [79, 98.5], act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
-  glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Shade your eyes from the sun', 'shade', 'Oye, Sun!', 2600) },
+  pockets: { label: 'the grass in front of the raised bed', uv: [84, 108], // (v0.32: off the bed's and the weeds' circles; it was 79, 98.5)
+    act: act('Empty your pockets', 'pockets', 'Treasures!', 2600) },
+  // v0.32 (Tiffany's "Edits #6": 'Instead of "shade your eyes" have it be "Sunbathe" and she lays down
+  // on a towel'): she lies back on a striped towel in the sun, her sunglasses on (v0.29-v0.31: both
+  // arms across her face, "Shade your eyes from the sun")
+  glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Sunbathe', 'sunbathe', 'Ahh, sunshine!', 4600) },
   // v0.23: "On a bench in the yard ... Rests on her bench in the shade": the path beside the bench
-  paper: { label: 'the path beside the bench', uv: [32.4, 71.7], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
+  paper: { label: 'the path beside the bench', uv: [36.4, 81.4], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
   window: { label: 'the window by the door', act: act('Peek in the window', 'peek', 'Home sweet home!', 2600) },
-  path: { label: 'the middle of the path', uv: [40, 60], act: act('Toss your coins in the air', 'toss', 'Rich!', 2400) },
+  path: { label: 'the middle of the path', uv: [42.1, 54.9], act: act('Toss your coins in the air', 'toss', 'Rich!', 2400) },
   // v0.23: "She draws pictures of me / Standing next to her ... We're both farmers": beside the farmer's place in the drawing
-  field: { label: 'the grass beside the farmer’s place', uv: [49.2, 74.3], act: act('Blow a kiss', 'kiss', '♥', 2400) },
-  sketch: { label: 'the crumpled sketch in the corner', uv: [10.1, 93.1], act: act('Pick up the crumpled sketch', 'pickup', 'Keep it!', 2600) },
+  field: { label: 'the grass beside the farmer’s place', uv: [58, 70.7], act: act('Blow a kiss', 'kiss', '♥', 2400) },
+  sketch: { label: 'the crumpled sketch in the corner', uv: [3.2, 96], act: act('Pick up the crumpled sketch', 'pickup', 'Keep it!', 2600) },
   // (v0.29: in front of the bed, by the Who-Knows plant, a step off the tomato plants' rings: a red
   // circle never lies over a crop's; test/v029-world.test.mjs measures every spot)
   bed: { label: 'the Who-Knows plant in the raised bed', anchor: 'bed', offset: [-0.55, 0.7], act: act('Say hello to the Who-Knows plant', 'hello', '?♪', 2400) },
   pose: { label: 'Vanessa’s place in the drawing', act: act('Strike your pose', 'pose', 'Vanessa!', 2600) },
   // (v0.29: the corner past the sunflowers was "Outdrawing all our dreams"' spot, out of play)
   // v0.23: "Dancing down the garden rows ... Walking through the corn where the green runs high": the end of the corn rows
-  flipflops: { label: 'the end of the corn rows', uv: [51, 50], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
+  flipflops: { label: 'the end of the corn rows', uv: [51, 50.5], act: act('Kick up your flip-flops', 'kick', 'Flip! Flop!', 2600) },
 };
 // what to do at a spot before its egg comes
 export const spotAct = (spot) => SPOTS[spot]?.act ?? null;
@@ -270,7 +281,10 @@ export const spotsWithEggs = (discoveries = {}) => Object.keys(SPOTS).filter((s)
 // v0.23 (Tiffany: "have just a few at a time up here, replacing each other as she collects them, so
 // it doesn't look as crowded"): the spots on show now: the first SPOTS_AT_ONCE that still hold a
 // song, in her list's order. Each shows its red circle (the action); the others wait their turn.
-export const SPOTS_AT_ONCE = 3;
+// v0.32 (Tiffany's "Edits #6": "Play one song, then while the song plays have her find the keepsake,
+// then once the keepsake is found, then the next song becomes available"): one circle at a time
+// (v0.23-v0.31: three)
+export const SPOTS_AT_ONCE = 1;
 // v0.27 (the captain, 2026-11-13: "is the home sweet home the last song of it was a coinicidence
 // on my playthrough? If the song is always going to play maybe we can consider having a one last
 // song always be, so we choose the most appropiate song, maybe I gave it to the world").

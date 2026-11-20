@@ -61,8 +61,6 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #btn-blueprint .off, #btn-blueprint[aria-pressed="false"] .on { display: none; }
 #btn-blueprint[aria-pressed="false"] .off { display: inline; }
 #btn-blueprint[aria-pressed="true"] { background: #e6ecf5; }
-#audio-prompt { pointer-events: auto; margin-right: auto; align-self: flex-end; background: var(--paper); font-weight: 600; }
-#audio-prompt[hidden] { display: none; }
 /* (v0.24: the same box in Pause and in Extras) */
 .sound-settings { width: min(320px, 100%); margin: 0; padding: 8px 16px 12px; border: 2px solid var(--ink); border-radius: 10px; display: grid; gap: 4px; text-align: left; }
 .sound-settings legend { padding: 0 6px; font-weight: 600; }
@@ -80,6 +78,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 #goal .g-need svg { width: 20px; height: 20px; display: block; }
 #goal .g-need b { font-weight: 700; }
 #goal .g-need.now { color: var(--ink); background: linear-gradient(to top, #e6b83e 0, #e6b83e 3px, transparent 3px); }
+/* v0.32: a need she has all of: the build's number, quieter, with a green tick */
+#goal .g-need.got { color: rgba(37, 51, 71, 0.5); }
+#goal .g-need.got .tick { font-style: normal; font-weight: 700; font-size: 13px; color: #3f8a3a; margin-left: 1px; }
 #goal .g-tail { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(37, 51, 71, 0.82); }
 #goal .g-tail::before { content: "· "; }
 #goal.nod { animation: bump 0.25s ease-out; }
@@ -275,6 +276,10 @@ body.booting #hud, body.booting #controls, body.booting #stick-zone, body.bootin
 #opening-title.stacked .w2 { margin-left: 0.55em; }
 /* it writes itself in, left to right, in about 1.6 s */
 #opening.laid #opening-title span { animation: pencil-write 0.7s ease-in-out 0.15s forwards; }
+/* v0.32: "by Vanessa Bailey" in smaller letters under the title, pencilled in after it */
+#opening-title .byline { position: absolute; left: 0; right: 0; top: 100%; margin-top: -0.12em; text-align: center; font-size: 0.36em; transform: rotate(-2deg); letter-spacing: 0.02em; }
+#opening-title.stacked .byline { text-align: left; padding-left: 0.6em; margin-top: 0.1em; }
+#opening.laid #opening-title .byline { animation-duration: 0.8s; animation-delay: 1.5s; }
 #opening.laid #opening-title .w2 { animation-duration: 0.85s; animation-delay: 0.9s; }
 @keyframes pencil-write { to { clip-path: inset(-0.2em -0.2em -0.2em -0.2em); } }
 #opening-title img.art { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -450,6 +455,14 @@ body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing,
 .credits-paper.prints img { width: 72px; height: 72px; object-fit: cover; }
 #credits .credits-lyrics { position: absolute; left: var(--edge); right: var(--edge-r); bottom: calc(var(--edge-b) + 10px); margin: 0 auto; max-width: 520px; background: rgba(255, 253, 247, 0.94); border-radius: 3px; padding: 10px 14px; text-align: center; color: var(--ink); box-shadow: 0 1px 2px rgba(37, 51, 71, 0.2); }
 #credits .credits-lyrics.empty { opacity: 0; transition: opacity 0.4s; }
+/* v0.32: the photos' one caption, in a box at the foot of the screen (not on each photo) */
+#credits .credits-caption { position: absolute; left: var(--edge); right: var(--edge-r); bottom: calc(var(--edge-b) + 14px); margin: 0 auto; width: fit-content; max-width: min(88vw, 560px); background: rgba(255, 253, 247, 0.95); border: 1.5px solid var(--ink); border-radius: 12px; padding: 10px 18px; text-align: center; color: var(--ink); font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 22px; font-weight: 700; box-shadow: 0 2px 0 var(--ink); }
+#credits .credits-caption[hidden] { display: none; }
+/* v0.32: the drawing, signed "by Vanessa" in the pen's ink (ui/postcard.js SIGNED_BY) */
+#card .keepsake-print.drawing.signed { position: relative; }
+#card .by-vanessa { position: absolute; right: 6%; bottom: 3%; font-family: "Pencil Title", "Segoe Script", cursive; font-size: clamp(16px, 5.2vw, 30px); color: #1e1a4e; transform: rotate(-3.5deg); pointer-events: none; }
+#credits .squiggle-plant { display: inline-block; vertical-align: -0.45em; margin: 0 0.05em; }
+#credits .credits-caption.in { animation: credits-fade 0.5s ease-out; }
 #credits .credits-lyrics p { margin: 0; }
 #credits .credits-lyrics .now { font-size: 19px; font-weight: 600; min-height: 1.3em; }
 #credits .credits-lyrics .next { font-size: 15px; opacity: 0.5; min-height: 1.2em; }
@@ -529,7 +542,10 @@ dl.credits-list dd { margin: 0; }
 }
 /* "Just have the [tasks line] say DIY so that it's noticeable": at DIY time the line is lit in the
    flower yellow with a heavier rule, DIY set as a tag and the place beside it, and it breathes */
-#goal.hot { background: var(--flower, #f6c61a); border-width: 2.5px; padding: 5px 9px; box-shadow: 0 3px 0 var(--ink); font-size: 16px; animation: goal-hot 1.5s ease-in-out infinite; }
+/* v0.32 (Tiffany's "Edits #6": "let the button you click on be yellow and not the announcement for the
+   diy button that's on at the top. That can be tan again"): the line stays on its paper; DIY is still
+   its tag and the place follows */
+#goal.hot { border-width: 2.5px; padding: 5px 9px; font-size: 16px; }
 #goal.hot .g-label.tag { flex: none; min-width: 0; padding: 2px 9px 3px; background: var(--ink); color: var(--paper); border-radius: 8px; font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 19px; letter-spacing: 0.02em; }
 #goal.hot .g-tail.place { color: var(--ink); font-weight: 700; }
 #goal.hot .g-tail.place::before { content: ""; }

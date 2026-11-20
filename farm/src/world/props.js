@@ -642,6 +642,27 @@ export function elfArcher() {
 // Five of the gift jokes, small and readable at play scale (about 0.25–0.4 m), lying on the grass:
 // the red jello on its plate, the round Christmas ornament with its ribbon, the CD in its case,
 // the novel, and the marshmallow Peep farmer in overalls from the Creation diorama.
+// v0.32 (Tiffany's "Edits #6": the "pockets" song's treasures, "random shapes and colors"): one small
+// odd thing out of her pockets, its shape and colour from `i` (any whole number)
+const TRINKET_COLOURS = [0xe2574c, 0x3f9bd8, 0xf2b134, 0x6cbf4a, 0xa65cc8, 0xff8fb1, 0x2bb3a6, 0xf07b2e];
+export function trinket(i) {
+  const n = Math.abs(Math.floor(i));
+  const c = TRINKET_COLOURS[(n * 5 + 3) % TRINKET_COLOURS.length];
+  const shapes = [
+    () => new THREE.SphereGeometry(0.06, 14, 10), // a ball
+    () => new THREE.CylinderGeometry(0.06, 0.06, 0.02, 16), // a button
+    () => new THREE.BoxGeometry(0.08, 0.08, 0.08), // a block
+    () => new THREE.TorusGeometry(0.05, 0.016, 8, 16), // a ring
+    () => new THREE.ConeGeometry(0.05, 0.11, 12), // a cone
+    () => new THREE.OctahedronGeometry(0.065), // a gem
+    () => new THREE.TetrahedronGeometry(0.07), // a pyramid
+    () => { const st = new THREE.Shape(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 0.03 : 0.07; const a = (k / 10) * Math.PI * 2; if (k) st.lineTo(Math.sin(a) * r, Math.cos(a) * r); else st.moveTo(Math.sin(a) * r, Math.cos(a) * r); } return new THREE.ExtrudeGeometry(st, { depth: 0.02, bevelEnabled: false }); }, // a star
+    () => { const h = new THREE.Shape(); h.moveTo(0, -0.06); h.bezierCurveTo(-0.09, 0, -0.05, 0.07, 0, 0.03); h.bezierCurveTo(0.05, 0.07, 0.09, 0, 0, -0.06); return new THREE.ExtrudeGeometry(h, { depth: 0.02, bevelEnabled: false }); }, // a heart
+  ];
+  const g = new THREE.Group(); g.name = 'Trinket';
+  g.add(mesh(shapes[(n * 7 + 1) % shapes.length](), c));
+  return g;
+}
 export function keepsake(kind) {
   const g = new THREE.Group(); g.name = `Keepsake_${kind}`;
   if (kind === 'jello') {
@@ -771,10 +792,28 @@ function keepsake31(g, kind) {
     g.add(at(mesh(box(0.04, 0.03, 0.035), 0xfbf7ee, { ink: false }), -0.04, 0.066, 0.02, 0, -0.2, 0)); // the little white house
     g.add(at(mesh(new THREE.ConeGeometry(0.03, 0.025, 4), PAL.red, { ink: false }), -0.04, 0.093, 0.02, 0, Math.PI / 4 - 0.2, 0));
     for (const [x, z, c, r] of [[0.2, 0.08, 0xf09a3e, 0.4], [0.17, -0.13, 0x6f8a3c, -0.7], [-0.2, 0.12, 0xe2b04a, 1.1]]) g.add(at(mesh(box(0.05, 0.01, 0.05), c), x, 0.005, z, 0, r, 0));
-  } else if (kind === 'shirts') { // #14: a folded white T-shirt with the drawing printed on its front
-    g.add(at(mesh(box(0.3, 0.05, 0.26), 0xffffff), 0, 0.025, 0));
-    g.add(at(mesh(box(0.14, 0.05, 0.05), 0xffffff), 0, 0.03, -0.14)); // the folded sleeves and collar
-    g.add(flat(face(0.2, 0.15), 0.052));
+  } else if (kind === 'shirts') { // #14: a little white T-shirt with the drawing printed on its front
+    // v0.32 (Tiffany's "Edits #6": "Make the t-shirt keepsake look like a little t-shirt"): the shirt's
+    // own shape, sleeves and neck, standing up on a little hanger stand and leaning back so it reads as
+    // a T-shirt (v0.31: folded, a white block)
+    const tee = new THREE.Shape();
+    tee.moveTo(-0.075, 0.17); tee.lineTo(-0.17, 0.13); tee.lineTo(-0.235, 0.03); tee.lineTo(-0.16, -0.005); tee.lineTo(-0.125, 0.05);
+    tee.lineTo(-0.125, -0.17); tee.lineTo(0.125, -0.17); tee.lineTo(0.125, 0.05); tee.lineTo(0.16, -0.005); tee.lineTo(0.235, 0.03);
+    tee.lineTo(0.17, 0.13); tee.lineTo(0.075, 0.17); tee.quadraticCurveTo(0, 0.1, -0.075, 0.17);
+    const shirt = new THREE.Group();
+    const body = mesh(new THREE.ExtrudeGeometry(tee, { depth: 0.02, bevelEnabled: false, curveSegments: 6 }), 0xffffff);
+    body.position.z = -0.01; shirt.add(body);
+    shirt.add(at(face(0.16, 0.13), 0, -0.035, 0.012)); // the drawing printed on its front
+    shirt.add(at(mesh(new THREE.TorusGeometry(0.05, 0.007, 6, 14, Math.PI), 0x9fc6dd, { ink: false }), 0, 0.142, 0.012, 0, 0, Math.PI)); // the neckband
+    shirt.position.set(0, 0.2, 0); shirt.rotation.x = -0.3;
+    g.add(shirt);
+    g.add(at(mesh(box(0.025, 0.2, 0.02), PAL.woodLight), 0, 0.1, -0.08, 0.35, 0, 0)); // the stand behind it
+  } else if (kind === 'whoknows') { // #17.5 (v0.32): the Who-Knows plant itself, a big green squiggle in a pot
+    g.add(at(mesh(new THREE.CylinderGeometry(0.085, 0.065, 0.11, 14), 0xc0663a), 0, 0.055, 0));
+    g.add(at(mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.012, 14), 0x6b4a2e, { ink: false }), 0, 0.106, 0));
+    const pts = []; for (let i = 0; i <= 24; i++) { const k = i / 24; pts.push(new THREE.Vector3(Math.sin(k * Math.PI * 3) * 0.06 * (1 - k * 0.3), 0.1 + k * 0.32, Math.cos(k * Math.PI * 3) * 0.03)); }
+    g.add(mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.02, 8, false), 0x3f9b3a));
+    g.add(at(mesh(new THREE.SphereGeometry(0.03, 10, 8), 0x3f9b3a), pts.at(-1).x, pts.at(-1).y, pts.at(-1).z));
   } else if (kind === 'yearbook') { // #15: a thick yearbook, blue, the drawing on its cover
     g.add(at(mesh(box(0.24, 0.06, 0.3), 0x3d5f9a), 0, 0.03, 0, 0, 0.25, 0));
     g.add(at(mesh(box(0.23, 0.05, 0.29), paper, { ink: false }), 0.006, 0.03, 0, 0, 0.25, 0));
@@ -802,7 +841,7 @@ function keepsake31(g, kind) {
   } else if (kind === 'game') { // #21: a phone, the farm game on its screen
     g.add(at(mesh(box(0.16, 0.016, 0.3), PAL.charcoal), 0, 0.008, 0, 0, 0.35, 0));
     const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.27), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    scr.userData.photoFace = 'assets/credits/photos/photo-42.jpg'; scr.userData.noOutline = true;
+    scr.userData.photoFace = 'assets/credits/photos/photo-50.jpg'; scr.userData.noOutline = true;
     scr.rotation.set(-Math.PI / 2, 0, 0.35); scr.position.y = 0.017; g.add(scr);
   }
 }

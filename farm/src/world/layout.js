@@ -161,3 +161,12 @@ export const YARD_WEED_PLACES = {
 // they are the grass itself, as far as any screen shows it round the drawing: from 22 past its left
 // edge to 22 past its right, and down to v 125. The horizon stays the far edge.
 export const BOUNDS = { uMin: -22, uMax: 122, vMin: 40, vMax: 125 };
+// v0.32 (Tiffany's "Edits #6": "Allow her to move farther out towards the front and to the left and
+// right than she can currently go. As far as she can run at the horizon line LARGER RADIUS especially
+// in the front and to the sides"): the drawing's units narrow toward the front (the perspective), so
+// BOUNDS let her run 42 m wide along the horizon but only 11 m wide at the front. The walkable ground
+// is now a plain rectangle on the ground, in metres: as wide at the front as along the horizon and
+// wider (WALK.halfW each side of the middle), from the horizon (BOUNDS.vMin, unchanged) to WALK.front
+// metres in front of the drawing's middle (8 m further forward than v0.31's front edge, and there 19 m wider
+// on each side).
+export const WALK = { halfW: 24, front: 22 };

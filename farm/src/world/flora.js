@@ -372,25 +372,44 @@ function tomatoTier(seed, k) {
 }
 // The Who-Knows plant (§10.5): one continuous uneven ink stroke rising in loops from a moss
 // mound, with a few bright sprig leaves. Never a resource; it keeps its drawing place.
+// v0.32 (Tiffany's "Edits #6": "Make The Who knows plant more eye catching/dynamic. Shouldn't be thin
+// at the base. Should look like a big green squiggle. I do like that it sways and moves"): a thick
+// bright green stem, as wide at the foot as a thumb and tapering up, that zigzags side to side in
+// big S bends facing the front and ends in a curl, with a few leaves; it keeps its sway (world.js),
+// and its bends now widen and narrow as it sways. (v0.17-v0.31: a thin dark ink line coiling round
+// on itself.)
+export const WHO_KNOWS_GREEN = 0x4cb83f;
+export function whoKnowsPath(phase = 0) {
+  const pts = [];
+  for (let i = 0; i <= 72; i++) {
+    const t = i / 72;
+    const amp = 0.035 + 0.1 * Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.5);
+    const x = Math.sin(t * Math.PI * 3.2 + phase * (0.3 + t)) * amp;
+    const y = SOIL_Y + 0.02 + t * 0.7;
+    const z = 0.025 * Math.cos(t * Math.PI * 3.2);
+    pts.push(V(x, y, z));
+  }
+  // the curl at the top
+  const top = pts.at(-1); const c = V(top.x - 0.05, top.y + 0.02, top.z);
+  for (let i = 1; i <= 14; i++) { const a = (i / 14) * Math.PI * 1.6; const r = 0.05 * (1 - i / 22); pts.push(V(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, top.z)); }
+  return pts;
+}
 export function whoKnows() {
   const g = new THREE.Group(); g.name = 'D19_WhoKnows';
-  const pts = [];
-  for (let i = 0; i <= 64; i++) {
-    const t = i / 64;
-    const loops = t * Math.PI * 2 * 2.6;
-    const rr = 0.045 + 0.04 * Math.sin(t * Math.PI) + 0.012 * Math.sin(t * 23);
-    pts.push(V(Math.sin(loops) * rr + 0.02 * Math.sin(t * 9), SOIL_Y + 0.08 + t * 0.62 + 0.05 * Math.sin(loops + 0.6) * Math.sin(t * Math.PI), Math.cos(loops) * rr * 0.7));
-  }
-  const stroke = new THREE.Mesh(taperTube(new THREE.CatmullRomCurve3(pts), 0.0085, 0.006, 96, 5), toon(PAL.ink));
-  stroke.userData.noOutline = true; stroke.castShadow = true;
+  const pts = whoKnowsPath();
+  const geo = taperTube(new THREE.CatmullRomCurve3(pts), 0.034, 0.012, 140, 8);
+  const stroke = new THREE.Mesh(geo, toon(WHO_KNOWS_GREEN));
+  stroke.name = 'WhoKnowsStem';
+  stroke.castShadow = true;
+  stroke.userData.squiggle = true;
   const parts = [];
   const mound = lumpy(new THREE.SphereGeometry(0.11, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2), 0.012, 30, 3); mound.scale(1.2, 0.55, 1); mound.translate(0, SOIL_Y - 0.01, 0);
   parts.push(paint(mound, FLORA.moss));
-  for (const [i, az, up] of [[64, 0.4, 0.06], [50, 2.2, 0.03], [38, 4.1, 0.02], [58, 5.2, 0.05]]) {
+  for (const [i, az, up] of [[20, 0.4, 0.04], [36, 2.6, 0.03], [52, 0.2, 0.03], [64, 3.0, 0.05]]) {
     const p = pts[i]; const d = dirAz(az);
     const s1 = p.clone().addScaledVector(d, 0.03).addScaledVector(UP, up);
-    parts.push(paint(taperTube(new THREE.LineCurve3(p, s1), 0.004, 0.003, 2, 4), FLORA.leafDark));
-    parts.push(paint(blade([s1, s1.clone().addScaledVector(d, 0.035).addScaledVector(UP, 0.02), s1.clone().addScaledVector(d, 0.07).addScaledVector(UP, 0.01)], { width: oval(0.022, 0.7), across: acrossAz(az), thick: 0.2, cup: 0.3, segs: 5, radial: 5 }), FLORA.sprig));
+    parts.push(paint(taperTube(new THREE.LineCurve3(p, s1), 0.007, 0.005, 2, 4), FLORA.sprig));
+    parts.push(paint(blade([s1, s1.clone().addScaledVector(d, 0.045).addScaledVector(UP, 0.025), s1.clone().addScaledVector(d, 0.09).addScaledVector(UP, 0.012)], { width: oval(0.03, 0.7), across: acrossAz(az), thick: 0.2, cup: 0.3, segs: 5, radial: 5 }), FLORA.sprig));
   }
   g.add(stroke, vmesh(bake(parts)));
   return g;

@@ -94,9 +94,12 @@ export function routineGather(l, id) {
 }
 // the goal targets that get the arrow and the standing circle: the crop choice's patches, else the
 // goal's own target unless it is a routine gathering step
+// v0.32 (Tiffany's "Edits #6": "... the pile (which must be much more obvious, with maybe an arrow
+// pointed at it and no more arrows pointing at crops)"): a crop plant to harvest never has the arrow
+// or the circle (the goal line still says to harvest); v0.18-v0.31 marked the first harvest.
 export function guideTargets(l, goal) {
   const ids = goal.choice?.map((c) => c.target) ?? (goal.target ? [goal.target] : []);
-  return ids.filter((id) => id && !routineGather(l, id));
+  return ids.filter((id) => id && !routineGather(l, id) && !(id in NODES && kindOf(id, l) === 'node'));
 }
 
 // -> null when learned, else { phase, target, kind, tool?, choice? }

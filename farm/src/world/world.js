@@ -32,11 +32,11 @@ import * as CANNON from 'cannon-es';
 import { BIRDS, HOUSE_STAGES, NODE_FIRST_READY_MS, NODE_RENEW_MS, NODES, PILES, REGROW, STAGES, STICK, TABLES_UNLIMITED, TOMATO_GROWTH, TOMATO_YIELD, YARD_SHOWN, YARD_WEEDS } from '../game/data.js';
 import { crateCount, crateShown, digOpen, fillTable, isCommitted, mainComplete, plantSize, saleReady, tableAvailable, tables, weedPresent } from '../game/ledger.js';
 import { buyerCount, crowdFor, LOOKS } from '../game/crowd.js';
-import { ARCHER, ringStoneReach, scatteredStoneReach } from './props.js';
+import { ARCHER, ringStoneReach, scatteredStoneReach, trinket } from './props.js';
 import { ribbonDistance } from './pathgeom.js';
 import { fitToDrawing, HORIZON_V, projectedExtent } from './projection.js';
 import * as G from './greybox.js';
-import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START, YARD_WEED_PLACES } from './layout.js';
+import { BORDER_POLYLINE, BOUNDS, CORN_PLANTS, FITS, PATH, SKY, STATIONS, SUNFLOWER_NODES, SUNFLOWERS, TOMATO_NODES, VANESSA_START, WALK, YARD_WEED_PLACES } from './layout.js';
 import { ease } from '../core/tween.js';
 import { PERF } from '../core/perf.js';
 import { SPOTS } from '../game/songs.js';
@@ -160,6 +160,9 @@ export const TOOL_LEAN = { along: { shovel: 1.3, rake: 0.72 }, stand: 0.95, gap:
 // a song spot's star while she is not standing in its circle, against its full size
 export const SPOT_STAR = 0.6;
 export const KEEPSAKE_SIZE = 1.9;
+// v0.32: where a keepsake comes out (world.keepsakeSpot): metres from her (nearest, farthest, best),
+// clearances (m) off footprints, stations, song spots and circles, and the strip behind a tall thing
+export const KEEP_SPOT = { near: 3.5, far: 8, best: 5.5, clear: 0.9, station: 1.5, spot: 2.0, circle: 1.2, shadow: 3.0 };
 // v0.23: a keepsake's bounce: two hops of `hopMs` every `everyMs`, `high` metres up
 export const KEEPSAKE_BOUNCE = { everyMs: 1700, hopMs: 380, high: 0.2 };
 // how high it is at time t, 0..1 (pure: the checks read it)
@@ -524,8 +527,9 @@ export class World {
     for (const id of HOUSE_STAGES) this.stations[id].pos.copy(this.eggSpotPos('door'));
     const benchSite = this.objects.D10;
     this.stations.G2.pos.copy(benchSite.localToWorld(new THREE.Vector3(0, 0, 0.85))).setY(0);
-    this.boundsQuad = [[BOUNDS.uMin, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMin], [BOUNDS.uMax, BOUNDS.vMax], [BOUNDS.uMin, BOUNDS.vMax]]
-      .map(([u, v]) => p.groundAt(u, v));
+    // (v0.32: a rectangle in metres, as wide at the front as at the horizon: layout.js WALK)
+    const back = p.groundAt(50, BOUNDS.vMin).z;
+    this.boundsQuad = [[-WALK.halfW, back], [WALK.halfW, back], [WALK.halfW, WALK.front], [-WALK.halfW, WALK.front]].map(([x, z]) => new THREE.Vector3(x, 0, z));
     this.buildPatches();
     this.buildFixedWeed(); // v0.30 (after the raised bed and the song spots stand)
     this.built = true; // v0.26: every station stands where it stays (eggSpotPos keeps its answers from here on)
@@ -1795,7 +1799,7 @@ export class World {
       case 'sun': return viewer() + 0.55 * Math.sign(this.objects.D22.position.x - hero.x || 1);
       // a hand at her brow or her lips is seen from the front: she stands to the viewer, turned a
       // little toward the sun, or the birds, and looks up at them
-      case 'glare': return viewer() + 0.55 * Math.sign(this.objects.D22.position.x - hero.x || 1);
+      case 'glare': return viewer() + Math.PI / 2; // (v0.32: she lies along the screen to sunbathe)
       case 'birds': return viewer() + 0.55 * Math.sign(this.objects.D21.position.x - hero.x || 1);
       case 'tools': return to(this.tools.rake.home.pos);
       case 'weeds': return this.weedProp ? to(this.weedProp.position) : null;
@@ -1825,7 +1829,8 @@ export class World {
       case 'tree': {
         const trunk = this.objects.D09.position;
         const d = new THREE.Vector3(hero.x - trunk.x, 0, hero.z - trunk.z).normalize();
-        return { to: trunk.clone().addScaledVector(d, TREE_TRUNK_R * this.objects.D09.scale.x + 0.3).setY(0) };
+        // (v0.32: right up against the trunk, to hug it: it was 0.3 m off it)
+        return { to: trunk.clone().addScaledVector(d, TREE_TRUNK_R * this.objects.D09.scale.x + 0.12).setY(0) };
       }
       case 'window': return { to: h.localToWorld(new THREE.Vector3(WINDOW_X, 0, G.HOUSE.d / 2 + 0.46)).setY(0) };
       default: return {};
@@ -1976,6 +1981,10 @@ export class World {
       const at = this.standPoint(id);
       if (!at) { mark.visible = false; continue; }
       this.updateStandMarker(mark, at, dtMs, hero && Math.hypot(at.x - hero.x, at.z - hero.z) <= 0.65);
+      // v0.32 (Tiffany's "Edits #6": "the pile (which must be much more obvious, with maybe an arrow
+      // pointed at it ...)"): the pile's circle is drawn twice as big and breathes (the guide's arrow
+      // points at it, main.js / coach.js)
+      if (id === 'yard') { this.pileT = (this.pileT ?? 0) + dtMs; mark.scale.setScalar(2 * (1 + (this.reducedMotion() ? 0 : 0.08 * Math.sin(this.pileT / 300)))); } else mark.scale.setScalar(1);
     }
   }
   // v0.22 (Tiffany: "The circles should be the actions that you perform to get the Easter egg
@@ -2435,6 +2444,22 @@ export class World {
     const box = new THREE.Box3().setFromObject(st.obj);
     const top = Number.isFinite(box.max.y) ? box.max.y : 1;
     return out.copy(st.pos).setY(Math.min(2.6, top) + 0.05);
+  }
+  // v0.32: where a bird rests: on the roof's ridge (once the roof is on) or in the old tree's crown
+  perchPoint(kind, out = new THREE.Vector3()) {
+    if (kind === 'roof') {
+      const h = this.objects.D01;
+      if (!h?.visible || !this.lastLedger?.stages?.H3?.committed) return null;
+      h.updateMatrixWorld(true);
+      return out.copy(h.localToWorld(new THREE.Vector3(0.35, G.HOUSE.plinth + G.HOUSE.wall + G.HOUSE.roof * 0.98, 0)));
+    }
+    if (kind === 'treetop') {
+      const t = this.objects.D09;
+      if (!t) return null;
+      const b = new THREE.Box3().setFromObject(t);
+      return out.set(b.min.x + (b.max.x - b.min.x) * 0.66, b.min.y + (b.max.y - b.min.y) * 0.8, (b.min.z + b.max.z) / 2 + (b.max.z - b.min.z) * 0.3);
+    }
+    return null;
   }
   benchSeat(out = new THREE.Vector3()) {
     const b = this.objects.D10;
@@ -2924,6 +2949,73 @@ export class World {
     }
   }
   keepsakePos(id) { return this.keepsakes?.[id]?.pos ?? null; }
+  // v0.32: the keepsake comes out where the game puts it (main.js: near her, world.keepsakeSpot)
+  placeKeepsake(id, at) {
+    if (!this.keepsakes) this.buildKeepsakes();
+    const k = this.keepsakes[id];
+    if (!k || !at) return;
+    k.pos.set(at.x, 0, at.z);
+    k.obj.position.set(at.x, 0, at.z);
+  }
+  // v0.32 (Tiffany's "Edits #6": "Don't hide the keepsakes as much. Make them fairly obvious. Not
+  // blocked by other things like gardens, trees, benches etc"; "Stagger them so they are timed
+  // evenly"; "Don't ever overlap circles"): where a keepsake comes out: on open grass KEEP_SPOT.near to
+  // KEEP_SPOT.far metres from her (about the same walk every time), off every footprint (the house,
+  // the tree's ring, the bed, the tables, the corn and the sunflowers) by KEEP_SPOT.clear, not in the
+  // strip behind a tall thing (the camera looks from the front, +z), clear of every station (rocks,
+  // sticks, weeds, crops, the pile) and of the song spots and the circles in `avoid` ([{ x, z, r }]).
+  // On her side of the screen first (in front of her or beside her). `seed` varies the pick.
+  // `onScreen(x, z)`: whether a place is in the play area of the screen now (main.js); the places on
+  // screen come first, so on a narrow phone it is in sight as it comes out
+  keepsakeSpot(hero, avoid = [], seed = 0, onScreen = null) {
+    const cands = this.keepsakeCandidates();
+    const clear = cands.filter((c) => !avoid.some((a) => Math.hypot(c.x - a.x, c.z - a.z) < a.r + KEEP_SPOT.circle) && Math.hypot(c.x - hero.x, c.z - hero.z) >= 2.2);
+    const seen = onScreen ? clear.filter((c) => onScreen(c.x, c.z)) : [];
+    const ok = seen.length ? seen : clear;
+    const scored = ok.map((c) => {
+      const d = Math.hypot(c.x - hero.x, c.z - hero.z);
+      const band = d < KEEP_SPOT.near ? (KEEP_SPOT.near - d) * 3 : d > KEEP_SPOT.far ? (d - KEEP_SPOT.far) * 2 : Math.abs(d - KEEP_SPOT.best) * 0.3;
+      const behind = c.z < hero.z - 1 ? (hero.z - 1 - c.z) * 0.4 : 0; // farther back is less in view
+      const jitter = (((c.i * 7919 + seed * 104729) % 97) / 97) * 0.8;
+      return { c, score: band + behind + jitter };
+    }).sort((a, b) => a.score - b.score);
+    const best = scored[0]?.c;
+    return best ? new THREE.Vector3(best.x, 0, best.z) : this.freeSpotNear(hero, new THREE.Vector3(), avoid);
+  }
+  keepsakeCandidates() {
+    if (this.keepCands) return this.keepCands;
+    const boxes = [...this.saleBoxes(4), ...this.obstacleBoxes(KEEP_SPOT.clear)];
+    const hb = new THREE.Box3().setFromObject(this.objects.D01);
+    boxes.push({ lo: [hb.min.x - KEEP_SPOT.clear, hb.min.z - KEEP_SPOT.clear], hi: [hb.max.x + KEEP_SPOT.clear, hb.max.z + KEEP_SPOT.clear], tall: true });
+    // the corn field and the sunflower patch, and the strip behind each tall thing
+    const area = (pts, grow, tall) => {
+      const xs = pts.map((q) => q.x); const zs = pts.map((q) => q.z);
+      boxes.push({ lo: [Math.min(...xs) - grow, Math.min(...zs) - grow], hi: [Math.max(...xs) + grow, Math.max(...zs) + grow], tall });
+    };
+    area(CORN_PLANTS.map((c) => this.proj.groundAt(c.u, c.v)), 1.0, true);
+    area(SUNFLOWERS.map((c) => this.proj.groundAt(c.u, c.v)), 1.0, true);
+    const tree = this.objects.D09.position;
+    boxes.push({ lo: [tree.x - 2.6, tree.z - 2.6], hi: [tree.x + 2.6, tree.z + 1.2], tall: true });
+    const shadows = boxes.filter((b) => b.tall || /D09|D18|Ring|ring/.test(b.name ?? '')).map((b) => ({ lo: [b.lo[0] - 0.4, b.lo[1] - KEEP_SPOT.shadow], hi: [b.hi[0] + 0.4, b.lo[1]] }));
+    const all = [...boxes, ...shadows];
+    const stations = Object.values(this.stations).map((st) => st.pos).filter(Boolean);
+    const spots = Object.keys(SPOTS).map((id) => this.eggSpotPos(id, new THREE.Vector3()));
+    const out = [];
+    let i = 0;
+    const back = this.boundsQuad[0].z;
+    for (let z = back + 1.5; z <= WALK.front - 1; z += 1) {
+      for (let x = -WALK.halfW + 1; x <= WALK.halfW - 1; x += 1) {
+        const p = new THREE.Vector3(x, 0, z);
+        if (this.clampToBounds(p.clone())) continue;
+        if (all.some((b) => p.x > b.lo[0] && p.x < b.hi[0] && p.z > b.lo[1] && p.z < b.hi[1])) continue;
+        if (stations.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < KEEP_SPOT.station)) continue;
+        if (spots.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < KEEP_SPOT.spot)) continue;
+        out.push({ x: p.x, z: p.z, i: i++ });
+      }
+    }
+    this.keepCands = out;
+    return out;
+  }
   // out: the exploring phase; found: { id: true }; hero: her position.
   // v0.22 (Tiffany: "should not have yellow circles around them, they should just be icons that
   // look like the item in the photo"): each lies on the grass as the thing itself. No ring, no
@@ -3156,9 +3248,23 @@ export class World {
       case 'table': case 'pockets': {
         // out of her pockets: a few small treasures fly up and land round her
         say(0.55);
+        // v0.32 (Tiffany's "Edits #6": 'The action for "pockets" song should be her emptying her
+        // pockets but of random shapes and colors not just coins'): odd little treasures of every shape
+        // and colour (a ball, a button, a star, a block, a ring, a cone, a marble, a heart...), a
+        // different handful each time, which lie round her a few seconds and fade (v0.22-v0.31: coins
+        // and two crops)
         after(0.5, () => {
           const from = her().setY(0.95);
-          ['coin', 'T', 'coin', 'C', 'coin'].forEach((res, i) => this.tweens.wait(i * 90).then(() => { if (live()) this.toss(res, from, from.clone().add(new THREE.Vector3((i - 2) * 0.42, -0.9, 0.55 + 0.12 * (i % 2))), 620, 0.9); }));
+          const n = 7;
+          const seed = (this.pocketSeed = (this.pocketSeed ?? 0) + 1);
+          for (let i = 0; i < n; i++) {
+            this.tweens.wait(i * 80).then(() => {
+              if (!live()) return;
+              const a = ((i - (n - 1) / 2) / n) * 2.4 + Math.sin(seed * 3.1 + i) * 0.2;
+              const to = from.clone().add(new THREE.Vector3(Math.sin(a) * (0.6 + 0.2 * (i % 3)), -0.95, 0.35 + Math.cos(a) * 0.45));
+              this.tossTrinket(trinket(seed * 5 + i), from, to, 600 + 40 * (i % 3), 0.9 + 0.15 * (i % 2));
+            });
+          }
         });
         break;
       }
@@ -3238,6 +3344,19 @@ export class World {
       .then(() => { if (live() && this.heldTool !== 'rake') o.quaternion.copy(r.home.quat); });
   }
   // a small thing thrown up in an arc from `from` to `to` (higher than a unit's flight: `high` m)
+  // v0.32: a pocket treasure (world/props.js trinket) flies out, lands, lies a while and fades
+  tossTrinket(m, from, to, ms = 650, high = 1, stayMs = 3600) {
+    m.position.copy(from);
+    this.root.add(m);
+    const spin = new THREE.Vector3(3 + (m.id % 4), 5 + (m.id % 3), 2);
+    const land = () => this.tweens.wait(stayMs).then(() => this.tweens.run(500, (k) => m.scale.setScalar(Math.max(0.01, 1 - k)))).then(() => this.root.remove(m));
+    if (this.reducedMotion()) { m.position.copy(to); m.position.y = 0.04; return land(); }
+    return this.tweens.run(ms, (k) => {
+      m.position.lerpVectors(from, to, k);
+      m.position.y = Math.max(0.04, m.position.y + Math.sin(Math.PI * k) * high);
+      m.rotation.set(k * spin.x, k * spin.y, k * spin.z);
+    }).then(land);
+  }
   toss(res, from, to, ms = 700, high = 1) {
     const m = G.unitMesh(res);
     m.position.copy(from);
@@ -3374,7 +3493,10 @@ export class World {
     const wig = w.wiggle > 0 ? 0.22 * Math.sin(w.wiggle / 55) * (w.wiggle / 1500) : 0;
     o.rotation.z = sway + glad + wig;
     o.rotation.y = w.face * (w.wiggle / 1500); // the leaves turn toward her while it wiggles
-    o.scale.set(K, K * (1 + 0.06 * Math.abs(wig) / 0.22), K);
+    // (v0.32: its S bends widen and narrow as it sways, and it stretches up a little: Tiffany's
+    // "Edits #6", "more eye catching/dynamic ... I do like that it sways and moves")
+    const breathe = Math.sin((w.t / 1700) * Math.PI * 2);
+    o.scale.set(K * (1 + 0.1 * breathe), K * (1 + 0.04 * Math.max(0, -breathe) + 0.06 * Math.abs(wig) / 0.22), K);
   }
   whoKnowsHello(heroPos) {
     const o = this.whoKnowsObj();

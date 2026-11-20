@@ -103,7 +103,12 @@ export function drawPostcard(canvas, img, stats, { width = 1400 } = {}) {
 // edge to edge, with "Vanessa drew this!" pencilled in her pen's blue on a slip of paper in its
 // lower left corner (v0.31; v0.30: the lower right): no title, no numbers, no signature or stamp (v0.23-v0.29 sent the postcard,
 // `drawPostcard`: the drawing with the farm's numbers under it).
-export const SHARED_NOTE = 'Vanessa drew this!';
+export const SHARED_NOTE = 'Vanessa drew this!'; // (v0.30-v0.31; v0.32: SIGNED_BY)
+// v0.32 (Tiffany's "Edits #6": "When you allow people to download the farm drawing don't have the box
+// that says Vanessa drew this anymore. Just write in handwriting that matches the color of the pen 'by
+// Vanessa' like a signature"): the words, in the drawing's own pen colour (ui/paper.js PEN)
+export const SIGNED_BY = 'by Vanessa';
+export const SIGN_INK = '#1e1a4e';
 export function drawShared(canvas, img, { width = 1600 } = {}) {
   const w = width;
   const h = Math.round(w * (img.height / img.width));
@@ -111,25 +116,16 @@ export function drawShared(canvas, img, { width = 1600 } = {}) {
   canvas.height = h;
   const g = canvas.getContext('2d');
   g.drawImage(img, 0, 0, w, h);
-  const size = Math.round(w * 0.042);
-  g.font = `italic 700 ${size}px "Pencil Title", "Comic Sans MS", cursive`;
-  const tw = g.measureText?.(SHARED_NOTE)?.width ?? size * SHARED_NOTE.length * 0.5;
-  const padX = Math.round(size * 0.55); const padY = Math.round(size * 0.35);
-  const bw = tw + padX * 2; const bh = size + padY * 2;
-  // v0.31 (Tiffany's "Edits #5": "Move the Vanessa drew this caption on the actual drawing to the
-  // bottom left ish"): the slip lies in the lower left corner, under the bench's ring of stones
-  // (v0.30: the lower right)
-  const x = Math.round(w * 0.03); const y = h - bh - Math.round(w * 0.02);
+  // v0.32: "by Vanessa", signed in the pen's ink in the handwriting of the title (no box), low on the
+  // right where a signature goes (v0.30-v0.31: "Vanessa drew this!" on a paper slip with a border)
+  const size = Math.round(w * 0.05);
+  g.font = `400 ${size}px "Pencil Title", "Segoe Script", "Comic Sans MS", cursive`;
   g.save();
-  g.translate(x + bw / 2, y + bh / 2);
-  g.rotate(0.04);
-  g.fillStyle = 'rgba(255, 247, 229, 0.94)';
-  g.fillRect(-bw / 2, -bh / 2, bw, bh);
-  g.strokeStyle = '#2b2a5e'; g.lineWidth = Math.max(2, w / 600);
-  g.strokeRect(-bw / 2, -bh / 2, bw, bh);
-  g.fillStyle = '#2b2a5e';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(SHARED_NOTE, 0, size * 0.04);
+  g.translate(Math.round(w * 0.95), Math.round(h - w * 0.035));
+  g.rotate(-0.06);
+  g.fillStyle = SIGN_INK;
+  g.textAlign = 'right'; g.textBaseline = 'alphabetic';
+  g.fillText(SIGNED_BY, 0, 0);
   g.restore();
   return canvas;
 }

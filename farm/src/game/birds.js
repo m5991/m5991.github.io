@@ -28,7 +28,7 @@
 // of her crop plants (they take turns), looks about and flies off with nothing: kind 'visit'. No
 // warning, no Wave, no arrow, no stain: nothing to do about it and nothing lost. (v0.17-v0.22: after
 // the home, birds only perched on the bench.) And the birds come from the house foundation on.
-import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, END_BIRDS, NODES } from './data.js';
+import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, END_BIRDS, END_BIRD_KINDS, NODES } from './data.js';
 import { birdsActive, carriedTarget, isCommitted, mainComplete, nodeEstablished, readyNodes, tableTarget, theftAllowed } from './ledger.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -60,14 +60,22 @@ export function targetFor(kind, ctx) {
     const id = planted[l.theft.rotation % planted.length];
     return { kind, id, pos: ctx.nodePos(id), res: NODES[id].res };
   }
+  // v0.32 (Tiffany's "Edits #6": "Have the birds land on the top of the house and in the tree too"): a
+  // bird that only rests a while on the roof's ridge (once the roof is on) or in the old tree's crown,
+  // and flies on; it takes nothing and leaves nothing
+  if (kind === 'roof' || kind === 'treetop') { const pos = ctx.perchAt?.(kind); return pos ? { kind, id: kind, pos } : null; }
   if (kind === 'perch') return isCommitted(l, 'G2') && !l.theft.stain && ctx.bench ? { kind, id: 'bench', pos: ctx.bench } : null;
   if (ctx.calm || !theftAllowed(l)) return null;
   if (kind === 'node') {
     // the ready plant farthest from Vanessa
+    // v0.32 (Tiffany's "Edits #6": "Bring back the birds steeling crops (animation of them flying with
+    // the crop away)"): of the plants on her screen (`ctx.onScreen`), so the theft and the flight off
+    // with the crop are seen; with none on screen it goes for something else. (v0.17-v0.31: of them
+    // all, which on a phone was nearly always off the screen.)
     let best = null;
     for (const id of readyNodes(l)) {
       const p = ctx.nodePos(id);
-      if (!p) continue;
+      if (!p || (ctx.onScreen && !ctx.onScreen(p))) continue;
       const d = dist(p, ctx.hero);
       if (!best || d > best.d) best = { kind, id, pos: p, d, res: NODES[id].res };
     }
@@ -77,7 +85,7 @@ export function targetFor(kind, ctx) {
   // crops set out on the tables (`ctx.tablePos`: over the first table). Dwight keeps to the corn.
   if (kind === 'table') {
     const res = tableTarget(l);
-    if (!res || !ctx.tablePos || ctx.saleOn) return null;
+    if (!res || !ctx.tablePos || ctx.saleOn || (ctx.onScreen && !ctx.onScreen(ctx.tablePos))) return null;
     return { kind, id: 'table', pos: ctx.tablePos, res };
   }
   if (kind === 'carried') {
@@ -92,7 +100,11 @@ export function targetFor(kind, ctx) {
 export function chooseVisit(ctx) {
   const { l } = ctx;
   if (!birdsActive(l)) return null;
-  const order = mainComplete(l) ? ['visit'] : BIRD_KINDS;
+  // (v0.32: on the finished farm they also rest on the roof and in the tree, and one perches on the
+  // bench, where it leaves its mess for "Clean the bench"; `ctx.want`: a kind asked for first)
+  const order0 = mainComplete(l) ? END_BIRD_KINDS : BIRD_KINDS;
+  if (ctx.want) { const t = targetFor(ctx.want, ctx); if (t) return t; }
+  const order = order0;
   const start = l.theft.rotation % order.length;
   for (let i = 0; i < order.length; i++) {
     const t = targetFor(order[(start + i) % order.length], ctx);
@@ -104,6 +116,8 @@ export function chooseVisit(ctx) {
 // what the warning says (§7: "A bird is eyeing the tomatoes", "A bird is circling your corn")
 export function warningText(t) {
   if (t.kind === 'visit') return 'A bird has come to look at the farm';
+  if (t.kind === 'roof') return 'A bird lands on the roof';
+  if (t.kind === 'treetop') return 'A bird lands in the old tree';
   if (t.kind === 'perch') return 'A bird is eyeing the bench';
   if (t.kind === 'carried') return `A bird is after the ${CROP_WORD[t.res]} on your head! Wave it off`;
   if (t.kind === 'table') return 'A bird is eyeing the yard-sale table! Wave it off';
@@ -125,6 +139,7 @@ export function warningText(t) {
 // v0.29 (Tiffany: "When it says wave, give her a second to wave at the bird"): Wave holds the bird
 // where it is for WAVE_MS while she waves at it, and then it flies off with nothing
 export const WAVE_MS = 1000;
+const RESTS = new Set(['visit', 'roof', 'treetop']); // (v0.32) a bird that takes nothing
 export function createBirds() {
   const s = { phase: 'idle', t: 0, nextAt: null, target: null, archer: null, drawT: 0, why: null, lastShot: -Infinity, guarded: false };
   // v0.20: is this visit Dwight's: a crop plant a hired archer guards
@@ -136,6 +151,7 @@ export function createBirds() {
   const still = (ctx) => {
     if (!s.target) return false;
     if (s.target.kind === 'visit') return mainComplete(ctx.l);
+    if (s.target.kind === 'roof' || s.target.kind === 'treetop') return true;
     if (s.target.kind === 'perch') return isCommitted(ctx.l, 'G2') && !ctx.l.theft.stain;
     if (ctx.calm || !theftAllowed(ctx.l)) return false;
     if (s.target.kind === 'node') return readyNodes(ctx.l).includes(s.target.id);
@@ -169,7 +185,7 @@ export function createBirds() {
     get state() { return { phase: s.phase, t: s.t, target: s.target, archer: s.archer?.id ?? null, why: s.why, nextAt: s.nextAt, guarded: s.guarded }; },
     // the bird can be waved off now (before the take; not once an archer is on it, and never a
     // bird at a plant he guards: that one is his, v0.20)
-    get wavable() { return ['warn', 'approach', 'sit'].includes(s.phase) && !s.archer && !s.guarded && s.target?.kind !== 'visit'; },
+    get wavable() { return ['warn', 'approach', 'sit'].includes(s.phase) && !s.archer && !s.guarded && !RESTS.has(s.target?.kind); },
     get busy() { return s.phase !== 'idle'; },
     reset(activeMs = null) {
       Object.assign(s, { phase: 'idle', t: 0, nextAt: activeMs === null ? null : activeMs + BIRDS.firstMs, target: null, archer: null, drawT: 0, why: null, guarded: false });
@@ -196,7 +212,7 @@ export function createBirds() {
         s.guarded = guardedNow(ctx);
         // `guarded`: Dwight has this one, so the caller shows no warning (v0.20)
         // `harmless`: a visit to the finished farm, with nothing to warn of (v0.23)
-        out.push({ a: 'turn' }, { a: 'warn', target: t, text: warningText(t), guarded: s.guarded, ...(t.kind === 'visit' ? { harmless: true } : {}) });
+        out.push({ a: 'turn' }, { a: 'warn', target: t, text: warningText(t), guarded: s.guarded, ...(RESTS.has(t.kind) ? { harmless: true } : {}) });
         return out;
       }
       s.t += dt;
@@ -216,7 +232,7 @@ export function createBirds() {
       s.guarded = guardedNow(ctx); // he may be hired while the bird is on its way
       // Let plant birds land and visibly perch before Dwight draws his bow.
       // (v0.31: not the tables: he keeps to the corn)
-      if (s.target.kind !== 'visit' && s.target.kind !== 'table' && (s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
+      if (!RESTS.has(s.target.kind) && s.target.kind !== 'table' && (s.target.kind === 'carried' || (s.phase === 'sit' && s.t >= 900)) && guard(out, ctx, dt)) return out;
       if (s.phase === 'warn' && s.t >= BIRDS.warnMs) {
         s.phase = 'approach'; s.t = 0;
       } else if (s.phase === 'approach') {
@@ -231,7 +247,7 @@ export function createBirds() {
         }
       } else if (s.phase === 'sit') {
         const k = s.target.kind;
-        if (k === 'visit') { if (s.t >= END_BIRDS.sitMs) leave(out, 'gone'); return out; }
+        if (RESTS.has(k)) { if (s.t >= END_BIRDS.sitMs + (k === 'visit' ? 0 : 1400)) leave(out, 'gone'); return out; }
         if (s.t >= (k === 'perch' ? BIRDS.perchMs : BIRDS.sitMs)) {
           if (k === 'perch') { out.push({ a: 'stain' }); leave(out, 'stained'); } else if (k === 'table') { out.push({ a: 'take', tx: { t: 'steal', from: 'table' } }); leave(out, 'took'); } else { out.push({ a: 'take', tx: { t: 'steal', from: 'node', src: s.target.id } }); leave(out, 'took'); }
         }

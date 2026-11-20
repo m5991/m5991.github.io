@@ -31,7 +31,8 @@ export function finishedFarm() {
       const need = recipe(l, stage);
       // funded from nothing (a farm made for a look, not played): the coins, the wood and the
       // stone it takes, a yard sale and some gathering since the last build, the first harvest
-      l = { ...l, harvested: true, purse: l.purse + need.coins, carried: { ...l.carried, W: need.W, R: need.R }, since: { sales: 1, gather: 2 } };
+      // (v0.32: the wood and stone at the pile, where the first DIY takes them from)
+      l = { ...l, harvested: true, purse: l.purse + need.coins, yard: { ...l.yard, W: l.yard.W + need.W, R: l.yard.R + need.R }, since: { sales: 1, gather: 2 } };
       run({ t: 'build', stage });
       settled();
     }

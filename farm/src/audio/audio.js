@@ -51,6 +51,7 @@ export const BLOCK_CHECK_MS = 900; // a resume still pending after this counts a
 export const HIDDEN_SUSPEND_MS = 60000;
 export const RETURN_GRACE_MS = 1500;
 export const MAX_EFFECT_VOICES = 8;
+export const LATENCY_HINT = 'playback'; // v0.32
 const FADE_IN_S = 0.4;
 const FADE_OUT_S = 0.06; // short enough to feel immediate, long enough not to click
 
@@ -121,7 +122,12 @@ export function createAudio({ AudioContextCtor, load, storage, track = TRACK, on
     // v0.29: an iPhone plays Web Audio past the silent switch only in a "playback" audio session
     try { if (session && session.type !== 'playback') session.type = 'playback'; } catch { /* not settable here */ }
     try {
-      ctx = new AudioContextCtor();
+      // v0.32 (Tiffany's "Edits #6": "The background soundtrack is skipping"): the context is asked for
+      // its "playback" latency, the larger buffers a browser keeps for music that has to run on
+      // without a gap, so a busy phone (the farm drawn 60 times a second) does not starve the theme
+      // between two of its buffers. v0.10-v0.31 took the default "interactive", the smallest buffers.
+      // (The effects come a few hundredths of a second later; nothing waits on them.)
+      try { ctx = new AudioContextCtor({ latencyHint: LATENCY_HINT }); } catch { ctx = new AudioContextCtor(); }
     } catch {
       unsupported = true;
       return false;

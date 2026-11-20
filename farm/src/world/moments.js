@@ -109,10 +109,11 @@ export const ACTIONS = {
   whistle: 'puts her fingers to her lips and looks up',
   show: 'holds her drawing out before her with both hands, for the viewer to see',
   lean: 'leans her whole body sideways, toward the sunflowers',
-  pockets: 'digs her hands into her pockets, then flings them out',
+  pockets: 'digs her hands into her pockets and empties them: odd little treasures of every shape and colour fly out',
   // v0.29 (Tiffany: "The shading eyes from the sun doesn't look like she's doing that. Put her arms
   // across her face")
   shade: 'puts both arms across her face against the sun',
+  sunbathe: 'lies back on a towel in the sun, one knee up, hands behind her head',
   // v0.29 (Tiffany: "When she sketches the farm, let it be on an easel"; "make her have a thought
   // bubble with the drawing like she's thinking about what to draw next")
   sketch: 'thinks, a hand at her chin, then draws on the easel beside her',
@@ -233,7 +234,7 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
   const wave = reduced ? 0 : Math.sin(u * Math.PI * 12);
   const beat = reduced ? 0 : Math.sin(u * Math.PI * 6); // three slow swings over the act
   const bones = {};
-  let travel = 0; let lift = 0; let roll = 0; let spin = 0; let to = 0; let smile = 0; let prop = 0;
+  let travel = 0; let lift = 0; let roll = 0; let spin = 0; let to = 0; let smile = 0; let prop = 0; let pitch = 0;
   let seat = null;
   if (kind === 'bench') {
     // v0.27: her seat is worked out from her legs, her feet on the ground the whole time (sitPose)
@@ -290,12 +291,19 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     const stamp = span(u, 0.26, 0.38, 0.4, 0.47); // the foot comes up, and down
     bones.Hip_R = [-0.85 * stamp]; bones.Knee_R = [1.2 * stamp];
   } else if (kind === 'hug') {
-    to = span(u, 0.04, 0.24, 0.78, 0.98);
-    const k = span(u, 0.14, 0.34, 0.72, 0.92);
-    const squeeze = reduced ? 0 : 0.06 * Math.sin(u * Math.PI * 4);
-    bones.Shoulder_R = [-1.32 * k, 0, (0.42 + squeeze) * k]; bones.Shoulder_L = [-1.32 * k, 0, (-0.42 - squeeze) * k];
-    bones.Elbow_R = [-0.75 * k]; bones.Elbow_L = [-0.75 * k];
-    bones.Spine1_M = [0.2 * k]; bones.Head_M = [0, 0, 0.32 * k];
+    // v0.32 (Tiffany's "Edits #6": "Make it look more like she's hugging the tree"): she steps right up
+    // to the trunk (world.js spotStage), leans her whole body into it, wraps both arms well round it,
+    // elbows bent round its sides, and lays her cheek against the bark, squeezing it now and then
+    // (v0.22-v0.31: arms held out level in front of her, a step away from it)
+    to = span(u, 0.04, 0.24, 0.8, 0.98);
+    const k = span(u, 0.14, 0.32, 0.74, 0.92);
+    const squeeze = reduced ? 0 : 0.1 * Math.max(0, Math.sin(u * Math.PI * 5));
+    bones.Shoulder_R = [-1.45 * k, 0, (0.95 + squeeze) * k]; bones.Shoulder_L = [-1.45 * k, 0, (-0.95 - squeeze) * k];
+    bones.Elbow_R = [(-1.35 - squeeze) * k]; bones.Elbow_L = [(-1.35 - squeeze) * k];
+    bones.Spine1_M = [0.3 * k]; bones.Chest_M = [0.1 * k];
+    bones.Head_M = [0.12 * k, 0.55 * k, 0.38 * k];
+    roll = 0;
+    lift = 0;
     smile = k;
   } else if (kind === 'joke') {
     const tell = span(u, 0.05, 0.2, 0.46, 0.58); // hand to her mouth, leaning in
@@ -349,6 +357,18 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     bones.Elbow_R = [p.Elbow_R[0] - 0.25 * fling]; bones.Elbow_L = [p.Elbow_L[0] - 0.25 * fling];
     bones.Spine1_M = [0.12 * dig - 0.1 * fling];
     smile = fling;
+  } else if (kind === 'sunbathe') {
+    // v0.32 (Tiffany's "Edits #6": 'Instead of "shade your eyes" have it be "Sunbathe" and she lays
+    // down on a towel'): she sits, then lies back on her towel (hero.js lays it out under her and
+    // tips her body back, `pitch`), one knee up and her hands behind her head, and rests in the sun
+    const k = span(u, 0.06, 0.24, 0.84, 0.97);
+    pitch = -Math.PI / 2 * k;
+    lift = 0.13 * k;
+    bones.Hip_R = [-0.75 * k]; bones.Knee_R = [1.35 * k];
+    bones.Shoulder_R = [-2.7 * k, 0, -0.5 * k]; bones.Elbow_R = [-1.9 * k];
+    bones.Shoulder_L = [-2.7 * k, 0, 0.5 * k]; bones.Elbow_L = [-1.9 * k];
+    bones.Head_M = [0.25 * k];
+    smile = k; prop = k;
   } else if (kind === 'shade') {
     // v0.29: both forearms crossed in front of her face, her head ducked a little behind them
     const k = span(u, 0.05, 0.22, 0.8, 0.96);
@@ -436,7 +456,7 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     lift = reduced ? 0 : 0.07 * Math.abs(s) * blend;
     smile = blend;
   }
-  return { blend, bones, travel, lift, roll, spin, to, smile, prop, seat };
+  return { blend, bones, travel, lift, roll, spin, to, smile, prop, seat, pitch };
 }
 // the angle of her hand round the circle she draws in the air (rad, from the top, one and a
 // quarter turns), and how much of the circle is drawn by u (0..1): world.js draws the line
