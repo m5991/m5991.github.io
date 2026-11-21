@@ -189,7 +189,7 @@ export const SPOTS = {
   // around then get chased off the screen by Vanessa"): the scene (world/thief.js), 9 s (v0.29: a
   // little left of 52.2, 95.5, to keep clear of the Who-Knows plant's circle)
   world: { label: 'the front of the farm', uv: [49.5, 111.5], act: act('Show your drawing to the world', 'thief', 'Look, world!', 9000) },
-  between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh…', 2800) },
+  between: { label: 'the grass between the corn and the sunflowers', uv: [86.5, 55.5], act: act('Lean toward the sunflowers', 'lean', 'Sigh!', 2800) },
   // v0.23: "Beet seeds in my pocket": the vegetables' end of the raised bed (the table it stood at is not in the drawing)
   // (v0.29, Tiffany: "Never have a red circle that overlaps a crop collecting": a step past the
   // bed's vegetable end and in front of it, off the tomato plants' rings; it stood at 78.4, 82.9)
@@ -198,7 +198,7 @@ export const SPOTS = {
   // v0.32 (Tiffany's "Edits #6": 'Instead of "shade your eyes" have it be "Sunbathe" and she lays down
   // on a towel'): she lies back on a striped towel in the sun, her sunglasses on (v0.29-v0.31: both
   // arms across her face, "Shade your eyes from the sun")
-  glare: { label: 'the sunny corner of the field', uv: [96.5, 50], act: act('Sunbathe', 'sunbathe', 'Ahh, sunshine!', 4600) },
+  glare: { label: 'the sunny corner of the field', uv: [106, 56], act: act('Sunbathe', 'sunbathe', 'Ahh, sunshine!', 4600) },
   // v0.23: "On a bench in the yard ... Rests on her bench in the shade": the path beside the bench
   paper: { label: 'the path beside the bench', uv: [36.4, 81.4], act: act('Sketch the farm', 'sketch', 'Put it on paper!', 3000) },
   window: { label: 'the window by the door', act: act('Peek in the window', 'peek', 'Home sweet home!', 2600) },
@@ -421,7 +421,7 @@ export function huntGoal({ discoveries = {}, egg = null, othersFound = true, res
   const left = SONG_LIST.filter((id) => !discoveries?.[id]);
   const all = SONG_LIST.length;
   if (!left.length) return { text: `Every song found: ${all} of ${all}. Hear them again any time in Extras, under Songs.`, line: { icon: 'note', label: 'Every song found' } };
-  if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming…' } };
+  if (egg === 'coming') return { text: 'A bird is bringing an egg.', line: { icon: 'egg', label: 'A bird is coming' } };
   if (egg === 'landed') return { text: 'An egg has landed in a yellow circle: walk up to it.', line: { icon: 'egg', label: 'Pick up the egg', tail: 'in the yellow circle' } };
   // (v0.30: the circles stay out while she listens; only their actions wait: Tiffany, "There should
   // never be a time that there aren't any red circles if there are more songs to collect")
@@ -430,7 +430,7 @@ export function huntGoal({ discoveries = {}, egg = null, othersFound = true, res
   // until the time is up': no count; the line only says to enjoy the song, and the circles come
   // back on the grass when the time is up)
   if (egg === 'rest') return { text: 'Enjoy the song. The red circles come back in a moment.', line: { icon: 'note', label: 'Enjoy the song' } };
-  if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes…' } };
+  if (egg === 'moment') return { text: 'Vanessa is doing what the circle asked.', line: { icon: 'note', label: 'Here goes!' } };
   // (v0.30: its red circle is out all the while; its action waits for the keepsakes)
   if (lastSongWaits(discoveries, othersFound)) return { text: 'One song is left, and it comes last: its red circle comes out once the keepsakes still on the farm are found.', line: { icon: 'gift', label: 'Find the last keepsakes', tail: 'then the last song' } };
   if (left.length === 1 && left[0] === LAST_SONG) return { text: `The last song: its red circle is at ${SPOTS[songSpot(left[0])].label}. Walk there and do what it says.`, line: { icon: 'note', label: 'The last song', tail: 'at the red circle' } };

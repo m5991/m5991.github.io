@@ -116,7 +116,7 @@ const FIXED_WEED = { at: [1.4, -1.5] };
 const PATCH_PAD = { along: 0.75, across: 0.75, corn: 0.3, sunflowers: 0.45, bed: 0, rim: 0.07, clear: 0.25 }; // (v0.30: the plots' margins round what stands on them, and the pencilled edge, m)
 // v0.29: where the easel stands from her for "Put it on Paper" (m: to her right, behind her)
 const EASEL_AT = [0.62, -0.5];
-export const EGG = { cross: 7, high: 4.2, dropAt: 2.6, flyMs: 2200, fallMs: 520, size: 1.9, birdSize: 2.1 };
+export const EGG = { cross: 7, high: 4.2, dropAt: 2.6, flyMs: 2200, fallMs: 520, size: 1.9, birdSize: 1.6 }; // (v0.33: the egg's bird a little smaller too, 2.1 before: Tiffany's "Make birds a little smaller when they're flying")
 // v0.16 the archer raises his crossbow to aim for `holdMs` every `everyMs`
 export const ARCHER_AIM = { everyMs: 7000, holdMs: 1600 };
 // v0.23 Dwight's few steps on watch: every `everyMs` he walks slowly (`speed` m/s) to the next of
@@ -185,7 +185,12 @@ export function keepsakeBounce(t) {
 export const SUN = { spin: 1.6, reach: 0.32, reachMs: 950, beam: [0.2, 0.56], waveMs: 620, halo: 1.6, core: 0.85, rim: 0.07, rimMs: 520 }; // (v0.29: rim, rimMs: the rim and the disc swell 7%, a breath about every 3.3 s)
 // (v0.30: a ray's scale runs from 1 - 0.35 reach to 1 + 0.65 reach; this is its longest)
 export const SUN_RAY_MAX = 1 + SUN.reach * 0.65;
-export const THIEF = { size: 2.3, crop: 2.6, away: [9, 4.2, -5] };
+// (v0.33, Tiffany's "Edits #7": "Make birds a little smaller when they're flying": `fly`, 1.75 (it flew
+// at `size`, 2.3); sitting it stays half of `size`, as v0.29 made it)
+export const THIEF = { size: 2.3, fly: 1.75, crop: 2.6, away: [9, 4.2, -5] };
+// v0.33: inside the house she keeps this far (m) off its walls, and the doorway is this wide each side
+export const HOUSE_ROOM_M = 0.3;
+export const HOUSE_DOOR_M = 0.42; // (as wide as the push that takes her in, main.js HOUSE_VISIT.half)
 // v0.16 the ring of stones round the tree and the bench (D11): an ellipse round them, sized from
 // the drawn ring (BORDER_POLYLINE's extent, `grow` metres more), stones `spacing` metres apart,
 // with one gap of `gap` metres where the path comes in, in front of the bench
@@ -303,7 +308,7 @@ export class World {
       return obj;
     };
     const house = fitted('D01', G.house());
-    this.addBox(house, G.HOUSE.w + 0.3, G.HOUSE.d + 0.3, 3);
+    this.houseBody = this.addBox(house, G.HOUSE.w + 0.3, G.HOUSE.d + 0.3, 3); // (v0.33: kept, setHouseSolid)
     const node = (n) => house.getObjectByName(n);
     // v0.15: five stages, each only its own part: foundation, walls, roof, chimney, home
     for (const st of HOUSE_STAGES) {
@@ -737,6 +742,42 @@ export class World {
         break;
       }
     }
+    // v0.33 (Tiffany's "Edits #7": "Add one more stone on each side of the rocks around the tree so they
+    // meet the base of the path"): one more on each side, closer in still: the first place from the
+    // path's middle where a stone only just keeps off the path's own stones, wherever the ring still
+    // has a gap there
+    // (it goes where the ring meets the path, or, where the path runs along the ring, just outside the
+    // ring beside the path's edge, so the stones run on up to the path; never on the path itself)
+    {
+      const { left, right } = this.pathShape();
+      for (const side of [1, -1]) {
+        const seed = 70 + (side > 0 ? 1 : 2);
+        const reach = ringStoneReach(seed) + PATH_STONES.clear * 0.6;
+        // the stone at this end of the ring
+        let end = null; let endA = Infinity;
+        for (const p of places) {
+          const a = ((side * (Math.atan2((p.z - c.z) / rz, (p.x - c.x) / rx) - gapA)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          if (a < endA) { endA = a; end = p; }
+        }
+        if (!end) continue;
+        let put = null;
+        for (let k = 0; k <= 90 && !put; k++) {
+          const a = gapA + side * (endA - (k / 90) * endA * 0.6);
+          for (const grow of [1, 0.96, 0.92, 1.04, 0.88, 1.08, 1.12, 1.16, 1.2, 1.25]) { if (put) break;
+            const q = new THREE.Vector3(c.x + Math.cos(a) * rx * grow, 0, c.z + Math.sin(a) * rz * grow);
+            if (ribbonDistance(q, left, right) < reach) continue;
+            const d = end.distanceTo(q);
+            if (d < RING.spacing * 0.7 || d > RING.spacing * 1.6) continue;
+            if (places.some((p) => p !== end && p.distanceTo(q) < RING.spacing * 0.7)) continue;
+            put = q;
+          }
+        }
+        if (put) { put.userData = { seed }; places.push(put); }
+      }
+      // in order round the ring from the gap, as the even ones were
+      const ang = (p) => ((Math.atan2((p.z - c.z) / rz, (p.x - c.x) / rx) - gapA) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      places.sort((p, q) => ang(p) - ang(q));
+    }
     this.ring.places = places;
     return places;
   }
@@ -769,6 +810,33 @@ export class World {
       doorX: step.x, front, stepZ: step.z,
       local: (p) => h.worldToLocal(new THREE.Vector3(p.x, 0, p.z)),
     };
+  }
+  // v0.33 (Tiffany's "Edits #7": she walks about inside the house): the house is solid for her, or
+  // not while she is in it
+  setHouseSolid(on) {
+    const b = this.houseBody;
+    if (!b) return;
+    if (on && !b.world) this.physics.addBody(b);
+    if (!on && b.world) this.physics.removeBody(b);
+  }
+  // keep her within the house's walls (`door`: or in the doorway, on her way in or out): her body is
+  // moved back inside where it has gone through a wall
+  houseClamp(hero, { door = false } = {}) {
+    const h = this.objects.D01;
+    const way = this.doorWay();
+    const p = hero.body.position;
+    const q = way.local(p);
+    const s = h.scale.x || 1;
+    const m = HOUSE_ROOM_M / s;
+    const hw = G.HOUSE.w / 2 - m; const hd = G.HOUSE.d / 2 - m;
+    let x = q.x; let z = q.z;
+    const inDoorway = door && Math.abs(q.x - way.doorX) < (HOUSE_DOOR_M / s);
+    if (inDoorway) { x = Math.max(way.doorX - HOUSE_DOOR_M / s, Math.min(way.doorX + HOUSE_DOOR_M / s, x)); z = Math.max(-hd, z); }
+    else { x = Math.max(-hw, Math.min(hw, x)); z = Math.max(-hd, Math.min(hd, z)); }
+    if (x === q.x && z === q.z) return false;
+    const w = h.localToWorld(new THREE.Vector3(x, 0, z));
+    p.x = w.x; p.z = w.z;
+    return true;
   }
   // the door swung open by `k` (0 shut, 1 wide open)
   setDoorOpen(k) {
@@ -1100,7 +1168,14 @@ export class World {
     return this.piles.crate.slotWorld('C', 0, Math.min(i, CRATE_SHOWN - 1), out);
   }
   // v0.15: where she holds a sale from: behind (north of) her first table, the buyers' far side
-  sellSpot(out = new THREE.Vector3()) { return out.copy(this.stations.table.pos).add(new THREE.Vector3(0, 0, -SELL_BEHIND_M)); }
+  // (v0.33, Tiffany's "Edits #7": "When she has a yard sale, have her run to a more central spot so that
+  // you don't have to run to the left or to the right in order to see the crowd of people": `n`, the
+  // tables standing: behind the middle of their row (one table: behind it, as before)
+  sellSpot(out = new THREE.Vector3(), n = 1) {
+    const row = this.tableStations().slice(0, Math.max(1, n));
+    const x = row.reduce((a, t) => a + t.pos.x, 0) / row.length;
+    return out.set(x, 0, this.stations.table.pos.z - SELL_BEHIND_M);
+  }
   // v0.13: her tables, first to last
   tableStations() { return STATIONS.filter((d) => d.kind === 'table').map((d) => this.stations[d.id]); }
 
@@ -1138,6 +1213,7 @@ export class World {
     // v0.31 (Tiffany: "It shouldn't show after the garden is built"): the bed's patch marks its place
     // until the raised bed stands
     if (this.patches?.bed) this.patches.bed.visible = !l.stages?.T0?.committed;
+    this.syncBedBody(l);
     for (const [id, s] of Object.entries(this.stations)) {
       const { kind } = s.def;
       if (kind === 'weed') {
@@ -1689,6 +1765,7 @@ export class World {
     o.visible = true;
     const token = ++t.tween;
     t.flying = false;
+    t.toHand = toHand; // v0.33: (toolArriving)
     const placeHome = () => { o.position.copy(t.home.pos); o.quaternion.copy(t.home.quat); o.scale.copy(t.home.scale); };
     const place = () => { if (toHand) this.gripWorld(kind, o.position, o.quaternion); else placeHome(); };
     if (!animate) { place(); setOpacity(o, 1); return; }
@@ -1721,6 +1798,11 @@ export class World {
       place();
     });
   }
+
+  // v0.33 (Tiffany's "Edits #7": "Before she starts weeding or planting the shovel or rake should be in
+  // her hand. Right now it looks like she starts just a second before it's in her hand"): a tool on its
+  // way into her hand; the work waits for it (main.js)
+  toolArriving() { return Object.values(this.tools).some((t) => t.flying && t.toHand); }
 
   // ---------- v0.16: the egg hunt (phase two) ----------
   // Each spot of the hunt (songs.js SPOTS) is a place on the farm; a spot with a song left in it
@@ -1828,9 +1910,17 @@ export class World {
       case 'stones': return { route: this.hopRoute() };
       case 'tree': {
         const trunk = this.objects.D09.position;
-        const d = new THREE.Vector3(hero.x - trunk.x, 0, hero.z - trunk.z).normalize();
         // (v0.32: right up against the trunk, to hug it: it was 0.3 m off it)
-        return { to: trunk.clone().addScaledVector(d, TREE_TRUNK_R * this.objects.D09.scale.x + 0.12).setY(0) };
+        // v0.33 (Tiffany's "Edits #7": "When she hugs the tree, make it look like her arms are going all
+        // the way around it"): at its side, the side she comes from, a little toward the viewer, so
+        // she is seen side on with her near arm going round the front of the trunk (v0.32: on the
+        // side she came from, which was nearly always the front, her back hiding both arms)
+        const cam = this.camera?.position ?? new THREE.Vector3(trunk.x, 0, trunk.z + 10);
+        const v = new THREE.Vector3(trunk.x - cam.x, 0, trunk.z - cam.z).normalize();
+        const side = new THREE.Vector3(v.z, 0, -v.x);
+        if (side.x * (hero.x - trunk.x) + side.z * (hero.z - trunk.z) < 0) side.negate();
+        const to = trunk.clone().addScaledVector(side, TREE_TRUNK_R * this.objects.D09.scale.x + 0.08).setY(0);
+        return { to, yaw: Math.atan2(trunk.x - to.x, trunk.z - to.z) };
       }
       case 'window': return { to: h.localToWorld(new THREE.Vector3(WINDOW_X, 0, G.HOUSE.d / 2 + 0.46)).setY(0) };
       default: return {};
@@ -2039,7 +2129,9 @@ export class World {
   updateEggCircle(egg, dtMs) {
     if (!this.eggCircle) { this.eggCircle = G.standMarker(PAL.flower, { star: false }); this.eggCircle.visible = false; this.root.add(this.eggCircle); }
     const m = this.eggCircle;
-    const on = !!egg && egg.visible && !this.finaleActive && !this.playHidden;
+    // v0.33 (Tiffany's "Edits #7": "When the egg lands on the chimney don't have the yellow circle until it
+    // falls to the ground because that's where she can collect it"): only an egg on the grass has it
+    const on = !!egg && egg.visible && !this.finaleActive && !this.playHidden && !egg.userData.falling && (egg.userData.y ?? 0) < 0.2;
     m.visible = on;
     if (!on) { m.userData.t = 0; return; }
     m.userData.t = (m.userData.t ?? 0) + dtMs;
@@ -2203,6 +2295,23 @@ export class World {
   // v0.31 (Tiffany's "Edits #5": "Vanessa shouldn't be able to walk through Dwight. Only around"):
   // Dwight is solid: a post the size of him stands where he stands and goes where he walks, while
   // he is in the picture on his feet (on the bench the bench is solid already)
+  // v0.33 (Tiffany's "Edits #7": "Don't allow her to run through the raised garden bed after it is
+  // built. She has to run around it"): once the raised bed (T0) stands it is solid, its own box; she
+  // still reaches its tomatoes from its side (they are 0.3-0.45 m in from its front edge, and her
+  // reach is 0.9 m). Before it is built its place is open ground, as before.
+  syncBedBody(l) {
+    const bed = this.objects.D18;
+    if (!bed) return;
+    const want = !!l?.stages?.T0?.committed;
+    if (want && !this.bedBody) {
+      bed.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(bed);
+      this.bedBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3((b.max.x - b.min.x) / 2, 0.5, (b.max.z - b.min.z) / 2)) });
+      this.bedBody.position.set((b.min.x + b.max.x) / 2, 0.5, (b.min.z + b.max.z) / 2);
+    }
+    if (want && !this.bedBody.world) this.physics.addBody(this.bedBody);
+    if (!want && this.bedBody?.world) this.physics.removeBody(this.bedBody);
+  }
   syncDwightBody() {
     const a = this.archer;
     if (!a) return;
@@ -2469,7 +2578,7 @@ export class World {
   }
   buildBird() {
     const bird = G.flyingBird();
-    bird.scale.setScalar(THIEF.size); // v0.22: big enough to see what it is up to (it was 1.5)
+    bird.scale.setScalar(THIEF.fly); // v0.22: big enough to see what it is up to (it was 1.5)
     bird.visible = false;
     bird.name = 'NuisanceBird';
     this.root.add(bird);
@@ -2504,7 +2613,7 @@ export class World {
     // with a crop in its claws, so the crop is plain to see)
     const landed = s.phase === 'sit' || (s.phase === 'approach' && s.target?.kind !== 'carried' && s.t > 450) || (s.phase === 'waved' && n.landed);
     n.landed = landed;
-    const size = THIEF.size * (landed ? 0.5 : 1);
+    const size = landed ? THIEF.size * 0.5 : THIEF.fly;
     bird.scale.setScalar(bird.scale.x + (size - bird.scale.x) * (still ? 1 : Math.min(1, dtMs / 180)));
     bird.visible = true;
     const flap = still ? 0 : Math.sin(n.t / 70);
@@ -2981,6 +3090,22 @@ export class World {
     }).sort((a, b) => a.score - b.score);
     const best = scored[0]?.c;
     return best ? new THREE.Vector3(best.x, 0, best.z) : this.freeSpotNear(hero, new THREE.Vector3(), avoid);
+  }
+  // v0.33 (Tiffany's "Edits #7": "Don't drop eggs behind objects"): where a bird drops an egg: the
+  // nearest place to her on the keepsakes' open grass (in front of nothing and behind nothing: not
+  // behind the house, the tree, the bed, the corn or the sunflowers), a metre or more from her, on her
+  // screen where there is one, clear of the red circles. (v0.16-v0.32: a step from her, which could
+  // be behind the house or the tree.)
+  eggSpot(hero, avoid = [], onScreen = null, out = new THREE.Vector3()) {
+    const clear = this.keepsakeCandidates().filter((c) => !avoid.some((a) => Math.hypot(c.x - a.x, c.z - a.z) < a.r + 0.3) && Math.hypot(c.x - hero.x, c.z - hero.z) >= 1.0);
+    const seen = onScreen ? clear.filter((c) => onScreen(c.x, c.z)) : [];
+    const ok = seen.length ? seen : clear;
+    let best = null; let bd = Infinity;
+    for (const c of ok) {
+      const d = Math.hypot(c.x - hero.x, c.z - hero.z) + (c.z < hero.z - 0.5 ? 1.5 : 0); // (toward the camera first)
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best ? out.set(best.x, 0, best.z) : this.freeSpotNear(hero, out, avoid);
   }
   keepsakeCandidates() {
     if (this.keepCands) return this.keepCands;

@@ -142,11 +142,14 @@ export const FINALE = {
   travel: [2100, 4700], // she runs to D17 (from 2000: walk.js WALK), across the picture
   settle: [4700, 5400], // Vanessa settles at D17, facing the viewer, hands in her pockets
   outlines: [5200, 6000], // anything still in outline takes its colour
-  grass: [6000, 9500], // the ground animates into grass, spreading from her feet
-  sky: [9500, 11300], // the sky turns blue, rising from the horizon
-  sun: [11300, 12300], // last, the sun turns yellow
-  hold: [12300, 15000], // hold on the coloured drawing
-  total: 15000,
+  // v0.33 (Tiffany's "Edits #7": "When the color comes in at the end, currently, it goes grass, then
+  // sky, then sun. Do it all at the same time"): the grass from her feet, the sky from the horizon and
+  // the sun all come together (v0.25-v0.32: one after the other, 6.0 to 12.3 s); the hold is longer
+  grass: [6000, 9000], // the ground animates into grass, spreading from her feet
+  sky: [6000, 9000], // the sky turns blue, rising from the horizon, at the same time
+  sun: [6000, 9000], // and the sun turns yellow, at the same time
+  hold: [9000, 12500], // hold on the coloured drawing
+  total: 12500,
 };
 // Finale colours (§10.9): light steps of the leaf and tool-blue swatches, within §10.6 item 6;
 // none more saturated than the flower yellow. The sun fills with the flower yellow and its

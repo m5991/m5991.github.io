@@ -28,7 +28,7 @@
 // of her crop plants (they take turns), looks about and flies off with nothing: kind 'visit'. No
 // warning, no Wave, no arrow, no stain: nothing to do about it and nothing lost. (v0.17-v0.22: after
 // the home, birds only perched on the bench.) And the birds come from the house foundation on.
-import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, END_BIRDS, END_BIRD_KINDS, NODES } from './data.js';
+import { ARCHER_GUARDS, BIRDS, BIRD_KINDS, END_BIRDS, END_BIRD_KINDS, NODES, REST_KINDS } from './data.js';
 import { birdsActive, carriedTarget, isCommitted, mainComplete, nodeEstablished, readyNodes, tableTarget, theftAllowed } from './ledger.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -42,7 +42,10 @@ export function coveringArcher(archers, p, nodeId = null) {
   for (const a of archers ?? []) {
     const d = dist(a.pos, p);
     const guards = nodeId && (a.guards ?? ARCHER_GUARDS[a.id] ?? []).includes(nodeId);
-    if ((guards || d <= BIRDS.coverM) && (!best || d < best.d)) best = { id: a.id, pos: a.pos, d };
+    // (v0.33, Tiffany's "Edits #7", the brief: "Dwight may scare off some birds but not all"): a plant is
+    // his only if it is his corn; his ground's cover (coverM) is for the crops on her head. (v0.31-v0.32:
+    // any plant within 3.5 m of his post too, which took in the tomatoes and the sunflowers near it)
+    if ((guards || (!nodeId && d <= BIRDS.coverM)) && (!best || d < best.d)) best = { id: a.id, pos: a.pos, d };
   }
   return best;
 }
@@ -106,6 +109,22 @@ export function chooseVisit(ctx) {
   if (ctx.want) { const t = targetFor(ctx.want, ctx); if (t) return t; }
   const order = order0;
   const start = l.theft.rotation % order.length;
+  // v0.33 (Tiffany's "Edits #7": "The birds are only landing on the tree"): while the farm is being
+  // built, a rest (the roof, the tree, the bench) comes only on its own turn; when the turn's kind
+  // cannot happen, the next kind that takes something is tried, and with nothing to take now the
+  // bird does not come (null: it looks again BIRDS.retryMs later). (v0.17-v0.32: any kind at all, so
+  // the old tree, always there, took every turn a crop was not ripe on her screen.)
+  if (order0 === BIRD_KINDS) {
+    const own = targetFor(order[start], ctx);
+    if (own) return own;
+    for (let i = 1; i < order.length; i++) {
+      const k = order[(start + i) % order.length];
+      if (REST_KINDS.includes(k)) continue;
+      const t = targetFor(k, ctx);
+      if (t) return t;
+    }
+    return null;
+  }
   for (let i = 0; i < order.length; i++) {
     const t = targetFor(order[(start + i) % order.length], ctx);
     if (t) return t;
@@ -119,8 +138,8 @@ export function warningText(t) {
   if (t.kind === 'roof') return 'A bird lands on the roof';
   if (t.kind === 'treetop') return 'A bird lands in the old tree';
   if (t.kind === 'perch') return 'A bird is eyeing the bench';
-  if (t.kind === 'carried') return `A bird is after the ${CROP_WORD[t.res]} on your head! Wave it off`;
-  if (t.kind === 'table') return 'A bird is eyeing the yard-sale table! Wave it off';
+  if (t.kind === 'carried') return `A bird is after the ${CROP_WORD[t.res]} on her head!`; // (v0.33: no "Wave it off": there is no Wave button)
+  if (t.kind === 'table') return 'A bird is eyeing the yard-sale table!';
   return t.res === 'C' ? 'A bird is circling your corn' : `A bird is eyeing the ${CROP_WORD[t.res]}`;
 }
 
@@ -204,7 +223,7 @@ export function createBirds() {
         if (s.nextAt === null) s.nextAt = now + BIRDS.firstMs;
         if (ctx.blocked || now < s.nextAt) return out;
         const t = chooseVisit(ctx);
-        if (!t) { s.nextAt = now + 5000; return out; } // nothing to go for: look again soon
+        if (!t) { s.nextAt = now + (mainComplete(ctx.l) ? 5000 : BIRDS.retryMs); return out; } // nothing to go for: look again soon (v0.33: 2 s while the farm is built)
         s.target = t;
         s.phase = 'warn';
         s.t = 0;

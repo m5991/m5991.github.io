@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="robots" content="noindex, nofollow">
+<meta name="robots" content="noindex">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>The Farm — test build</title>
@@ -89,7 +89,7 @@
     <div class="credits-card"></div>
     <div class="credits-lyrics" aria-hidden="true"><p class="now"></p><p class="next"></p></div>
     <div class="credits-caption" aria-hidden="true" hidden></div>
-    <div class="credits-controls"><button type="button" data-act="pause" aria-pressed="false">Pause</button><button type="button" data-act="skip">Close</button></div>
+    <div class="credits-controls"><button type="button" data-act="back" aria-label="Back to the photo before">◀ Back</button><button type="button" data-act="pause" aria-pressed="false">Pause</button><button type="button" data-act="skip">Close</button></div>
     <div class="credits-live sr-only" aria-live="polite"></div>
   </section>
   <!-- v0.22 the end of the finale: the slideshow is offered, never started by itself (Tiffany:
@@ -162,6 +162,8 @@
     <!-- v0.23 (Tiffany: "Put the slideshow button under the keepsakes. It should be the bottom of
          the list. Above sound"; "Get rid of the credits tab") -->
     <button id="btn-slideshow" type="button">Slideshow</button>
+    <!-- v0.33 (Tiffany's "Edits #7": "Make it possible to skip to the end animation") -->
+    <button id="btn-ending" type="button">Skip to the ending</button>
     <!-- (v0.25-v0.29: an Evening light switch stood here, once everything was found. v0.30, Tiffany:
          "Remove the option to turn evening light off": the evening stays) -->
     <fieldset id="sound-settings" class="sound-settings">

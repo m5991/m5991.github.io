@@ -393,8 +393,9 @@ export function withFixedWeed(d) {
   const l = d?.ledger;
   if (!l || typeof l !== 'object' || !l.yardWeeds || typeof l.yardWeeds !== 'object') return d;
   const fx = YARD_WEEDS.fixed;
-  if (fx in l.yardWeeds && 'yardFixedAt' in l) return d;
-  return { ...d, ledger: { ...l, yardWeeds: { ...l.yardWeeds, [fx]: l.yardWeeds[fx] === true }, yardFixedAt: Number.isInteger(l.yardFixedAt) ? l.yardFixedAt : null } };
+  // (v0.33: and the places added since, wy12-wy14, empty)
+  if (YARD_WEED_SLOTS.every((id) => id in l.yardWeeds) && 'yardFixedAt' in l) return d;
+  return { ...d, ledger: { ...l, yardWeeds: { ...Object.fromEntries(YARD_WEED_SLOTS.map((id) => [id, l.yardWeeds[id] === true])) }, yardFixedAt: Number.isInteger(l.yardFixedAt) ? l.yardFixedAt : null } };
 }
 function withSessionDefaults(d) {
   if (d && typeof d === 'object' && (!d.keepsakes || typeof d.keepsakes !== 'object')) d = { ...d, keepsakes: {} }; // v0.17c

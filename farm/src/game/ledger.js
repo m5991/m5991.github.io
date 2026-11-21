@@ -49,7 +49,7 @@
 // `gateOpen`). A plant choked by a weed is gone, and the weed stays on its spot until raked.
 import { PERF } from '../core/perf.js';
 import {
-  ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
+  ALL_STAGES, BASE_STAGE, BASE_STAGES, BIRDS, BIRDS_AFTER, BIRDS_PLOTS, CAPACITY, CROP_OF_STAGE, CROPS, HEAD_CROPS, HOUSE_STAGES, MATERIALS, NODE_FIRST_READY_MS,
   NODE_RENEW_MS, NODES, PILES, PRICES, REGROW, REGROW_WEEDS, regrowNode, RESOURCES, ROCKS, ROCK_IDS, ROUTE, STAGES,
   STAGE_ORDER, STICK, STICK_SLOTS, STONE_REQUIRED, TABLE_BUILDS, TABLE_CAP, TOMATO_GROWTH, TOMATO_YIELD, TOOLS, WEEDS, WEED_PLOT,
   WISH, YARD_MATERIALS, YARD_WEEDS, YARD_WEED_SLOTS, isYardWeed, CRATE_CAP, GATE, HAMMERED,
@@ -105,6 +105,7 @@ export function createLedger() {
     yardWeedAt: null,
     yardWeedSeq: 0,
     yardBack: [],
+    yardLast: [], // v0.33: the places of the last weeds raked on the grass (the next comes up elsewhere)
     yardRaked: 0,
     yardFixedAt: null, // v0.30: when the weeds by the raised bed (YARD_WEEDS.fixed) are back, once raked
     // v0.29: yard sales held and wood or stone picked up since the last build she hammered up or
@@ -270,10 +271,13 @@ export const wishMet = (l, w = saleWish(l)) => !!w && l.table[w.crop] >= w.n;
 export const mainComplete = (l) => ROUTE.every((id) => isCommitted(l, id));
 // ---------- v0.17 birds: what can be taken now (spec §7 caps, §6.6 point 4) ----------
 // the most a save's theft record may hold: v0.17's cap of 8, which older saves reached
-export const THEFT_SAVED_MAX = 14; // (v0.31: ten thefts a farm, data.js BIRDS.totalMax; v0.32: fourteen)
+export const THEFT_SAVED_MAX = 20; // (v0.31: ten thefts a farm, data.js BIRDS.totalMax; v0.32: fourteen; v0.33: twenty)
 // theft is possible from the second crop plot until the home, while the caps allow it
 // (v0.23: and from the house foundation on: the raised bed, a second plot, is built first now)
-export const birdsActive = (l) => plotsPlanted(l) >= 2 && isCommitted(l, BIRDS_AFTER);
+// (v0.33: or from her third crop patch, which now comes before the foundation)
+export const birdsActive = (l) => plotsPlanted(l) >= 2 && (isCommitted(l, BIRDS_AFTER) || plotsPlanted(l) >= BIRDS_PLOTS);
+// v0.33: the weeds creep over her crops from her third crop patch (or the foundation) on
+export const regrowOn = (l) => isCommitted(l, REGROW.after) || plotsPlanted(l) >= REGROW.plots;
 export const takenRecently = (l, now = l.activeMs) => (l.theft?.log ?? []).filter((t) => now - t < BIRDS.windowMs).length;
 export function theftAllowed(l) {
   if (!birdsActive(l) || mainComplete(l)) return false;
@@ -321,7 +325,10 @@ export const onHand = (l, r) => l.carried[r] + (l.yard?.[r] ?? 0);
 // house only, so what she gathered for it has to be carried there first (later builds take from her
 // head and the pile, as before)
 export const firstDiy = (l) => !(l.paymentEvents ?? []).some((id) => HAMMERED.includes(id));
-export const pileOnly = (l, id) => HAMMERED.includes(id) && firstDiy(l);
+// v0.33 (Tiffany's "Edits #7": "If she still needs wood or stone it must be actually set down in the
+// pile before it registers that she has enough for a DIY"): every build takes its wood and stone from
+// the pile only, not the first one alone; what is on her head counts once she has left it there
+export const pileOnly = (l, id) => (STAGES[id]?.W ?? 0) + (STAGES[id]?.R ?? 0) > 0;
 const usable = (l, id, r) => (pileOnly(l, id) ? (l.yard?.[r] ?? 0) : onHand(l, r));
 // Shortage = recipe - what she has (purse; carried plus the pile), clamped at 0 (spec §11.2): the
 // bottom line's count of what is still to get, counting down as she gathers.
@@ -576,7 +583,7 @@ export function tickQuiet(l, now, calm = false) {
     for (const at of [REGROW.warnMs, REGROW.growMs]) if (l.activeMs < since + at && now >= since + at) return false; // one of its two warnings
     over = true;
   }
-  if (calm || done || over || !isCommitted(l, REGROW.after)) { if (l.regrowAt !== null) return false; } else if (l.regrowAt === null || now >= l.regrowAt) return false;
+  if (calm || done || over || !regrowOn(l)) { if (l.regrowAt !== null) return false; } else if (l.regrowAt === null || now >= l.regrowAt) return false;
   if (l.yardWeedAt !== null || l.yardBack.some((t) => now >= t)) return false;
   let standing = 0;
   for (const id of YARD_WEED_SLOTS) if (id !== YARD_WEEDS.fixed && l.yardWeeds[id]) standing++;
@@ -654,7 +661,7 @@ function tick(l0, ms, calm = false, near = null) {
       l.wilted[id] = true;
       events.push({ type: 'wilted', id, weed: `wr-${id}` });
     }
-    const regrowing = isCommitted(l, REGROW.after) && !Object.values(l.overgrown).some((v) => v !== null);
+    const regrowing = regrowOn(l) && !Object.values(l.overgrown).some((v) => v !== null);
     if (!regrowing) l.regrowAt = null;
     else if (l.regrowAt === null) l.regrowAt = now + REGROW.everyMs;
     else if (now >= l.regrowAt) {
@@ -686,7 +693,13 @@ function tick(l0, ms, calm = false, near = null) {
     const standing = YARD_WEED_SLOTS.filter((id) => id !== YARD_WEEDS.fixed && l.yardWeeds[id]).length;
     const want = Math.max(back, YARD_WEEDS.max - standing - l.yardBack.length);
     for (let k = 0; k < want; k++) {
-      const free = places.filter((id) => !l.yardWeeds[id]);
+      // v0.33 (Tiffany's "Edits #7": "When weeds grow in the yard, make it be in new places every
+      // time"): not where one was just raked, while there is anywhere else (v0.24-v0.32: on a farm
+      // being built, three places for three weeds, so each came back where it stood)
+      const free0 = places.filter((id) => !l.yardWeeds[id]);
+      const fresh = free0.filter((id) => !(l.yardLast ?? []).includes(id));
+      const notLast = free0.filter((id) => id !== (l.yardLast ?? []).at(-1));
+      const free = fresh.length ? fresh : notLast.length ? notLast : free0;
       if (!free.length) break;
       const id = free[Math.floor(seeded(l.yardWeedSeq + 101) * free.length)];
       l.yardWeeds[id] = true;
@@ -718,6 +731,7 @@ function clearWeed(l0, id) {
     l.yardWeeds[id] = false;
     if (id === YARD_WEEDS.fixed) l.yardFixedAt = l.activeMs + YARD_WEEDS.backMs; // (v0.30: in their own place)
     else l.yardBack = [...l.yardBack, l.activeMs + YARD_WEEDS.backMs];
+    if (id !== YARD_WEEDS.fixed) l.yardLast = [...(l.yardLast ?? []), id].slice(-3);
     l.yardRaked += 1;
     return { ok: true, l, events: [{ type: 'weedCleared', id, yard: true, backMs: YARD_WEEDS.backMs }] };
   }

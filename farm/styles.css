@@ -69,10 +69,12 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
    she is after now underlined in flower yellow), a few last words that give way first */
 #goal { grid-column: 1; grid-row: 2; margin: 0; min-width: 0; min-height: 44px; display: flex; align-items: center; padding: 6px 10px; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 10px; font-size: 15px; line-height: 1.2; overflow: hidden; }
 #goal:empty { display: none; }
-#goal .g-line { display: flex; align-items: center; gap: 7px; min-width: 0; width: 100%; white-space: nowrap; }
+/* v0.33 (Tiffany's "Edits #7": the goal line read "· gat…"): never cut off: what does not fit on one
+   line goes on to a second (v0.21-v0.32: one line, the last words cut short with "…") */
+#goal .g-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; min-width: 0; width: 100%; white-space: nowrap; }
 #goal .g-ico { flex: none; display: inline-flex; }
 #goal .g-ico svg { width: 22px; height: 22px; display: block; }
-#goal .g-label { flex: 0 1 auto; min-width: 2.5em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+#goal .g-label { flex: 0 1 auto; min-width: 2.5em; font-weight: 700; white-space: normal; }
 #goal .g-label:has(~ .g-tail) { flex-shrink: 0; } /* the last words give way before the name does */
 #goal .g-need { flex: none; display: inline-flex; align-items: center; gap: 1px; padding: 1px 3px 2px 1px; border-radius: 6px; font-variant-numeric: tabular-nums; color: rgba(37, 51, 71, 0.72); }
 #goal .g-need svg { width: 20px; height: 20px; display: block; }
@@ -81,7 +83,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--ink); 
 /* v0.32: a need she has all of: the build's number, quieter, with a green tick */
 #goal .g-need.got { color: rgba(37, 51, 71, 0.5); }
 #goal .g-need.got .tick { font-style: normal; font-weight: 700; font-size: 13px; color: #3f8a3a; margin-left: 1px; }
-#goal .g-tail { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgba(37, 51, 71, 0.82); }
+#goal .g-tail { flex: 0 1 auto; min-width: 0; white-space: normal; color: rgba(37, 51, 71, 0.82); }
 #goal .g-tail::before { content: "· "; }
 #goal.nod { animation: bump 0.25s ease-out; }
 /* a keepsake's riddle (the hunt's last stretch) is a sentence: it may take a second line */
@@ -425,7 +427,10 @@ body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing,
 #credits .credits-controls { position: absolute; top: var(--edge-t); right: var(--edge-r); display: flex; gap: 8px; pointer-events: auto; }
 #credits .credits-controls button { min-width: 48px; min-height: 48px; background: rgba(255, 247, 229, 0.92); }
 /* v0.20: a slideshow. The cards share one cell, so the one on show fades out (.leaving) under the next (.in); the photos are larger */
-#credits .credits-card { position: absolute; left: var(--edge); right: var(--edge-r); top: calc(var(--edge-t) + 60px); bottom: 25%; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+/* v0.33 (Tiffany's "Edits #7": "Move the photos down so they are in between the pause and the caption"):
+   the card's room runs from under the buttons to over the caption box, and a photo sits in its middle
+   (v0.32: from 60 px under the top to a quarter up, the photo at the top of it, under the buttons) */
+#credits .credits-card { position: absolute; left: var(--edge); right: var(--edge-r); top: calc(var(--edge-t) + 72px); bottom: calc(var(--edge-b) + 118px); display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
 #credits .credits-card > * { grid-area: 1 / 1; justify-self: center; align-self: center; opacity: 0; }
 #credits .credits-card > .in { animation: credits-in 0.7s ease-out forwards; }
 #credits .credits-card > .leaving { animation: credits-out 0.6s ease-in forwards; }
@@ -435,9 +440,9 @@ body.credits #now-playing, body.backdrop #now-playing, body.finale #now-playing,
 @keyframes credits-out { from { opacity: 1; transform: rotate(var(--tilt, 0deg)); } to { opacity: 0; transform: rotate(var(--tilt, 0deg)); } }
 @keyframes credits-fade { from { opacity: 0; } to { opacity: 1; transform: rotate(var(--tilt, 0deg)); } }
 .credits-print { position: relative; margin: 0; max-width: min(84vw, 520px); max-height: 100%; display: flex; flex-direction: column; background: #fffdf7; padding: 10px 10px 8px; border-radius: 2px; box-shadow: 0 1px 2px rgba(37, 51, 71, 0.25), 0 14px 30px -12px rgba(37, 51, 71, 0.45); }
-#credits .credits-card > .credits-print.left { --tilt: -2.2deg; justify-self: start; align-self: start; }
-#credits .credits-card > .credits-print.right { --tilt: 1.8deg; justify-self: end; align-self: start; }
-.credits-print img { display: block; align-self: center; width: auto; height: auto; max-width: 100%; max-height: calc(75vh - 205px); min-height: 0; object-fit: contain; }
+#credits .credits-card > .credits-print.left { --tilt: -2.2deg; justify-self: start; align-self: center; }
+#credits .credits-card > .credits-print.right { --tilt: 1.8deg; justify-self: end; align-self: center; }
+.credits-print img { display: block; align-self: center; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 240px - var(--edge-t) - var(--edge-b)); min-height: 0; object-fit: contain; }
 .credits-print .tape { position: absolute; top: -10px; left: 50%; width: 84px; height: 22px; margin-left: -42px; background: rgba(230, 216, 170, 0.75); transform: rotate(-3deg); }
 .credits-print figcaption { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding-top: 6px; color: var(--ink); text-align: left; width: 0; min-width: 100%; } /* v0.20: the caption wraps to the photo's width, so the print is no wider than its photo */
 .credits-print .t { font-family: "Pencil Title", "Comic Sans MS", cursive; font-size: 20px; font-weight: 700; }

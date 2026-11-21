@@ -177,6 +177,7 @@ const END = params.get('end') === '1';
 // v0.31 (Tiffany's "Edits #5": "Make her listen to the song a little less time before the new red
 // clickable circle appears"): 10 s (v0.29-v0.30: 15 s)
 const HUNT = { spotM: 0.65, pickM: 0.75, restMs: 10000 };
+const KEEP_AFTER_MS = 2500; // v0.33: a song's keepsake comes out this far into it
 const SPEED = params.has('speed') ? Number(params.get('speed')) : RUN_SPEED;
 // v0.32 (Tiffany's "Edits #6": "The background soundtrack is skipping. Have it run continuously"):
 // the iPhone's silent element (an iPhone without the audio-session API) loops two seconds of silence
@@ -351,7 +352,8 @@ async function boot() {
   // (v0.32: every song's, the last one's too, waits until each song found so far has had its keepsake
   // found: a song and a keepsake take turns, keepsakes.js songTurn)
   // (v0.32: the bench's "Clean the bench" once a bird has left its mess there, Tiffany's "Edits #6")
-  const actOpen = (spot) => songTurn(data.keepsakes ?? {}, foundCount(data.discoveries)) && (spot !== 'bench' || !!data.ledger.theft.stain);
+  // (v0.33: the last song's waits for every keepsake: keepsakes.js keepsakesNow)
+  const actOpen = (spot) => songTurn(data.keepsakes ?? {}, foundCount(data.discoveries)) && (spot !== 'bench' || !!data.ledger.theft.stain) && (spot === null || spot !== songSpot(LAST_SONG) || !!data.discoveries?.[LAST_SONG] || keepsakesDone());
   function spotHere(heroXZ) {
     // (v0.23: only the few spots on show have their action)
     for (const id of spotsNow()) {
@@ -388,7 +390,10 @@ async function boot() {
       // she's on top of the house"; "She can't reach the chimney egg"): an egg on the roof that she
       // is not up beside comes down off the roof to the grass beside her (the stick took her down
       // from the chimney while the bird was on its way)
-      if (eggStuck({ eggY: hunt.egg.userData.y ?? 0, heroUp: heroUp() }) && !hunt.egg.userData.falling) eggDown(hunt.egg);
+      // v0.33 (Tiffany's "Edits #7": the yellow circle only "when it falls to the ground because that's
+      // where she can collect it"): an egg on the roof always rolls off it to the grass in front of
+      // the house, a moment after it lands, and she climbs down to pick it up there
+      if ((hunt.egg.userData.y ?? 0) > 0.3 && !hunt.egg.userData.falling) { hunt.egg.userData.roofMs = (hunt.egg.userData.roofMs ?? 0) + dt; if (hunt.egg.userData.roofMs > 700 || eggStuck({ eggY: hunt.egg.userData.y ?? 0, heroUp: heroUp() })) eggDown(hunt.egg); return; }
       if (!hunt.egg.userData.falling && Math.hypot(hunt.egg.position.x - heroXZ.x, hunt.egg.position.z - heroXZ.z) <= HUNT.pickM) pickEgg();
       return;
     }
@@ -433,20 +438,28 @@ async function boot() {
   // bench is built, with Dwight on it or not: standing still in front of the seat for a moment
   // (her free end of it when he sits there) sits her down. Not while she is busy with anything else.
   // (the Clean the bench button is up as she comes near: a moment's stop in front of the seat sits her)
-  const SEAT_AUTO = { near: 0.85, away: 1.3, ms: 600 }; // (v0.32: a little sooner and from a little farther: 0.75 m, 0.9 s)
+  const SEAT_AUTO = { near: 0.8, away: 1.7, ms: 600, half: 0.95 }; // (v0.32: a little sooner and from a little farther: 0.75 m, 0.9 s)
   const seatAuto = { ms: 0, armed: true };
   const benchBuilt = () => !!data.ledger.stages?.G2?.committed;
   // where she stands to sit down: in front of her end of the seat
   const benchFront = () => world.spotStage('bench', hero.position).to;
   function benchSit(heroXZ, dt = 0) {
-    if (!benchBuilt() || hero.moment || hero.rise || cleaning || hammering.active || roofClimb || autoWalk || ix.working || hunt.moment || hunt.egg || saleShowing || cards.isOpen || (inHunt() && spotHere(heroXZ))) { seatAuto.ms = 0; return; }
-    const front = benchFront();
-    const seat = benchSpot();
-    const d = Math.hypot(front.x - heroXZ.x, front.z - heroXZ.z);
-    // (on the front side of the seat: she comes up to it from the front)
+    // v0.33 (Tiffany's "Edits #7": "Regularly it prompts her to clean the poop and she just sits in it
+    // instead"): with a bird's mess on the seat, standing at the bench is for cleaning it (Clean the
+    // bench); she sits once it is clean
+    if (!benchBuilt() || data.ledger.theft.stain || hero.moment || hero.rise || cleaning || hammering.active || roofClimb || autoWalk || ix.working || hunt.moment || hunt.egg || saleShowing || cards.isOpen || (inHunt() && spotHere(heroXZ))) { seatAuto.ms = 0; return; }
+    // v0.33 (Tiffany's "Edits #7": "Have her be able to sit on the bench at any point in the game, not just
+    // when there's poop there"): she found her seat only where the mess's red circle put her. Now
+    // anywhere along the front of the seat, up to 1.2 m out, sits her down (her free end of it when
+    // Dwight is there); v0.32 asked for 0.85 m round one point in front of her end of it
+    const b = world.objects.D10.localToWorld(tmpH.set(0, 0, 0));
     const yaw = world.objects.D10.rotation.y;
-    const ahead = (heroXZ.x - seat.x) * Math.sin(yaw) + (heroXZ.z - seat.z) * Math.cos(yaw) > 0.05;
-    if (d > SEAT_AUTO.away) seatAuto.armed = true;
+    const dx = heroXZ.x - b.x; const dz = heroXZ.z - b.z;
+    const along = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const out = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    const ahead = out > 0.05;
+    const d = Math.abs(along) <= SEAT_AUTO.half && ahead ? Math.max(0, out - 0.42) : Infinity;
+    if (!(Math.abs(along) <= SEAT_AUTO.half + 0.5 && out > -0.6 && out < SEAT_AUTO.away)) seatAuto.armed = true;
     // v0.32 (Tiffany's "Edits #6": "Allow her to sit on the bench anytime she wants to even if Dwight is on
     // it too. She sits when she stands right in front of it"): standing in front of her end of the seat
     // sits her down after a short moment (SEAT_AUTO.ms), and so does walking into it from the front
@@ -468,7 +481,9 @@ async function boot() {
   const heroUp = () => hero.moment?.kind === 'chimney' && hero.position.y > 0.5;
   // the egg rolls off the roof and drops onto the grass a step from her, clear of the red circles
   function eggDown(egg) {
-    const to = world.freeSpotNear(hero.position, new THREE.Vector3(), circleAvoid());
+    const to = world.eggSpot(hero.position, circleAvoid(), onPlayScreen); // (v0.33: in sight, never behind the house)
+    // (v0.33: she climbs down for it: the egg is picked up on the grass)
+    if (hunt.moment?.eggAsked) { hunt.moment = null; if (hero.moment?.kind === 'chimney') hero.moment.freezeAt = null; }
     hud.announce('The egg rolls off the roof and drops onto the grass beside Vanessa');
     world.eggFall(egg, to).then(() => sfx.cue('eggDrop'));
   }
@@ -488,9 +503,11 @@ async function boot() {
     // by other things like gardens, trees, benches etc"): the keepsake a song brings comes out
     // HUNT.restMs into the song (as the "Enjoy the song" wait ends), on open grass a few metres from
     // her, in front of nothing and behind nothing, clear of the red circles (world.keepsakeSpot)
-    const owed = keepsakesNow(data.keepsakes, foundCount(data.discoveries));
+    const owed = keepsakesNow(data.keepsakes, foundCount(data.discoveries), lastSongTurn(data.discoveries) && !data.discoveries?.[LAST_SONG]);
     if (keepOut && (data.keepsakes?.[keepOut] || !owed.includes(keepOut))) keepOut = null;
-    if (!keepOut && owed.length && out && !hunt.egg && !hunt.busy && !hunt.moment && hunt.restMs <= 0 && !giveaway.active) {
+    // v0.33 (Tiffany's "Edits #7": "Make sure there is a keepsake available to be found/collected within
+    // 5 seconds of having clicked on the song"): 2.5 s into the song (v0.32: 10 s, as its wait ended)
+    if (!keepOut && owed.length && out && !hunt.egg && !hunt.busy && !hunt.moment && hunt.restMs <= HUNT.restMs - KEEP_AFTER_MS && !giveaway.active) {
       keepOut = owed[0];
       world.placeKeepsake(keepOut, world.keepsakeSpot(hero.position, circleAvoid(), KEEPSAKE_IDS.indexOf(keepOut), onPlayScreen));
       hud.announce(`A keepsake has come out on the grass near Vanessa: ${keepsakeTitle(keepOut)}`);
@@ -557,6 +574,7 @@ async function boot() {
       prints: KEEPSAKE_IDS.filter((id) => data.keepsakes?.[id]).flatMap((id) => keepsakePrints(id, c).map((g, i) => (i ? { ...g, title: '' } : g))),
       left: left.length ? `${left.length} still to find: each song you find brings one out.` : '',
       cancel: 'Close',
+      corner: true, // v0.33 (Tiffany's "Edits #7": "Put an x at the top of that one, the keepsakes page")
       ...(fromPlay ? { onClose: () => loop.resume('card') } : {}),
     });
   }
@@ -715,6 +733,7 @@ async function boot() {
     const face = world.spotFacing(spot, hero.position, rig.camera);
     if (face !== null) hero.yawTarget = face;
     const stage = world.spotStage(spot, hero.position);
+    if (spot === 'tree' && stage.yaw != null) hero.yawTarget = stage.yaw; // (v0.33: side on to the viewer, hugging the trunk)
     // v0.32 (Tiffany's "Edits #6": "After she hops the stepping stones turn her around to the front"):
     // on the last stone she turns to the viewer
     const last = act.kind === 'hop' ? stage.route?.at(-1) : null;
@@ -785,6 +804,11 @@ async function boot() {
     }
     // (v0.32: the farmer is gone off the farm; Vanessa explores on with the song playing, and its bar's ×
     // stops it; v0.31 ended with the last copy in her hands, held up)
+    // v0.33 (the ending as adopted, Tiffany's "Edits #7": "Give me a recommendation of how to end the game
+    // when she runs away"): Vanessa stops, laughs and dusts herself off; then (everything found) she walks
+    // back to the bench and sits beside Dwight, the colour floods in all at once (the sunset, below), and
+    // the story and the slideshow are offered, the song playing on until the player moves on
+    if (!reducedMotion()) { hero.halt(); hero.startMoment('dust', { ms: 3400 }); }
     menuButton().focus({ preventScroll: true });
   }
   const CHIMNEY_TOP = 0.5; // v0.29: where in "Climb to the chimney" she is up by it
@@ -792,7 +816,7 @@ async function boot() {
     // the egg lands a step from her, on the camera's side, clear of the farm's footprints
     // (v0.29: or on the roof right beside her, up by the chimney)
     // (v0.30: on the grass clear of the red circles, which stay out now)
-    const at = roof ? hero.position.clone().add(new THREE.Vector3(0.28, 0, 0.12)) : world.freeSpotNear(hero.position, new THREE.Vector3(), circleAvoid());
+    const at = roof ? hero.position.clone().add(new THREE.Vector3(0.28, 0, 0.12)) : world.eggSpot(hero.position, circleAvoid(), onPlayScreen); // (v0.33: never behind anything)
     const y = roof ? hero.position.y + 0.05 : 0;
     hunt.busy = true;
     hunt.id = id;
@@ -923,6 +947,7 @@ async function boot() {
   const waveBtn = $('btn-wave');
   const birdAt = new THREE.Vector3();
   let cleaning = null; // { ms } while she wipes the bench, standing still
+  let quietClean = false; // v0.33
   const benchSpot = () => world.benchSeat(new THREE.Vector3());
   function birdCtx(heroXZ) {
     const l = data.ledger;
@@ -961,7 +986,9 @@ async function boot() {
         case 'turn': commit({ t: 'birdTurn' }); break;
         // v0.20 (audit 3): a bird at a plant Dwight guards is his: no warning to act on, only its chirp
         // (v0.23: nor for a bird that only visits the finished farm: it takes nothing)
-        case 'warn': if (!act.guarded && !act.harmless) { hud.urgent(act.text, BIRDS.warnMs + 1500); hud.announce(act.text); } sfx.cue('chirp'); break;
+        // v0.33 (Tiffany's "Edits #7": "Why is it prompting her to wave so much?"): no red warning and
+        // no Wave button: the chirp, and the words for a screen reader (v0.17-v0.32: "... Wave it off")
+        case 'warn': if (!act.guarded && !act.harmless) hud.announce(act.text); sfx.cue('chirp'); break;
         case 'land': sfx.cue('chirp'); break;
         case 'draw': world.archerDraw(act.archer, act.at, BIRDS.drawMs); break;
         case 'shoot':
@@ -987,7 +1014,25 @@ async function boot() {
     }
     const st = birds.state;
     world.updateBird(dt, st, birdTarget(st.target));
-    if (waveBtn.hidden === birds.wavable) waveBtn.hidden = !birds.wavable;
+    if (!waveBtn.hidden) waveBtn.hidden = true; // v0.33: no Wave button
+    autoWave(dt, st);
+  }
+  // v0.33 (Tiffany's "Edits #7": "Have her automatically wave (no button) at birds when they're
+  // flying by sometimes if she's not performing an action"): now and then, as a bird flies in or off
+  // on her screen while she stands doing nothing, she turns to it and waves. A friendly wave: it does
+  // not send the bird off (Dwight's arrow does that for the corn).
+  const waveBy = { ms: 0, next: 9000 };
+  function autoWave(dt, st) {
+    waveBy.ms += dt;
+    if (waveBy.ms < waveBy.next || !['warn', 'approach', 'leave'].includes(st.phase)) return;
+    const idle = !hero.moving && !hero.moment && !hero.rise && !ix.working && !hammering.active && !roofClimb && !autoWalk && !cleaning && !houseVisit && !saleShowing && !hunt.moment && !hunt.egg && !cards.isOpen && !finale.active && !giveaway.active;
+    const bp = idle && world.birdPos(tmpP);
+    if (!bp || !world.onScreen(bp, rig.camera)) return;
+    waveBy.ms = 0; waveBy.next = 14000 + Math.random() * 12000;
+    if (Math.random() < 0.35) return; // sometimes, not every time
+    hero.yawTarget = Math.atan2(bp.x - hero.body.position.x, bp.z - hero.body.position.z);
+    hero.startMoment('wave', { ms: WAVE_MS + 400 });
+    hud.announce('Vanessa waves at the bird');
   }
   // a free Wave (the Wave button, E / Space while a bird threatens, or a tap on the bird)
   // v0.29 (Tiffany: "When it says wave, give her a second to wave at the bird"): she turns to the
@@ -1006,6 +1051,18 @@ async function boot() {
     $('btn-wave').hidden = true;
   }
   $('btn-wave').onclick = doWave;
+  // v0.33 (Tiffany's "Edits #7": "as a rule any time there is a … to finish a sentence you have to be
+  // able to click on it"): a tap on any words cut short with "…" (a song's title on its bar) shows
+  // them whole in a note. (The goal line is never cut short now; the game's own sentences no longer
+  // end in "…".)
+  document.addEventListener('click', (e) => {
+    for (let el = e.target; el && el !== document.body; el = el.parentElement) {
+      if (!(el instanceof HTMLElement) || el.scrollWidth <= el.clientWidth + 1) continue;
+      if (getComputedStyle(el).textOverflow !== 'ellipsis') continue;
+      hud.toast(el.textContent.trim(), 4200);
+      return;
+    }
+  }, true);
 
   // ---------- v0.17b: the now-playing bar (ui/songplayer.js) ----------
   {
@@ -1113,7 +1170,11 @@ async function boot() {
           // to put it and highlight it"; "It never explained where to take the stones/wood OR
           // crop"): the first wood or stone, and the first crop, say where they go; the place has a
           // circle until she has taken them there once (carryLessons)
-          if (['W', 'R'].includes(e.res) && carryLessons(l).mat) notes.once('carry-mat', `Wood and stone go to ${pileWords(l)}: walk through it to leave them there. Every build takes from her head and from that pile.`, 7000);
+          // (v0.33, "Edits #7": "You could also mention that you always drop wood and stones there"; every
+          // build now takes them from the pile only, ledger.js pileOnly; and the first stone is led there too)
+          if (['W', 'R'].includes(e.res) && carryLessons(l).mat) {
+            if (!notes.once('carry-mat', `Wood and stone always go to ${pileWords(l)}: walk through it to leave them there. A DIY counts only what is in that pile.`, 7000)) notes.once(`carry-${e.res}`, `${e.res === 'R' ? 'Stone' : 'Wood'} goes to ${pileWords(l)} too: walk through it to leave it there.`, 5000);
+          }
           // v0.32 (Tiffany's "Edits #6": "prompt her early in the game explaining that in order to get
           // coins, she needs to have a yard sale"; "When it talks about the yardsale in the tutorial let
           // it say 'table' not 'tables' being full. Explain that extra crops can be stored in the storage
@@ -1193,6 +1254,9 @@ async function boot() {
           break;
         case 'ready':
           world.regrowCrop(e.src); // a crop a bird took is back on its plant (v0.23)
+          // v0.33 (Tiffany's "Edits #7": "Make sure at some point you explain that you pick and sell the
+          // sunflowers. The player might think they're just decorative"): as her first sunflowers bloom
+          if (NODES[e.src]?.res === 'S' && !mainComplete(l)) notes.once('sunflowers', 'The sunflowers are a crop, like the corn: stand at a sunflower in bloom to pick it, then sell it at the yard sale. They fetch more coins than corn.', 7500);
           break;
         case 'cropChosen':
           // her first crop, for good: it themes every card and menu (P27-7)
@@ -1316,7 +1380,8 @@ async function boot() {
               : `A bird flew off with ${e.n > 1 ? `${e.n} ${RESOURCE_NAMES[e.res]}` : `a ${unit}`}: that plant has to grow ${e.n > 1 ? 'them' : 'it'} again`;
           if (e.from === 'carried') hud.bump(e.res);
           // (v0.21: the loss each time; the advice once)
-          if (!notes.once('stolen', `${what}. Wave birds off, or hire an archer to guard the crops.`, 4600)) hud.toast(`${what}.`, 3000);
+          // (v0.33: no Wave any more: "Birds steal ripe crops now and then", and the archer)
+          if (!notes.once('stolen', `${what}. Birds steal ripe crops now and then; an archer, once hired, keeps them off the corn.`, 5200)) hud.toast(`${what}.`, 3000);
           hud.announce(e.from === 'carried' ? `A bird took one ${unit}` : e.from === 'table' ? `A bird took a ${unit} from the yard-sale table` : `A bird flew off with the ${PATCH_NAME[e.res]} from one plant`);
           break;
         }
@@ -1325,6 +1390,7 @@ async function boot() {
           hud.announce('A bird left a mess on the bench');
           break;
         case 'benchCleaned':
+          if (quietClean) break; // (v0.33: a mess left from before the hunt, gone without a word)
           hud.announce('The bench is clean again');
           sfx.cue('weed');
           break;
@@ -1547,6 +1613,11 @@ async function boot() {
     const hp = { x: hero.body.position.x, z: hero.body.position.z };
     return atSellingSide(hp, ctxTargets);
   }
+  // v0.33: she stands behind the middle of the row of tables
+  function atSaleMiddle() {
+    const m = world.sellSpot(new THREE.Vector3(), tables(data.ledger));
+    return Math.hypot(m.x - hero.body.position.x, m.z - hero.body.position.z) < 0.6;
+  }
   // v0.29 (Tiffany: "When the yardsale button goes on she should be able to select it no matter
   // where she's standing and it show her walking back to the table and then the sign goes up"):
   // pressed away from the tables, she walks back round them to her place behind the first one,
@@ -1554,7 +1625,7 @@ async function boot() {
   let autoWalk = null; // { points: [Vector3], i, ms } while she walks back to the tables
   const AUTO_WALK = { speed: 0.62, near: 0.28, maxMs: 16000 };
   function salePath() {
-    const sell = world.sellSpot(new THREE.Vector3());
+    const sell = world.sellSpot(new THREE.Vector3(), tables(data.ledger)); // (v0.33: the middle of the row)
     const p = hero.body.position;
     const row = world.tableStations().slice(0, tables(data.ledger));
     const xs = row.map((t) => t.pos.x);
@@ -1564,7 +1635,8 @@ async function boot() {
     const maxX = Math.max(...xs) + 0.95;
     const pts = [];
     // in front of the row (the buyers' side) and within its length: round its nearer end first
-    if (p.z > z - 0.35 && p.x > minX - 0.4 && p.x < maxX + 0.4) {
+    // (v0.33: from anywhere on that side, now that she goes to the row's middle, behind it)
+    if (p.z > z - 0.35) {
       const endX = Math.abs(p.x - minX) <= Math.abs(p.x - maxX) ? minX : maxX;
       pts.push(new THREE.Vector3(endX, 0, z + 0.7), new THREE.Vector3(endX, 0, z - 0.9));
     }
@@ -1594,7 +1666,7 @@ async function boot() {
         if (bar?.here && bar.ready) doDiy(stage);
         return null;
       }
-    } else if (atTheTable() || autoWalk.ms > AUTO_WALK.maxMs) { autoWalk = null; hero.halt(); doYardSale(); return null; }
+    } else if ((atTheTable() && atSaleMiddle()) || autoWalk.ms > AUTO_WALK.maxMs) { autoWalk = null; hero.halt(); if (atTheTable()) doYardSale({ here: true }); return null; }
     let to = autoWalk.points[autoWalk.i];
     while (Math.hypot(to.x - p.x, to.z - p.z) < AUTO_WALK.near && autoWalk.i < autoWalk.points.length - 1) to = autoWalk.points[++autoWalk.i];
     const dx = to.x - p.x; const dz = to.z - p.z; const d = Math.hypot(dx, dz);
@@ -1612,9 +1684,10 @@ async function boot() {
     hero.yaw = yaw; hero.yawTarget = yaw;
     hero.startMoment('wave', { ms: SALE_WAVE_MS });
   }
-  function doYardSale() {
+  function doYardSale({ here = false } = {}) {
     if (saleShowing || !saleReady(data.ledger)) return;
-    if (!atTheTable()) { walkToSale(); return; }
+    // (v0.33, Tiffany's "Edits #7": she runs to the middle of the row first, so the crowd is all in view)
+    if (!here && (!atTheTable() || !atSaleMiddle())) { walkToSale(); return; }
     // v0.28 (the captain: "when you do the yard sale it automatically grabs fruit from the box"):
     // what the tables still lack comes from the crate first, the crops flying over to them, and the
     // buyers come once they are out. Nothing else can be sold or set out meanwhile (`saleShowing`).
@@ -1640,7 +1713,12 @@ async function boot() {
   // pile (nor into a build), crops on her head that have never been set out
   function carryLessons(l) {
     const k = learned(l);
-    return { mat: l.carried.W + l.carried.R > 0 && !k.dropped, crop: cropsCarried(l) > 0 && !k.stocked };
+    // v0.33 (Tiffany's "Edits #7": "before I could drop off the stones there was a different thing
+    // highlighted. Let the stones also be directed to the drop off pile"): wood and stone each, until
+    // that material has been left at the pile once (v0.29-v0.32: either one, so after the wood the
+    // stones on her head had no circle)
+    const left = (r) => k.built || l.yard[r] > 0; // that material has been left at the pile (or used)
+    return { mat: (l.carried.W > 0 && !left('W')) || (l.carried.R > 0 && !left('R')), crop: cropsCarried(l) > 0 && !k.stocked };
   }
   // ---------- v0.31: in and out of the house ----------
   // Tiffany's "Edits #5": "Allow her to go in and out of the house"; with Tiffany: "it is enough
@@ -1649,11 +1727,24 @@ async function boot() {
   // through it and is gone, the door shuts behind her, and a few seconds later (or as soon as the
   // stick is pushed) it opens again and she comes back out onto the step. Presentation only: her
   // body waits on the step meanwhile, and nothing in the ledger changes.
-  const HOUSE_VISIT = { reach: 0.42, half: 0.42, pushMs: 120, inMs: 750, outMs: 750, stayMs: 3200, minStayMs: 700, shutMs: 450 };
+  // v0.33 (Tiffany's "Edits #7": "When she goes in and comes out of the house, she looks like her legs
+  // are standing still. Keep her walking"; "When she's in the house show her through the see through
+  // walls walking around / spinning etc (controlled by the player) and she only can come out if the
+  // player leads her to the door"): she really walks in. Pushed into the door, the house stops being
+  // solid for her (world.setHouseSolid), she walks in on her own legs to a step inside the door, and
+  // then the stick moves her about the room, kept within its walls (world.houseClamp); the walls go
+  // see-through as they do whenever they hide her (world.updateFade), and Spin twirls her. Walking
+  // into the door from inside takes her out, again on her own legs, and the house is solid again
+  // behind her. (v0.31-v0.32: her body waited on the step and a picture of her slid in and out.)
+  const HOUSE_VISIT = { reach: 0.42, half: 0.42, pushMs: 120, inMs: 2600, outMs: 2600, minStayMs: 400, shutMs: 450, near: 0.16 };
   let houseVisit = null; // { phase: 'in' | 'inside' | 'out', ms, way }
   let doorPush = 0; // how long she has pushed into the door
   const doorReady = () => !!data.ledger.stages?.H5?.committed && !!world.objects.D01?.visible && session.playing && !finale.active && !sunset.active && rig.mode !== 'whole';
-  const easeIO = (k) => (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k));
+  // the stick pushes along the house's own +z (out of its front) by more than `k`
+  const pushesOut = (stick, way, k = 0.55) => {
+    const m = Math.hypot(stick.x, stick.y);
+    return m > 0.3 && ((stick.x / m) * Math.sin(way.yaw) + (-stick.y / m) * Math.cos(way.yaw)) > k;
+  };
   function tryHouse(dt, stick) {
     if (houseVisit || !doorReady() || hero.moment || hero.rise || hammering.active || roofClimb || autoWalk || cleaning || ix.working || hunt.moment || cards.isOpen) { doorPush = 0; return; }
     const way = world.doorWay();
@@ -1666,50 +1757,66 @@ async function boot() {
     doorPush = atDoor && into ? doorPush + dt : 0;
     if (doorPush < HOUSE_VISIT.pushMs) return;
     doorPush = 0;
-    ix.reset(); hero.halt();
-    houseVisit = { phase: 'in', ms: 0, way, from: hero.view.position.clone().setY(0) };
+    ix.reset();
+    houseVisit = { phase: 'in', ms: 0, way };
+    world.setHouseSolid(false);
     sfx.cue('knock');
     hud.announce('Vanessa goes into the house');
   }
-  // the visit's frame: the door and where she is seen (after her own update, which it overrides)
+  // her steer while she is in the house: walking herself in and out through the door, and the
+  // player's stick in between
+  const houseAim = new THREE.Vector2();
+  function houseSteer(stick) {
+    const v = houseVisit;
+    if (v.phase === 'inside') return stick;
+    const to = v.phase === 'in' ? v.way.inside : v.way.out;
+    const p = hero.body.position;
+    const dx = to.x - p.x; const dz = to.z - p.z; const d = Math.hypot(dx, dz);
+    if (d < 0.02) return zeroSteer;
+    return houseAim.set(dx / d, -dz / d).multiplyScalar(Math.min(1, 0.35 + d * 1.5));
+  }
+  // the visit's frame: the door, the walls she is kept within, and when she is in or out
   function stepHouseVisit(dt, stick) {
     const v = houseVisit;
     if (!v) return;
     v.ms += dt;
     const { way } = v;
-    const face = (yaw) => { hero.yaw = yaw; hero.yawTarget = yaw; hero.view.rotation.y = yaw; };
+    const p = hero.body.position;
+    const q = way.local(p);
     if (v.phase === 'in') {
-      const k = Math.min(1, v.ms / HOUSE_VISIT.inMs);
-      world.setDoorOpen(Math.min(1, k / 0.35));
-      const e = easeIO(Math.max(0, (k - 0.15) / 0.85));
-      hero.view.position.set(v.from.x + (way.inside.x - v.from.x) * e, 0, v.from.z + (way.inside.z - v.from.z) * e);
-      face(way.yaw + Math.PI);
-      hero.view.visible = k < 0.8;
-      if (k >= 1) { v.phase = 'inside'; v.ms = 0; world.inkWord('Home!', way.step.clone().setY(2.3), { h: 0.5, ms: 1200 }); hud.announce('Vanessa is inside the house. Move her to come back out through the door.'); }
+      world.setDoorOpen(Math.min(1, v.ms / 300));
+      world.houseClamp(hero, { door: true });
+      if (Math.hypot(way.inside.x - p.x, way.inside.z - p.z) < HOUSE_VISIT.near || v.ms > HOUSE_VISIT.inMs) {
+        v.phase = 'inside'; v.ms = 0;
+        world.inkWord('Home!', way.step.clone().setY(2.3), { h: 0.5, ms: 1200 });
+        hud.announce('Vanessa is inside the house. Walk her about, or lead her to the door to come back out.');
+      }
     } else if (v.phase === 'inside') {
-      hero.view.visible = false;
       world.setDoorOpen(1 - Math.min(1, v.ms / HOUSE_VISIT.shutMs));
-      hero.view.position.copy(way.inside);
-      // v0.32 (Tiffany's "Edits #6": "Allow the player to control Vanessa going in and out of the house
-      // instead of her coming out automatically. (Use the same controls as what is always used to move
-      // her) she must use the door though"): she stays in until the stick (or the keys) moves her, and
-      // then she comes out through the door (v0.31: out again by herself after 3.2 s)
-      const pushed = stick.x * stick.x + stick.y * stick.y > 0.09 && v.ms > HOUSE_VISIT.minStayMs;
-      if (pushed) {
+      world.houseClamp(hero);
+      // out only through the door: at it, pushing out of the house
+      const atDoor = Math.abs(q.x - way.doorX) < HOUSE_VISIT.half && q.z > way.front - 0.75;
+      if (atDoor && pushesOut(stick, way) && v.ms > HOUSE_VISIT.minStayMs && !hero.moment) {
         v.phase = 'out'; v.ms = 0;
-        hero.place(way.out.x, way.out.z); // her body waits outside; she is seen walking out to it
-        hero.view.position.copy(way.inside);
         hud.announce('Vanessa comes back out of the house');
       }
     } else if (v.phase === 'out') {
-      const k = Math.min(1, v.ms / HOUSE_VISIT.outMs);
-      world.setDoorOpen(k < 0.75 ? Math.min(1, k / 0.25) : 1 - (k - 0.75) / 0.25);
-      const e = easeIO(Math.max(0, (k - 0.2) / 0.8));
-      hero.view.visible = k > 0.18;
-      hero.view.position.set(way.inside.x + (way.out.x - way.inside.x) * e, 0, way.inside.z + (way.out.z - way.inside.z) * e);
-      face(way.yaw);
-      if (k >= 1) { world.setDoorOpen(0); hero.view.visible = true; houseVisit = null; }
+      world.setDoorOpen(Math.min(1, v.ms / 250));
+      world.houseClamp(hero, { door: true });
+      if (Math.hypot(way.out.x - p.x, way.out.z - p.z) < HOUSE_VISIT.near * 2 || v.ms > HOUSE_VISIT.outMs) {
+        world.setDoorOpen(0);
+        world.setHouseSolid(true);
+        houseVisit = null;
+      }
     }
+  }
+  // v0.33: inside, she twirls (Spin, the context button)
+  function houseSpin() {
+    if (houseVisit?.phase !== 'inside' || hero.moment) return;
+    hero.halt();
+    hero.startMoment('dance', { ms: 2400 });
+    sfx.cue('cue');
+    hud.announce('Vanessa twirls round the room');
   }
   // ---------- loop with the world-pause gate ----------
   let frozen = false; // test hook (?debug=1): hold world time while the page keeps rendering
@@ -1720,8 +1827,7 @@ async function boot() {
     zone: $('stick-zone'), base: $('stick-base'), knob: $('stick-knob'),
     onAction: () => {
       if (cards.isOpen || loop.paused) return;
-      if (birds.wavable) doWave(); // v0.17: a bird first
-      else if (hud.diyHere) hud.triggerDiy();
+      if (hud.diyHere) hud.triggerDiy();
       else if (hud.saleShown) hud.triggerSale();
       else if (!$('context').hidden) hud.triggerContext();
       else if (hud.diyShown) hud.triggerDiy(); // away from the part: show the way
@@ -1746,7 +1852,7 @@ async function boot() {
     const stick = input.read();
     lastStick.copy(stick);
     if (!houseVisit) tryHouse(dt, debugSteer ?? stick);
-    hero.setInput(houseVisit ? zeroSteer : debugSteer ?? stepAutoWalk(dt, stick) ?? sceneSteer ?? stick);
+    hero.setInput(houseVisit ? houseSteer(debugSteer ?? stick) : debugSteer ?? stepAutoWalk(dt, stick) ?? sceneSteer ?? stick); // (v0.33: in the house too, on her own legs)
     hero.preStep(dt);
     world.physics.step(1 / 60, dt / 1000, 5);
     // v0.26: the ledger's clock takes whole milliseconds; what a frame's time leaves over is
@@ -1759,6 +1865,10 @@ async function boot() {
     commit({ t: 'tick', ms: tickMs, calm: data.settings.helpMeFinish, near: nodesInView() }); // (v0.32: `near`)
     world.updateBranch(dt);
     ctxTargets = world.targets(data.ledger, ledgerRev);
+    // v0.33 (Tiffany's "Edits #7": "During the end where she's collecting things don't allow any more
+    // collecting crops or wood or rocks. She should just be collecting"): on the finished farm only the
+    // songs and the keepsakes are hers to pick up (and a weed on the grass to rake)
+    if (eggPhase(data.ledger)) ctxTargets = ctxTargets.filter((t) => t.kind === 'weed');
     const heroXZ = { x: hero.body.position.x, z: hero.body.position.z };
     goal = goalFor(data.ledger, heroXZ);
     // v0.29: a build that waits only for wood or stone says so once, as news
@@ -1776,7 +1886,9 @@ async function boot() {
     // (v0.23: nor while she climbs to the chimney, or down from it)
     if (roofClimb && (hero.moving || hero.moment?.kind !== 'roof')) { roofClimb = null; if (hero.moment?.kind === 'roof') hero.cancelMoment(); }
     const building = hammering.active || !!roofClimb;
-    const evs = building || hunt.moment ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
+    // (v0.33: while the rake or the shovel flies into her hand, the work waits for it)
+    const toolComing = world.toolArriving();
+    const evs = building || hunt.moment || toolComing ? [] : ix.update(dt, { hero: heroXZ, moving: hero.moving, speed: hero.groundSpeed, targets: ctxTargets, tableBusy: saleShowing, ...toolCtx });
     for (const e of evs) handleIxEvent(e);
     // (v0.25-v0.27 filled a table with room from the crate here, every frame; v0.28: only as a sale
     // starts and after it)
@@ -1788,10 +1900,10 @@ async function boot() {
     // v0.23 (Tiffany: "When she is shoveling or raking make an animation of her doing it"): with
     // the rake at a weed or the shovel at a spot she works with it, stroke by stroke
     const doing = working ? ix.workDoing : null;
-    const toolWork = doing === 'clearWeed' && data.ledger.tool === 'rake' ? 'rake' : doing === 'dig' && data.ledger.tool === 'shovel' ? 'shovel' : null;
+    const toolWork = toolComing ? null : doing === 'clearWeed' && data.ledger.tool === 'rake' ? 'rake' : doing === 'dig' && data.ledger.tool === 'shovel' ? 'shovel' : null;
     hero.update(dt, { working: !!working || hammering.active, faceTo, tool: toolWork, stroke: ix.workProgress });
     hammering.update(dt); // after her pose, so the hammer sits in her fist
-    stepHouseVisit(dt, stick); // v0.31: through the door and back (after her own update)
+    stepHouseVisit(dt, debugSteer ?? stick); // v0.31: through the door and back (after her own update)
     if (!debugCarried) hero.setCounts(data.ledger.carried);
     world.toolStroke = hero.toolStroke;
     // a little earth, or a few leaves, as each stroke bites
@@ -1815,7 +1927,12 @@ async function boot() {
     const markers = diyTime ? [goal.diy] : guideTargets(data.ledger, goal);
     const visibleMarkers = building || eggPhase(data.ledger) || selling() ? [] : markers; // (v0.32: nothing marked during a yard sale)
     // (the bench's stain asks for an action, Clean the bench: its circle is the actions' red one)
-    const stainShown = data.ledger.theft.stain && !cleaning && !diyTime && !building && !selling();
+    // (v0.33, Tiffany's "Edits #7": "When she is collecting songs, they appear as red circles. Remove the
+    // bird pooping on the bench which also appears as a red circle": in the hunt the mess and its
+    // circle are there only for the bench's own song, "Clean the bench")
+    const benchAsks = !inHunt() || spotsNow().includes('bench');
+    if (inHunt() && data.ledger.theft.stain && !benchAsks && !cleaning) { quietClean = true; commit({ t: 'cleanBench' }); quietClean = false; }
+    const stainShown = data.ledger.theft.stain && benchAsks && !cleaning && !diyTime && !building && !selling();
     if (stainShown) visibleMarkers.push('G2');
     // v0.29: where her first load goes, marked until she has taken one there
     if (!diyTime && !building && !eggPhase(data.ledger) && !selling()) {
@@ -1842,7 +1959,7 @@ async function boot() {
     // v0.25: everything is found: a moment later, "Sunset on the bench" (once per farm)
     // (asked only on a finished farm that has not seen it: nothing is counted on a farm under way)
     if (!data.session.sunsetSeen && mainComplete(data.ledger) && sunsetDue(data, { finished: true, complete: allFound() })
-      && inHunt() && !hunt.egg && !hunt.busy && !hunt.moment && !giveaway.active && !houseVisit && !saleShowing && !hammering.active && !cleaning && !birds.busy) {
+      && inHunt() && !hunt.egg && !hunt.busy && !hunt.moment && !giveaway.active && !houseVisit && !saleShowing && !hammering.active && !cleaning && !birds.busy && hero.moment?.kind !== 'dust') {
       sunsetWait += dt;
       if (sunsetWait >= SUNSET_AFTER_MS) { sunsetWait = 0; sunset.start(); }
     } else sunsetWait = 0;
@@ -1865,7 +1982,7 @@ async function boot() {
     hud.setGoal(wasSelling && !hunting ? SALE_GOAL : goalBeat ? goalBeat.goal : !hunting ? goal
       : keepLine ?? (allSongs && nextKeep ? { text: 'Enjoy the song. One more keepsake comes out in a moment.', line: { icon: 'note', label: 'Enjoy the song' } }
         : allSongs ? { text: `Every song and every keepsake found.`, line: { icon: 'check', label: 'Everything found' } }
-          : huntGoal({ discoveries: data.discoveries, othersFound: true, egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : hunt.moment ? 'moment' : (hunt.restMs > 0 || !actOpen(null)) && inHunt() ? 'rest' : null, restS: Math.ceil(hunt.restMs / 1000) })));
+          : huntGoal({ discoveries: data.discoveries, othersFound: keepsakesDone(), /* (v0.33: the last song waits for every keepsake) */ egg: hunt.egg ? 'landed' : hunt.busy ? 'coming' : hunt.moment ? 'moment' : (hunt.restMs > 0 || !actOpen(null)) && inHunt() ? 'rest' : null, restS: Math.ceil(hunt.restMs / 1000) })));
     // one pill: the coach's "how" while it teaches, else the status (ui/voices.js)
     const pill = selling() ? { coach: null, status: 'Yard sale!' } : onePill(coachState?.prompt ?? null, statusWant);
     if (coachState) coachState.prompt = pill.coach;
@@ -1965,6 +2082,8 @@ async function boot() {
     const tools = ctxTargets.find((x) => x.kind === 'tools');
     if (selling()) {
       hud.setContext(null, null); // (v0.32: nothing else to do during a yard sale)
+    } else if (houseVisit) {
+      hud.setContext(houseVisit.phase === 'inside' && !hero.moment ? 'Spin' : null, houseVisit.phase === 'inside' ? houseSpin : null); // (v0.33: she twirls in the house)
     } else if (tools && toolCtx.want && inReach(heroXZ, tools)) {
       const tool = toolCtx.want;
       hud.setContext(`Take the ${tool}`, () => { ix.reset(); commit({ t: 'takeTool', tool }); });
@@ -1988,20 +2107,20 @@ async function boot() {
     const w = ix.working;
     if (w) {
       const doing = ix.workDoing;
-      if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}…`;
-      else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed… it grows back in half a minute' : 'Clearing weeds…';
-      else if (w.kind === 'dig') text = 'Digging…';
-      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}… ${data.ledger.carried[sourceResource(w.id)]}${['C', 'S', 'T'].includes(sourceResource(w.id)) && cropsCarried(data.ledger) > data.ledger.carried[sourceResource(w.id)] ? ` · ${cropsCarried(data.ledger)} of ${HEAD_CROPS} crops` : ''}`;
+      if (doing === 'takeTool') text = `Taking the ${w.kind === 'tools' ? toolCtx.want : w.kind === 'weed' ? 'rake' : 'shovel'}`;
+      else if (w.kind === 'weed') text = isYardWeed(w.id) ? 'Raking the weed: it grows back soon' : 'Clearing weeds';
+      else if (w.kind === 'dig') text = 'Digging';
+      else text = `Gathering ${RESOURCE_UNIT[sourceResource(w.id)]}: ${data.ledger.carried[sourceResource(w.id)]}${['C', 'S', 'T'].includes(sourceResource(w.id)) && cropsCarried(data.ledger) > data.ledger.carried[sourceResource(w.id)] ? ` · ${cropsCarried(data.ledger)} of ${HEAD_CROPS} crops` : ''}`;
     } else if (houseVisit?.phase === 'inside') {
-      text = 'Inside the house: move to come back out'; // (v0.32)
+      text = 'Inside the house: walk her to the door to come back out'; // (v0.32; v0.33: through the door)
     } else if (autoWalk) {
-      text = autoWalk.stage ? `Running to the ${STAGES[autoWalk.stage].label}…` : 'Back to the tables for the yard sale…'; // v0.29 (v0.32: and to a build)
+      text = autoWalk.stage ? `Running to the ${STAGES[autoWalk.stage].label}` : 'Back to the tables for the yard sale'; // v0.29 (v0.32: and to a build)
     } else if (roofClimb && !hammering.active) {
-      text = roofClimb.stage === 'H3' ? 'Up onto the walls…' : 'Up onto the roof…';
+      text = roofClimb.stage === 'H3' ? 'Up onto the walls' : 'Up onto the roof';
     } else if (hammering.active) {
-      text = `DIY time! Building the ${STAGES[hammering.stage].label}…`;
+      text = `DIY time! Building the ${STAGES[hammering.stage].label}`;
     } else if (cleaning) {
-      text = 'Cleaning the bench…';
+      text = 'Cleaning the bench';
     } else {
       const need = toolBlocked(data.ledger, heroXZ, ctxTargets, toolCtx);
       if (need && goal.tool !== need) text = `You need the ${need}. It leans ${byHouse(data.ledger)}.`; // (v0.21: not when the goal line is "Take the rake")
@@ -2056,12 +2175,7 @@ async function boot() {
   // "you click the stand is more intuitive")
   function tapWorld(x, y) {
     if (!session.playing || loop.paused) return;
-    // v0.17: a tap on (or near) a bird that threatens waves it off
-    const bp = birds.wavable && world.birdPos(tmpP);
-    if (bp) {
-      bp.project(rig.camera);
-      if (Math.hypot(((bp.x + 1) / 2) * view.w - x, ((1 - bp.y) / 2) * view.h - y) < 70) { doWave(); return; }
-    }
+    // (v0.17-v0.32: a tap on a bird that threatened waved it off; v0.33: she waves by herself, autoWave)
     if (!saleReady(data.ledger)) return;
     const ndc = new THREE.Vector2((x / view.w) * 2 - 1, -(y / view.h) * 2 + 1);
     const ray = new THREE.Raycaster();
@@ -2126,6 +2240,13 @@ async function boot() {
       if (playsOpening({ seen: prefs.openingSeen, param: params.get('opening'), overlay, fresh: freshFarm(d) })) {
         paper.place(view.w, view.h);
         opening.prepare();
+        // v0.33 (Tiffany's "Edits #7": "When you first start the game the music should come on"; "Make
+        // the default sound setting be on ... Even at the very beginning of the game"): the theme is
+        // asked for on the opening's page too, where it waited for the tap before; a browser that
+        // allows it plays it at once, and the tap that starts the opening starts it from its top. One
+        // that does not (an iPhone) starts it with that first tap, as before.
+        audio.autostart();
+        loadSfx();
       } else {
         welcome(); // v0.25: a new farm with no opening before it (?opening=0) is welcomed at once
         paper.hide();
@@ -2166,7 +2287,7 @@ async function boot() {
     world.archerReset();
     if (mainComplete(data.ledger)) world.archerToBench('A1', { instant: true });
     thief.cancel(); sceneSteer = null;
-    if (houseVisit) { hero.view.visible = true; world.setDoorOpen(0); } houseVisit = null; doorPush = 0; // (v0.31)
+    if (houseVisit) { hero.view.visible = true; world.setDoorOpen(0); world.setHouseSolid(true); } houseVisit = null; doorPush = 0; // (v0.31; v0.33: the house solid again)
     roofClimb = null; autoWalk = null; goalBeat = null; wishTold = -1; lastBite = null; sunsetWait = 0; tickCarry = 0;
     ledgerRev++; // (v0.26: another farm: nothing kept from the last one)
     showSign(null);
@@ -2245,6 +2366,7 @@ async function boot() {
     holdWorld();
     $('btn-songs').textContent = `Songs (${foundCount(data.discoveries)}/${songsFor().length} found)`;
     $('btn-keepsakes').textContent = `Keepsakes (${foundKeepsakes(data.keepsakes ?? {}).length}/${KEEPSAKE_IDS.length})`;
+    $('btn-ending').textContent = data.discoveries?.[LAST_SONG] ? 'Watch the ending again' : 'Skip to the ending'; // (v0.33)
     extrasEl.hidden = false;
     extrasEl.scrollTop = 0;
     $('btn-extras-back').focus({ preventScroll: true });
@@ -2408,8 +2530,21 @@ async function boot() {
       hud.announce(`${SIGNATURE}. The evening stays on the farm.`);
       hud.toast(`${SIGNATURE}: every song and every keepsake found. The evening stays on the farm, and The drawing is signed.`, 7000);
       menuButton().focus({ preventScroll: true });
+      // v0.33 (the ending as adopted, Tiffany's "Edits #7"): then the story and the slideshow follow,
+      // offered; the song plays on and she can keep exploring until the player moves on
+      setTimeout(offerStory, reducedMotion() ? 300 : 1600);
     },
   });
+  function offerStory() {
+    if (credits.active || !session.playing) return;
+    if (cards.isOpen || finale.active || sunset.active || giveaway.active) { setTimeout(offerStory, 800); return; }
+    cards.message({
+      title: 'The Farm, complete',
+      text: 'Every song and every keepsake is found. Watch the story of the drawing and its slideshow, or keep exploring the farm with the song playing.',
+      confirm: 'Watch the story and slideshow', cancel: 'Keep exploring',
+      onConfirm: () => credits.start(),
+    });
+  }
   // (v0.21's paper bands above and below an upright screen's framing are gone since v0.25: above
   // and below the farm the world's own sky and ground go on, world/framing.js)
 
@@ -2511,6 +2646,35 @@ async function boot() {
   $('btn-explore').onclick = keepExploring;
   $('btn-slideshow-end').onclick = () => credits.start();
   $('btn-slideshow').onclick = () => credits.start();
+  // v0.33 (Tiffany's "Edits #7": "Make it possible to skip to the end animation"): Extras → Skip to the
+  // ending: every song and keepsake still to find counts as found, and "I gave it to the world" plays
+  // at once, with the sunset on the bench after it; once it has played, Watch the ending again replays
+  // the scene (nothing else changes)
+  function playEnding() {
+    const spot = songSpot(LAST_SONG);
+    const go = () => {
+      closeExtras();
+      Object.assign(hunt, { busy: false, egg: null, id: null, restMs: 0, moment: null }); world.clearEggs();
+      keepOut = null;
+      const p = world.eggSpotPos(spot, new THREE.Vector3());
+      hero.place(p.x, p.z); rig.snap = true;
+      setTimeout(() => startGiveaway(spot), 120);
+    };
+    if (data.discoveries?.[LAST_SONG]) { go(); return; }
+    cards.message({
+      title: 'Skip to the ending?',
+      text: 'Every song and keepsake still to find is counted as found, and the last song, “I gave it to the world”, plays now with its ending.',
+      confirm: 'Skip to the ending', cancel: 'Not now',
+      onConfirm: () => {
+        const at = found(data.ledger);
+        for (const id of songsFor()) if (id !== LAST_SONG && !data.discoveries?.[id]) data.discoveries = { ...data.discoveries, [id]: { ...at, skipped: true } };
+        for (const id of KEEPSAKE_IDS) if (!data.keepsakes?.[id]) data.keepsakes = { ...data.keepsakes, [id]: data.ledger.activeMs };
+        persist();
+        go();
+      },
+    });
+  }
+  $('btn-ending').onclick = playEnding;
   window.addEventListener('keydown', (e) => {
     if (!credits.active || cards.isOpen) return;
     if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); credits.togglePause(); }
@@ -2555,10 +2719,11 @@ async function boot() {
   for (const t of ['pointerup', 'keydown']) window.addEventListener(t, () => { resuming = opening.active && audio.prompt === 'resume'; }, true);
   const tapOpening = () => {
     if (!opening.active || resuming) return;
-    if (opening.phase === 'waiting') opening.begin();
+    // (v0.33: the theme may already be playing on the page: the opening runs on its clock from the top)
+    if (opening.phase === 'waiting') { if (audio.position > 0.3) audio.restartMusic(); opening.begin(); }
   };
   paper.onStart(tapOpening);
-  $('opening-start').onclick = () => opening.begin(); // Enter or Space on the focused Start control
+  $('opening-start').onclick = () => { if (opening.active && opening.phase === 'waiting' && audio.position > 0.3) audio.restartMusic(); opening.begin(); }; // Enter or Space on the focused Start control
   window.addEventListener('keydown', (e) => {
     if (!opening.active || e.repeat || cards.isOpen || e.key === 'Escape') return;
     if (opening.phase !== 'waiting' || ![' ', 'Enter'].includes(e.key)) return;
@@ -2629,22 +2794,47 @@ async function boot() {
   $('btn-reset').onclick = () => newFarm();
   $('btn-start-over').onclick = () => newFarm({ fromPause: true });
   // v0.29: a phone that brings the page back from its page cache may skip visibilitychange
-  window.addEventListener('pageshow', (e) => { if (!e.persisted || document.hidden) return; audio.setHidden(false); loop.resume('hidden'); if (songResume) { songResume = false; songs.resume(); } });
+  window.addEventListener('pageshow', (e) => { if (!e.persisted || document.hidden) return; loop.resume('hidden'); claimSound(); away = true; setAway(false); });
   let songResume = false; // v0.29: a found song was playing as the page was hidden
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { ix.reset(); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
-    audio.setHidden(document.hidden);
-    credits.setHidden(document.hidden);
+  // v0.33 (Tiffany's "Edits #7": "If you have two of the games or more open in separate tabs, only the
+  // one that is up should play the audio. Currently they all play overlapping"): the sound goes quiet
+  // when the page is hidden (as before) and also when another tab of the game has come to the front
+  // since (`yielded`). The tabs tell each other through a broadcast channel: a tab that is shown,
+  // focused or touched claims the sound, and every other one goes quiet until it is claimed back.
+  let yielded = false;
+  let away = false; // the sound is away: the page hidden, or another tab has it
+  function setAway(on) {
+    if (on === away) return;
+    away = on;
+    audio.setHidden(away);
+    credits.setHidden(away);
     // like the theme; v0.29 (Tiffany: "If I go out of the farm game on my phone and come back, have
     // the song automatically start playing again"): a song that was playing plays on when the page
     // is shown again (the element was started by her tap, so the browser lets it go on)
-    if (document.hidden) { songResume = songs.state.playing; songs.pause(); } else if (songResume) { songResume = false; songs.resume(); }
+    if (away) { songResume = songResume || songs.state.playing; songs.pause(); } else if (songResume) { songResume = false; songs.resume(); }
     // v0.30 (Tiffany: "When I click out of the game to a different page in my phone and then come
     // back, it should automatically start the audio"): the iPhone's silent element, which keeps
     // its audio session, plays on again too (it was started by her tap, so it may)
-    if (!document.hidden && silent) silent.play()?.catch?.(() => {});
+    if (!away && silent) silent.play()?.catch?.(() => {});
+    if (away && silent) silent.pause?.();
     // v0.31: the theme's back-up voice (themeBackup below)
-    if (document.hidden) themeBackup.hide(); else themeBackup.back();
+    if (away) themeBackup.hide(); else themeBackup.back();
+  }
+  const tabId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const tabs = (() => { try { return new BroadcastChannel('vanessas-farm/sound'); } catch { return null; } })();
+  tabs?.addEventListener('message', (e) => { if (e.data?.claim && e.data.claim !== tabId && !yielded) { yielded = true; setAway(true); } });
+  const claimSound = () => {
+    if (document.hidden) return;
+    if (yielded) { yielded = false; setAway(false); }
+    try { tabs?.postMessage({ claim: tabId }); } catch { /* one tab only */ }
+  };
+  window.addEventListener('focus', claimSound);
+  claimSound(); // a game opened in front: the others go quiet
+  for (const t of ['pointerdown', 'keydown']) window.addEventListener(t, () => { if (yielded || !claimSound.done) { claimSound.done = true; claimSound(); } }, true);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { ix.reset(); input.release(); hero.halt(); loop.pause('hidden'); } else loop.resume('hidden');
+    if (!document.hidden) claimSound();
+    setAway(document.hidden || yielded);
   });
 
   // ---------- v0.31: the theme comes back by itself (Tiffany's "Edits #5") ----------

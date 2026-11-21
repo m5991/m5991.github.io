@@ -25,6 +25,11 @@
 // `title` is her title; #6.5's photo caption leaves out the family name (the public site shows no
 // surname: TITLE_SHOWN).
 const K = (n, title, label, gifts, u, v, hint) => ({ n, title, label, gifts, u, v, hint });
+// v0.33 (Tiffany's "Edits #7": "reverse the order of the slide show pictures and also in the
+// keepsakes" for the jello, the backdrop, the first two puzzle photos, the Peeps, the white-elephant
+// painting, the novel and the CD; the Christmas tree's 2nd photo last; the 3rd T-shirt photo first;
+// the surprise party reordered and its bird-wings photo, photo-41, removed): each keepsake lists its
+// photos in her new order, the slideshow's `sequence` (credits.json) the same
 const ph = (...k) => k.map((i) => `photo-${String(i).padStart(2, '0')}`);
 export const KEEPSAKES = {
   masterpiece: K('1', 'The Masterpiece', 'the masterpiece', ph(1), 45, 81.5, 'Something lies in the open grass below the path.'),
@@ -32,22 +37,22 @@ export const KEEPSAKES = {
   flyer: K('3', 'The Moms Night Out Flyer', 'the flyer', ph(3), -3, 56, 'Something lies out past the far left edge, behind the tree.'),
   book: K('4', 'The Children’s Picture Book', 'the picture book', ph(4), 66, 56, 'Something lies between the yard-sale tables and the corn.'),
   blanket: K('4.5', 'The Blanket', 'the blanket', ph(5, 6), 102, 92, 'Something lies out past the right edge, below the sunflowers.'),
-  jello: K('5', 'The Jello', 'the jello', ph(7, 8), 19.5, 63.5, 'Something red and wobbly sits under the old tree.'),
-  present: K('6', 'The 3D White Elephant Present', 'the 3D present', ph(9, 10), -3, 95, 'Something lies out past the far left edge, at the front.'),
+  jello: K('5', 'The Jello', 'the jello', ph(8, 7), 19.5, 63.5, 'Something red and wobbly sits under the old tree.'),
+  present: K('6', 'The 3D White Elephant Present', 'the 3D present', ph(10, 9), -3, 95, 'Something lies out past the far left edge, at the front.'),
   xmascard: K('6.5', 'The Christmas Card', 'the Christmas card', ph(11), 54, 65, 'Something lies just in front of the yard-sale tables.'),
-  tree: K('7', 'The Secret Santa Christmas Tree', 'the Christmas tree', ph(12, 13, 14, 15, 16), 85.5, 59, 'Something stands between the corn and the sunflowers.'),
+  tree: K('7', 'The Secret Santa Christmas Tree', 'the Christmas tree', ph(12, 14, 15, 16, 13), 85.5, 59, 'Something stands between the corn and the sunflowers.'),
   earrings: K('7.5', 'The Earrings', 'the earrings', ph(17), 16.5, 56, 'Something small lies behind the old tree.'),
   bookmarks: K('8', 'The Bookmarks', 'the bookmarks', ph(18), 69, 74, 'Something lies in the grass above the raised bed.'),
-  backdrop: K('9', 'The Tutor Photo Backdrop', 'the photo backdrop', ph(19, 20), 102, 66.5, 'Something stands out past the right edge, by the sunflowers.'),
+  backdrop: K('9', 'The Tutor Photo Backdrop', 'the photo backdrop', ph(20, 19), 102, 66.5, 'Something stands out past the right edge, by the sunflowers.'),
   wrapping: K('10', 'The Wrapping Paper', 'the wrapping paper', ph(21), -1.5, 62, 'Something lies at the far left edge.'),
-  novel: K('11', 'The Full Length “Who Done It” Novel', 'the novel', ph(22, 23), 13.5, 104, 'Somebody left a bestseller out at the very front, on the left.'),
-  puzzle: K('13', 'The Surprise Puzzle Competition', 'the puzzle', ph(25, 26, 27), 97.5, 60.5, 'Something lies at the right edge, past the corn.'),
-  peep: K('13.5', 'The Peeps Diorama', 'the Peeps diorama', ph(28, 29), 76.5, 56, 'A tiny farmer hides at the end of the tables, by the corn.'),
-  shirts: K('14', 'The Twin Day T-Shirts', 'the T-shirts', ph(30, 31, 32, 33), 13.5, 60.5, 'Something lies behind the old tree, on the left.'),
+  novel: K('11', 'The Full Length “Who Done It” Novel', 'the novel', ph(23, 22), 13.5, 104, 'Somebody left a bestseller out at the very front, on the left.'),
+  puzzle: K('13', 'The Surprise Puzzle Competition', 'the puzzle', ph(26, 25, 27), 97.5, 60.5, 'Something lies at the right edge, past the corn.'),
+  peep: K('13.5', 'The Peeps Diorama', 'the Peeps diorama', ph(29, 28), 76.5, 56, 'A tiny farmer hides at the end of the tables, by the corn.'),
+  shirts: K('14', 'The Twin Day T-Shirts', 'the T-shirts', ph(32, 30, 31, 33), 13.5, 60.5, 'Something lies behind the old tree, on the left.'),
   yearbook: K('15', 'The Yearbook Background', 'the yearbook', ph(34, 35), 57, 71, 'Something lies below the yard-sale tables.'),
-  cd: K('16', 'The CD', 'the CD', ph(36, 37), 22.5, 59, 'A soundtrack lies by the path, near the old tree.'),
+  cd: K('16', 'The CD', 'the CD', ph(37, 36), 22.5, 59, 'A soundtrack lies by the path, near the old tree.'),
   whoknows: K('17.5', 'The Who Knows Plant', 'the Who-Knows plant', ph(39), 60, 92, 'Something green and wiggly lies on the grass.'),
-  party: K('18', 'The Farm Party', 'the farm party', ph(40, 41, 42, 43, 44, 45, 46), 0, 104, 'Something lies out at the very front, far left.'),
+  party: K('18', 'The Farm Party', 'the farm party', ph(45, 42, 40, 46, 44, 43), 0, 104, 'Something lies out at the very front, far left.'),
   barbie: K('19', 'The Barbie Clothes', 'the doll clothes', ph(47), 22.5, 56, 'Something lies by the path, behind the tree.'),
   poster: K('20', 'The Poster', 'the poster', ph(48, 49), 96, 57.5, 'Something lies at the right edge, past the corn.'),
 };
@@ -86,10 +91,14 @@ export const visibleKeepsakes = (saved = {}, n = KEEPSAKES_AT_ONCE) => KEEPSAKE_
 // the next song's circle comes once it is found (`songTurn`). 23 songs and 23 keepsakes: the last
 // song ends the turns, and its keepsake comes out as she explores on with it playing.
 // (`allButLast`, v0.31's rule for the last ones, is no longer needed: one each, always.)
+// v0.33 (Tiffany's "Edits #7": "Have the keepsakes first so it ends the game in a song not a
+// keepsake"): `allButLast` (every song but the last is found): the keepsakes still left come out one
+// after the other with no song, and the last song's circle waits for them all (main.js actOpen), so
+// "I gave it to the world" is the very last find. (v0.32: the last keepsake came after the last song.)
 export function keepsakesNow(saved = {}, songsFound = 0, allButLast = false) {
   const left = KEEPSAKE_IDS.filter((id) => !saved?.[id]);
   const out = KEEPSAKE_IDS.length - left.length;
-  return left.length && songsFound > out ? [left[0]] : [];
+  return left.length && (songsFound > out || allButLast) ? [left[0]] : [];
 }
 // v0.32: a song's circle can come out: every song found so far has had its keepsake found
 export const songTurn = (saved = {}, songsFound = 0) => foundKeepsakes(saved).length >= Math.min(songsFound, KEEPSAKE_IDS.length);

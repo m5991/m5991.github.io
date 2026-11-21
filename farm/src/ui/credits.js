@@ -26,6 +26,7 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   const live = el.querySelector('.credits-live');
   const pauseBtn = el.querySelector('[data-act="pause"]');
   const skipBtn = el.querySelector('[data-act="skip"]');
+  const backBtn = el.querySelector('[data-act="back"]'); // v0.33
   const s = { active: false, paused: false, t: 0, plan: null, lyrics: null, audio: null, shown: null, lineShown: null, images: new Map(), token: 0 };
 
   // v0.20: the photos load a few ahead of the one on show (`from`: the plan's card index), not all
@@ -173,6 +174,24 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
   }
   // a hidden tab pauses them, the way it pauses the theme
   function setHidden(h) { if (s.active && h && !s.paused) togglePause(); }
+  // v0.33 (Tiffany's "Edits #7": "Be able to rewind the slideshow so you can see the pictures
+  // again"): Back goes to the start of the photo on show, or, in its first second and a half, to the
+  // photo before; the song goes back with it (it is the slideshow's clock). Pressed again, further back.
+  function back() {
+    if (!s.active || !s.plan) return;
+    const cards = s.plan.cards;
+    const i = cards.findIndex((c) => s.t >= c.start && s.t < c.end);
+    const cur = i >= 0 ? cards[i] : cards.at(-1);
+    const to = s.t - cur.start > 1.5 || i <= 0 ? cur.start : cards[i - 1].start;
+    seekTo(Math.max(0, to));
+  }
+  function seekTo(t) {
+    s.t = t;
+    if (s.audio) { try { s.audio.currentTime = t; } catch { /* not seekable yet: the clock alone */ } }
+    s.shown = undefined; s.lineShown = undefined;
+    render();
+  }
+  backBtn?.addEventListener('click', back);
   pauseBtn.addEventListener('click', togglePause);
   skipBtn.addEventListener('click', finish);
   return {
@@ -182,5 +201,6 @@ export function createCredits({ el, fetchJson, soundOn, reducedMotion, onStart, 
     get plan() { return s.plan; },
     start, update, togglePause, skip: finish, setSound, setHidden,
     seek(t) { s.t = t; if (s.audio) s.audio.currentTime = t; render(); },
+    back,
   };
 }

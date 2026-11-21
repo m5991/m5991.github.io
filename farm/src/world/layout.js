@@ -150,6 +150,9 @@ export const STATIONS = [
 export const YARD_WEED_PLACES = {
   wy1: [30.7, 61.5], wy2: [94.6, 53.4], wy3: [31.5, 56.4], wy4: [70.4, 62.6], wy5: [43.4, 67],
   wy6: [31.2, 95], wy7: [97.9, 76], wy8: [4.3, 65.3], wy9: [86.6, 51.3], wy10: [6.4, 56.4],
+  // v0.33 (Tiffany's "Edits #7": "When weeds grow in the yard, make it be in new places every time"):
+  // three more places clear of her work while the farm is built, out on the open grass at the front
+  wy12: [-14, 78], wy13: [116, 110], wy14: [70, 128],
 };
 
 // walkable region of the composition ground (world-bounds recovery clamps inside it)

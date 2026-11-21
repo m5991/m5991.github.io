@@ -127,6 +127,8 @@ export const ACTIONS = {
   pickup: 'bends down to the ground, picks it up and holds it',
   hello: 'leans to the plant and waves',
   pose: 'stands as in the drawing: facing front, hands in her pockets, smiling',
+  // v0.33: the ending (as adopted): the farmer gone, Vanessa laughs and dusts herself off
+  dust: 'laughs, then pats the dust off her overalls',
   draw: 'sweeps her arm round in a big circle',
   kick: 'kicks one foot up, then the other',
 };
@@ -244,8 +246,14 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     smile = q.smile;
     seat = { step: at.step, sit: at.sit, back: q.back, drop: q.drop };
   } else if (kind === 'clean') {
-    bones.Spine1_M = [0.55 * blend]; bones.Shoulder_R = [-0.9 * blend, 0.2 * wave, -0.25 * blend]; bones.Elbow_R = [-0.65 * blend];
-    bones.Hip_L = [-0.25 * blend]; bones.Knee_L = [0.4 * blend];
+    // v0.33 (Tiffany's "Edits #7": "When she is cleaning the bench make it look like she's cleaning the
+    // poop not the back/top of the bench"): she bends right down over the seat, her hand low on it,
+    // wiping side to side where the mess is, the other hand on her knee (v0.29-v0.32: a hand at chest
+    // height, which on screen wiped the backrest)
+    bones.Spine1_M = [0.75 * blend]; bones.Chest_M = [0.25 * blend];
+    bones.Shoulder_R = [-0.55 * blend, 0, (-0.15 + 0.3 * wave) * blend]; bones.Elbow_R = [-0.25 * blend];
+    bones.Shoulder_L = [-0.45 * blend, 0, 0.2 * blend]; bones.Elbow_L = [-0.5 * blend];
+    bones.Hip_L = [-0.4 * blend]; bones.Hip_R = [-0.4 * blend]; bones.Knee_L = [0.25 * blend]; bones.Knee_R = [0.25 * blend];
   } else if (kind === 'chimney') {
     travel = u < 0.45 ? smooth(u / 0.45) : u < 0.62 ? 1 : 1 - smooth((u - 0.62) / 0.38);
     for (const [side, sign] of [['L', 1], ['R', -1]]) {
@@ -277,7 +285,11 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     spin = reduced ? 0 : Math.PI * 2 * smooth((u - 0.52) / 0.3);
     smile = blend;
   } else if (kind === 'wave') {
-    bones.Shoulder_R = [-0.35 * blend, 0, -2.25 * blend]; bones.Elbow_R = [(-0.55 + 0.45 * wave) * blend];
+    // v0.33 (Tiffany's "Edits #7": "When she waves, have her hand up and elbow down. Currently, it's
+    // the opposite"): the upper arm out and forward at shoulder height or a little under it, the
+    // forearm bent up from the elbow, the hand above it, swaying side to side from the elbow.
+    // (v0.29-v0.32: the arm raised high with the elbow above her head and the hand hanging down.)
+    bones.Shoulder_R = [-0.3 * blend, 0, (-2.0 + 0.1 * wave) * blend]; bones.Elbow_R = [(-0.4 + 0.3 * wave) * blend];
     bones.Head_M = [-0.4 * blend]; bones.Spine1_M = [-0.08 * blend];
     smile = blend;
   } else if (kind === 'reach') {
@@ -298,8 +310,9 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     to = span(u, 0.04, 0.24, 0.8, 0.98);
     const k = span(u, 0.14, 0.32, 0.74, 0.92);
     const squeeze = reduced ? 0 : 0.1 * Math.max(0, Math.sin(u * Math.PI * 5));
-    bones.Shoulder_R = [-1.45 * k, 0, (0.95 + squeeze) * k]; bones.Shoulder_L = [-1.45 * k, 0, (-0.95 - squeeze) * k];
-    bones.Elbow_R = [(-1.35 - squeeze) * k]; bones.Elbow_L = [(-1.35 - squeeze) * k];
+    // (v0.33: the arms wider, round the whole trunk, the hands meeting behind it)
+    bones.Shoulder_R = [-1.5 * k, 0, (0.55 + squeeze) * k]; bones.Shoulder_L = [-1.5 * k, 0, (-0.55 - squeeze) * k];
+    bones.Elbow_R = [(-1.0 - squeeze) * k]; bones.Elbow_L = [(-1.0 - squeeze) * k];
     bones.Spine1_M = [0.3 * k]; bones.Chest_M = [0.1 * k];
     bones.Head_M = [0.12 * k, 0.55 * k, 0.38 * k];
     roll = 0;
@@ -314,6 +327,18 @@ export function actionPose(kind, u, reduced = false, opts = {}) {
     bones.Head_M = [-0.35 * laugh];
     lift = reduced ? 0 : 0.03 * Math.abs(wave) * laugh;
     smile = Math.max(tell * 0.5, laugh);
+  } else if (kind === 'dust') {
+    // v0.33: a laugh, head back, hands on her middle; then she pats down her overalls, both hands
+    // brushing her thighs in turn, bent a little forward
+    const laugh = span(u, 0.04, 0.14, 0.4, 0.5);
+    const pat = span(u, 0.48, 0.58, 0.9, 0.98);
+    const brush = reduced ? 0 : Math.sin(u * Math.PI * 22);
+    bones.Spine1_M = [(-0.12 + 0.08 * wave) * laugh + 0.42 * pat]; bones.Head_M = [-0.4 * laugh + 0.25 * pat];
+    bones.Shoulder_L = [-0.35 * laugh + (-0.45 + 0.22 * brush) * pat, 0, 0.25 * laugh]; bones.Elbow_L = [-1.3 * laugh - 0.35 * pat];
+    bones.Shoulder_R = [-0.35 * laugh + (-0.45 - 0.22 * brush) * pat, 0, -0.25 * laugh]; bones.Elbow_R = [-1.3 * laugh - 0.35 * pat];
+    bones.Hip_L = [-0.2 * pat]; bones.Hip_R = [-0.2 * pat];
+    lift = reduced ? 0 : 0.025 * Math.abs(wave) * laugh;
+    smile = Math.max(laugh, 0.6 * pat);
   } else if (kind === 'hop') {
     // (reduced motion: she steps from stone to stone, no leap)
     const h = hopAt(u, stones);

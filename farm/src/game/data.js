@@ -392,7 +392,13 @@ export const WISH = { every: 3, n: 2, tip: 1, crops: ['T', 'C', 'S'] };
 // and chokes its plant 60 s after it came (90 s); its warnings come at 10 s and 25 s
 // v0.32 (Tiffany's "Edits #6": "Bring back ... weeds that keep growing back and Choking out plants"):
 // one creeps over a crop 30 s after the last (40 s), on a plant on her screen where there is one
-export const REGROW = { after: 'H1', until: LAST_STAGE, everyMs: 30000, warnMs: 10000, growMs: 25000, wiltMs: 60000 };
+// v0.33 (Tiffany's "Edits #7": "I have 3 crops ... The weeds aren't chocking the plants out either"):
+// weeds creep over her crops from her third crop patch on (`plots`; or the foundation, as before, on
+// an older farm that built it first), every 25 s, and choke the plant 40 s after they came (60 s),
+// with the clump at 8 s and the choking at 20 s. The goal line no longer turns to a creeping weed
+// (it did at the clump, so a player who followed it never lost a plant): it is hers to notice
+// and rake, and the line speaks of it once the plant is gone (guide.js).
+export const REGROW = { after: 'H1', plots: 3, until: LAST_STAGE, everyMs: 25000, warnMs: 8000, growMs: 20000, wiltMs: 40000 };
 // a regrowth weed's id: `wr-` and the crop node it covers
 export const REGROW_WEEDS = Object.keys(NODES).map((n) => `wr-${n}`);
 export const regrowNode = (id) => (typeof id === 'string' && id.startsWith('wr-') && id.slice(3) in NODES ? id.slice(3) : null);
@@ -421,20 +427,33 @@ export const isWeedId = (id) => WEEDS.includes(id) || regrowNode(id) !== null ||
 // v0.32 (Tiffany's "Edits #6": "Bring back the birds steeling crops (animation of them flying with the
 // crop away)"): a visit every 12 s at most (16 s), three thefts in any two minutes (two), fourteen a
 // farm (ten), always on her screen (birds.js)
+// v0.33 (Tiffany's "Edits #7": "The birds are only landing on the tree ... I have 3 crops and they
+// aren't getting stolen"): the birds come from her third crop patch on (BIRDS_PLOTS; v0.32 waited for
+// the foundation, which now comes after it); there is no Wave button (she waves at birds by herself,
+// main.js), so a bird that gets to a crop takes it unless Dwight's arrow is first; a visit that finds
+// nothing to take looks again 2 s later (`retryMs`) instead of resting in the tree, and the roof and
+// the tree get only their own turns; twenty thefts a farm (fourteen)
 export const BIRDS = {
   everyMs: 12000, firstMs: 8000, warnMs: 2000, approachMs: 2000, landMs: 900, sitMs: 3600, leaveMs: 2200,
-  windowMs: 120000, windowMax: 3, totalMax: 14,
+  windowMs: 120000, windowMax: 3, totalMax: 20, retryMs: 2000,
   coverM: 3.5, drawMs: 800, fireMs: 3000, perchMs: 3000, cleanMs: 1800,
 };
 // v0.31 (Tiffany's "Edits #5": "Every once in a while birds steal from the yardsale table"): a bird
 // now and then goes for the crops set out on the tables ('table'), once in every five visits, and
 // plants come up twice as often
 // v0.32: and now and then one only rests on the roof or in the old tree (Tiffany's "Edits #6")
-export const BIRD_KINDS = ['node', 'roof', 'perch', 'table', 'node', 'treetop', 'carried'];
-export const END_BIRD_KINDS = ['visit', 'roof', 'perch', 'treetop'];
+// (v0.33: the takers come first, a rest in the roof or the tree once in eight)
+export const BIRD_KINDS = ['node', 'table', 'node', 'carried', 'perch', 'node', 'table', 'treetop', 'node', 'carried', 'roof'];
+export const REST_KINDS = ['roof', 'treetop', 'perch'];
+// v0.33 (Tiffany's "Edits #7": "The bird doesn't poop on the bench while she's running around
+// collecting songs. EXCEPT when it prompts her to clean it as an action"): no 'perch' on the finished
+// farm; a bird comes to the bench only when the bench's red circle asks for its mess (birds.js `want`)
+export const END_BIRD_KINDS = ['visit', 'roof', 'treetop'];
 // v0.23: the birds come from the house foundation on (with the raised bed built first, the second
 // crop plot is there before the first build; they came "from the second crop plot on")
 export const BIRDS_AFTER = 'H1';
+// v0.33: or three crop patches planted, whichever comes first
+export const BIRDS_PLOTS = 3;
 // v0.23 (Tiffany: "In the end, keep the birds coming and weeds growing random places in the yard
 // occasionally but don't let the weeds or birds take away / effect crops"): on the finished farm a
 // bird still comes now and then, lands on a crop plant, looks about and flies off with nothing
@@ -462,8 +481,11 @@ export const END_BIRDS = { everyMs: 26000, firstMs: 9000, sitMs: 2600 };
 // they stand from the start, can be raked like any weed on the grass, and are back backMs later.
 // They are not one of the `max` that come and go at the other places.
 // v0.31 (Tiffany's "Edits #5": "Weeds need to grow back faster"): back 12 s after raking (30 s)
-export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 12000, growMs: 600, early: ['wy8', 'wy2', 'wy10'], fixed: 'wy11' };
-export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10', 'wy11'];
+// v0.33 (Tiffany's "Edits #7": "When weeds grow in the yard, make it be in new places every time"):
+// six places while the farm is built (three new ones out on the open grass at the front, clear of her
+// work: world/layout.js), and a raked weed comes back somewhere else (ledger.js `yardLast`)
+export const YARD_WEEDS = { everyMs: 22000, firstMs: 7000, max: 3, backMs: 12000, growMs: 600, early: ['wy8', 'wy2', 'wy10', 'wy12', 'wy13', 'wy14'], fixed: 'wy11' };
+export const YARD_WEED_SLOTS = ['wy1', 'wy2', 'wy3', 'wy4', 'wy5', 'wy6', 'wy7', 'wy8', 'wy9', 'wy10', 'wy11', 'wy12', 'wy13', 'wy14']; // (v0.33: wy12-wy14)
 export const isYardWeed = (id) => YARD_WEED_SLOTS.includes(id);
 // v0.31 (Tiffany's "Edits #5": "Weeds need to start growing and chocking out plants again and birds
 // stealing crops"): Dwight guards the corn by his post, not every plant on the farm (v0.20-v0.30:

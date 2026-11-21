@@ -379,25 +379,34 @@ function tomatoTier(seed, k) {
 // and its bends now widen and narrow as it sways. (v0.17-v0.31: a thin dark ink line coiling round
 // on itself.)
 export const WHO_KNOWS_GREEN = 0x4cb83f;
+// v0.33 (Tiffany's "Edits #7": "see the screenshot (The Who knows plant) and make it a little more
+// reminiscent of that (but a simplified dynamic large version though)"): Vanessa's pen drawing is a
+// scribble of tall loops rising one out of the next. The stem now rises in four open loops, each a
+// little bigger than the one below, like a pen's loops written upward, facing the front, the last
+// one the biggest, and ends in a small curl; still thick at the foot and still swaying (world.js).
+// (v0.32: side-to-side S bends.)
 export function whoKnowsPath(phase = 0) {
   const pts = [];
-  for (let i = 0; i <= 72; i++) {
-    const t = i / 72;
-    const amp = 0.035 + 0.1 * Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.5);
-    const x = Math.sin(t * Math.PI * 3.2 + phase * (0.3 + t)) * amp;
-    const y = SOIL_Y + 0.02 + t * 0.7;
-    const z = 0.025 * Math.cos(t * Math.PI * 3.2);
+  const N = 120; const loops = 4;
+  const T = loops * Math.PI * 2;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const th = -Math.PI / 2 + t * T + phase * 0.3 * t;
+    const r = 0.05 + 0.07 * t; // the loops grow as they rise
+    const x = Math.cos(th) * r * 1.15 + 0.03 * Math.sin(t * Math.PI * 2);
+    const y = SOIL_Y + 0.02 + t * 0.62 + Math.sin(th) * r * 0.85 + r * 0.85;
+    const z = 0.03 * Math.sin(th);
     pts.push(V(x, y, z));
   }
   // the curl at the top
-  const top = pts.at(-1); const c = V(top.x - 0.05, top.y + 0.02, top.z);
-  for (let i = 1; i <= 14; i++) { const a = (i / 14) * Math.PI * 1.6; const r = 0.05 * (1 - i / 22); pts.push(V(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, top.z)); }
+  const top = pts.at(-1); const c = V(top.x - 0.04, top.y + 0.03, top.z);
+  for (let i = 1; i <= 12; i++) { const a = (i / 12) * Math.PI * 1.5; const r = 0.04 * (1 - i / 20); pts.push(V(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, top.z)); }
   return pts;
 }
 export function whoKnows() {
   const g = new THREE.Group(); g.name = 'D19_WhoKnows';
   const pts = whoKnowsPath();
-  const geo = taperTube(new THREE.CatmullRomCurve3(pts), 0.034, 0.012, 140, 8);
+  const geo = taperTube(new THREE.CatmullRomCurve3(pts), 0.034, 0.012, 170, 7); // (v0.33: the loops, within the bed's triangle budget)
   const stroke = new THREE.Mesh(geo, toon(WHO_KNOWS_GREEN));
   stroke.name = 'WhoKnowsStem';
   stroke.castShadow = true;
@@ -405,7 +414,7 @@ export function whoKnows() {
   const parts = [];
   const mound = lumpy(new THREE.SphereGeometry(0.11, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2), 0.012, 30, 3); mound.scale(1.2, 0.55, 1); mound.translate(0, SOIL_Y - 0.01, 0);
   parts.push(paint(mound, FLORA.moss));
-  for (const [i, az, up] of [[20, 0.4, 0.04], [36, 2.6, 0.03], [52, 0.2, 0.03], [64, 3.0, 0.05]]) {
+  for (const [i, az, up] of [[24, 0.4, 0.04], [52, 2.6, 0.03], [80, 0.2, 0.03], [106, 3.0, 0.05]]) {
     const p = pts[i]; const d = dirAz(az);
     const s1 = p.clone().addScaledVector(d, 0.03).addScaledVector(UP, up);
     parts.push(paint(taperTube(new THREE.LineCurve3(p, s1), 0.007, 0.005, 2, 4), FLORA.sprig));
@@ -442,7 +451,8 @@ export function bedPlants() {
   }
   // v0.31 (Tiffany's "Edits #5": "Make The Who knows plant larger and a little to the left"): half
   // as big again (world.js WHO_KNOWS_SCALE keeps it so while it sways), and 0.15 m to the left
-  const who = whoKnows(); who.position.set(-0.05, 0, -0.02); who.scale.setScalar(1.5);
+  // v0.33 (Tiffany's "Edits #7": "Move The Who knows plant over to the left a little"): 0.2 m more
+  const who = whoKnows(); who.position.set(-0.25, 0, -0.02); who.scale.setScalar(1.5);
   g.add(greens, tomatoes, who);
   return g;
 }

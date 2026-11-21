@@ -818,14 +818,19 @@ function keepsake31(g, kind) {
     g.add(at(mesh(box(0.24, 0.06, 0.3), 0x3d5f9a), 0, 0.03, 0, 0, 0.25, 0));
     g.add(at(mesh(box(0.23, 0.05, 0.29), paper, { ink: false }), 0.006, 0.03, 0, 0, 0.25, 0));
     const c = flat(face(0.18, 0.14), 0.061); c.rotation.z = 0.25; g.add(c);
-  } else if (kind === 'party') { // #18: a giant paper sunflower with two party balloons tied to it
-    g.add(at(mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 6), PAL.leaf), 0, 0.18, 0));
-    g.add(at(mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 14), PAL.flower), 0, 0.38, 0.01, Math.PI / 2 - 0.2, 0, 0));
-    g.add(at(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.025, 12), PAL.hair, { ink: false }), 0, 0.38, 0.02, Math.PI / 2 - 0.2, 0, 0));
-    for (const [x, c] of [[-0.12, PAL.red], [0.12, 0x3f9bd8]]) {
-      const b = new THREE.SphereGeometry(0.06, 14, 10); b.scale(1, 1.2, 1);
-      g.add(at(mesh(b, c), x, 0.46, -0.02));
-      g.add(at(mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.22, 4), PAL.ink, { ink: false, shadow: false }), x * 0.5, 0.29, -0.01, 0, 0, x > 0 ? -0.5 : 0.5));
+  } else if (kind === 'party') { // #18: a bunch of party balloons on their strings, tied to a little weight
+    // (v0.33, Tiffany's "Edits #7": "Make the party keepsake symbol balloons instead of weird lollipop
+    // looking things": five balloons and no paper sunflower; v0.31-v0.32 had a sunflower on a stick)
+    g.add(at(mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.05, 12), PAL.flower), 0, 0.025, 0)); // the weight, gift-wrapped
+    g.add(at(mesh(box(0.11, 0.012, 0.02), PAL.red, { ink: false }), 0, 0.052, 0)); // its ribbon
+    for (const [x, y, z, c] of [[-0.13, 0.5, 0.0, PAL.red], [0.0, 0.58, -0.04, 0x3f9bd8], [0.13, 0.5, 0.01, 0xf2c230], [-0.06, 0.42, 0.06, 0x8bc34a], [0.08, 0.41, 0.07, 0xe27fb8]]) {
+      const b = new THREE.SphereGeometry(0.07, 16, 12); b.scale(1, 1.22, 1);
+      g.add(at(mesh(b, c), x, y, z));
+      g.add(at(mesh(new THREE.ConeGeometry(0.014, 0.02, 8), c, { ink: false }), x, y - 0.092, z)); // the knot
+      const len = Math.hypot(x, y - 0.1 - 0.06, z);
+      const s = at(mesh(new THREE.CylinderGeometry(0.0022, 0.0022, len, 4), PAL.ink, { ink: false, shadow: false }), x / 2, 0.06 + (y - 0.1 - 0.06) / 2, z / 2);
+      s.lookAt(new THREE.Vector3(x, y - 0.1, z)); s.rotateX(Math.PI / 2);
+      g.add(s);
     }
   } else if (kind === 'barbie') { // #19: tiny denim overalls in their pack, with a little shovel
     g.add(at(mesh(box(0.2, 0.3, 0.02), 0x86c3d8), 0, 0.15, 0, -0.25, 0, 0));

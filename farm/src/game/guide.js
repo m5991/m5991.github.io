@@ -336,7 +336,10 @@ export function nextGoal(l, { toolsCome = false } = {}) {
     return { text: `${verb}: ${place}. You have everything: go there and ${verb === 'DIY' ? 'build it' : verb.toLowerCase()}.`, target: diy, diy, verb, line: { icon: verb === 'DIY' ? 'hammer' : 'check', label: verb, tail: place, hot: true } };
   }
   // a weed over her crops, once it has grown to a clump: rake it before the plant under it wilts
-  const over = regrowWeeds(l).filter((w) => l.activeMs - l.overgrown[w.slice(3)] >= REGROW.warnMs);
+  // v0.33 (Tiffany's "Edits #7": "The weeds aren't chocking the plants out"): only once it has choked
+  // its plant: before that the weed is hers to notice (its notes say so) and rake. (v0.21-v0.32: from
+  // its clump, so a player who followed the line always raked it in time and never lost a plant.)
+  const over = regrowWeeds(l).filter((w) => !l.nodes[w.slice(3)].dug);
   if (over.length) {
     const node = over[0].slice(3);
     const what = PATCH_NAME[NODES[node].res];
@@ -390,16 +393,29 @@ export function nextGoal(l, { toolsCome = false } = {}) {
   // allows for the First DIY"): the first build takes its wood and stone from the pile only
   // (ledger.js pileOnly). Its wood and stone are gathered first, then carried to the pile, which
   // has the line's one arrow and circle; then come the coins.
-  if (pileOnly(l, id)) {
+  // v0.33 (Tiffany's "Edits #7": "If she still needs wood or stone it must be actually set down in the
+  // pile before it registers"): every build takes them from the pile only, so every build has these
+  // steps; after the first one a sale that is ready comes first, as before
+  const saleNow = short.coins > 0 && (sellNow(l) || (tableAvailable(l) && cropsCarried(l) > 0 && tableRoom(l) > 0 && (cropsCarried(l) >= tableRoom(l) || headRoom(l) === 0)));
+  if (pileOnly(l, id) && !(saleNow && !firstDiy(l))) {
     const toGather = { W: Math.max(0, need.W - onHandAll(l, 'W')), R: Math.max(0, need.R - onHandAll(l, 'R')) };
-    const order = toGather.W && !anyReady(l, WOOD_SOURCES) && anyReady(l, ROCK_IDS) ? ['R', 'W'] : ['W', 'R'];
+    const order = firstDiy(l)
+      ? (toGather.W && !anyReady(l, WOOD_SOURCES) && anyReady(l, ROCK_IDS) ? ['R', 'W'] : ['W', 'R'])
+      : (stoneFirst(l) && anyReady(l, ROCK_IDS) ? ['R', 'W'] : ['W', 'R']); // (v0.31: every other build asks for its stone first)
+    // (v0.29: with the coins in hand the line says only the wood or the stone is missing, `only`)
+    const only0 = !firstDiy(l) && short.coins === 0 && need.coins > 0;
     for (const r of order) {
-      if (toGather[r] > 0) { const g = gather(l, label, r, toGather[r]); return { ...g, line: needsLine(id, short, r, g.wait ? 'a stick falls soon' : null, need) }; }
+      if (toGather[r] > 0) {
+        const g = gather(l, label, r, toGather[r]);
+        const what = r === 'W' ? 'wood' : 'stone';
+        const tail = g.wait ? 'a stick falls soon' : only0 ? `only ${what} missing` : null;
+        return { ...g, ...(only0 ? { only: r, text: `${g.text} (the coins are here: only the ${what} is missing)` } : {}), line: needsLine(id, short, r, tail, need) };
+      }
     }
     const carrying = MATERIALS.filter((r) => l.carried[r] > 0 && short[r] > 0);
     if (carrying.length) {
       const what = carrying.length > 1 ? 'the wood and the stone' : carrying[0] === 'W' ? 'the wood' : 'the stone';
-      return { text: `${label} · Carry ${what} on her head to ${pileWords(l)}: walk through it to leave it there. The first DIY takes from that pile.`, target: 'yard', carry: carrying[0], first: true, line: { icon: carrying[0] === 'W' ? 'wood' : 'stone', label: 'Take it to the pile', tail: houseThere(l) ? 'by the house' : 'where the house will be' } };
+      return { text: `${label} · Carry ${what} on her head to ${pileWords(l)}: walk through it to leave it there. A DIY takes wood and stone only from that pile.`, target: 'yard', carry: carrying[0], first: firstDiy(l), line: { icon: carrying[0] === 'W' ? 'wood' : 'stone', label: 'Take it to the pile', tail: houseThere(l) ? 'by the house' : 'where the house will be' } };
     }
   }
   // a full table sells now; crops on her head go onto the table once they fill it (or nothing

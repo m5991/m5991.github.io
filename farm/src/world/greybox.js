@@ -330,25 +330,20 @@ export function sketch(root) {
   });
   return ink(root, FOLIAGE_INK);
 }
-// v0.11 (P27-1): the yard pile's place by the house, a trodden-earth patch about 1.0 x 0.7 m with
-// a faint ink edge, always drawn (empty, it shows where the pile goes); the world's UnitPile
+// v0.11 (P27-1): the yard pile's place by the house, a trodden-earth patch about 1.0 x 0.7 m (v0.33:
+// with no ink edge), always drawn (empty, it shows where the pile goes); the world's UnitPile
 // stacks the dropped logs and stones on it (carry.js yardSlot).
 export function yardPatch() {
   const g = group('YardPile');
   const soil = at(new THREE.Mesh(new THREE.CircleGeometry(0.5, 32), lam(0xe0cfa6, { flat: 1, grain: 1 })), 0, 0.007, 0, -Math.PI / 2);
   soil.scale.set(1, 0.7, 1);
   soil.receiveShadow = true;
-  const pts = [];
-  for (let i = 0; i <= 48; i++) {
-    const a = (i / 48) * Math.PI * 2;
-    const w = 1 + 0.035 * Math.sin(a * 5 + 1.3); // a hand-drawn wobble
-    pts.push(new THREE.Vector3(Math.cos(a) * 0.5 * w, 0.012, Math.sin(a) * 0.35 * w));
-  }
-  const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: PALETTE.ink, transparent: true, opacity: 0.38 }));
-  edge.name = 'edge';
+  // v0.33 (Tiffany's "Edits #7": "There's a tiny little black outline circle around the top of the
+  // stone pile. Remove it"): no ink edge round the patch any more (v0.11-v0.32: a faint ink line,
+  // which on a phone showed as a dark ring drawn across the top of the stones)
   // two flat boards the logs rest on, so the crib reads as stacked, not dropped
   const board = (z) => at(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.025, 0.07), lam(PALETTE.wood)), -0.22, 0.013, z);
-  g.add(soil, edge, board(-0.16), board(0.16));
+  g.add(soil, board(-0.16), board(0.16));
   g.traverse((m) => { m.userData.noFit = true; if (m.isMesh && m !== soil) m.castShadow = true; });
   soil.userData.noOutline = true;
   return addOutline(g, 0.01);

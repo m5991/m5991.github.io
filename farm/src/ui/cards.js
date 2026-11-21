@@ -31,7 +31,12 @@ export function createCards(dialog, { player = null } = {}) {
   // card with an × closes it, as the song card has since v0.29.
   const X_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
   const CORNER_X = `<button type="button" class="card-x" data-close aria-label="Close">${X_SVG}</button>`;
-  function open(html, handlers, closeCb, { corner = true } = {}) {
+  // v0.33 (Tiffany's "Edits #7": "For keepsakes, allow you to click the background to close the
+  // keepsake as well as clicking the lovely button"; "Under the drawings tab, make it an option to
+  // close it by clicking the screen behind. Same with the keepsakes page"): `tapOut` closes a card
+  // with no × on a tap outside it too (v0.32's keepsake card and drawing page had no ×, and so no
+  // tap outside either). Every card with a closing button does it now, but the welcome.
+  function open(html, handlers, closeCb, { corner = true, tapOut = /data-close/.test(html) } = {}) {
     // a card closed just now whose close event has not fired yet: run its close first, so a card
     // opened straight after one (the songbook after a song) never swallows it
     if (!dialog.open && onClose) { const f = onClose; onClose = null; f(dialog.returnValue); }
@@ -44,7 +49,7 @@ export function createCards(dialog, { player = null } = {}) {
     const x = dialog.querySelector('.card-x');
     const h = dialog.querySelector('h2');
     if (x && h) h.append(x);
-    if (x) dialog.classList.add('tap-out');
+    if (x || tapOut) dialog.classList.add('tap-out');
     onClose = closeCb;
     for (const [sel, fn] of Object.entries(handlers)) {
       dialog.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b)));
@@ -141,7 +146,10 @@ export function createCards(dialog, { player = null } = {}) {
     // on it, never its year
     prints(o) {
       const figs = o.prints.map((g) => `<figure class="keepsake-print"><img src="${esc(g.image)}" alt="${esc(g.alt)}" loading="lazy">${g.title || g.caption ? `<figcaption>${g.title ? `<span class="t">${esc(g.title)}</span>` : ''}${g.caption ? `<q>${esc(g.caption)}</q>` : ''}</figcaption>` : ''}</figure>`).join('');
-      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose, { corner: false }); // (v0.32, Tiffany's "Edits #6": "When the keepsake pictures come up, remove the x in the top right corner": the button at its foot, or a tap outside)
+      // (v0.32, Tiffany's "Edits #6": "When the keepsake pictures come up, remove the x in the top right
+      // corner": the button at its foot, or a tap outside. v0.33, "Edits #7": "Also put an x at the top
+      // of that one, the keepsakes page": the list of them (`corner: true`) has the × again.)
+      open(`<h2 id="card-title">${esc(o.title)}</h2>${o.text ? `<p>${esc(o.text)}</p>` : ''}${figs ? `<div class="keepsake-prints">${figs}</div>` : ''}${o.left ? `<p class="small">${esc(o.left)}</p>` : ''}<div class="actions"><button type="button" data-close autofocus>${esc(o.cancel ?? 'Lovely')}</button></div>`, {}, o.onClose, { corner: !!o.corner });
     },
     // a picture and a link that saves it ({ title, text, src, alt, download, save, onClose }).
     // v0.22 "The drawing": Vanessa's own drawing, to download
@@ -187,7 +195,7 @@ export function createCards(dialog, { player = null } = {}) {
     },
     // v0.25 the welcome, once on a new farm: { title (the captain's line, pencilled), who, first, go, onClose }
     welcome(o) {
-      open(`<h2 id="card-title" class="welcome-line">${esc(o.title)}</h2><p>${esc(o.who)}</p><p class="welcome-first">${esc(o.first)}</p><div class="actions"><button type="button" class="primary" data-close autofocus>${esc(o.go)}</button></div>`, {}, o.onClose, { corner: false });
+      open(`<h2 id="card-title" class="welcome-line">${esc(o.title)}</h2><p>${esc(o.who)}</p><p class="welcome-first">${esc(o.first)}</p><div class="actions"><button type="button" class="primary" data-close autofocus>${esc(o.go)}</button></div>`, {}, o.onClose, { corner: false, tapOut: false });
       dialog.classList.add('welcome');
     },
     // (v0.23, Tiffany: "Get rid of the credits tab": the Credits card of v0.22 is gone)

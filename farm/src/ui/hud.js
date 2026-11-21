@@ -90,8 +90,10 @@ const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function goalHtml(line) {
   if (!line) return '';
   const ico = line.icon && GOAL_ICONS[line.icon] ? `<span class="g-ico">${GOAL_ICONS[line.icon]}</span>` : '';
-  // v0.32: every need of the build, the ones she has with the build's number and a tick
-  const needs = (line.needs ?? []).map(([k, n, of = n]) => (n > 0 ? `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>` : `<span class="g-need got">${ICONS[k]}<b>${of}</b><i class="tick">✓</i></span>`)).join('');
+  // v0.33 (Tiffany's "Edits #7", the "long rectangle": "Step stones ⬭3✓ 42✓ · gat…": "Maybe just show
+  // what is still needed instead of just what you already have"): only what is still missing, each as
+  // its icon and number (v0.32: every need, the ones she had with a tick)
+  const needs = (line.needs ?? []).filter(([, n]) => n > 0).map(([k, n]) => `<span class="g-need${k === line.now ? ' now' : ''}">${ICONS[k]}<b>${n}</b></span>`).join('');
   // v0.23: at DIY time the label is the word itself, set as a tag ("DIY"), and the place follows
   const tail = line.tail ? `<span class="g-tail${line.hot ? ' place' : ''}">${esc(line.tail)}</span>` : '';
   return `${ico}<span class="g-label${line.hot ? ' tag' : ''}">${esc(line.label)}</span>${needs}${tail}`;
@@ -99,7 +101,7 @@ export function goalHtml(line) {
 // the same line in plain words (tests, logs): "Walls · wood 6, stone 4, coins 10"
 export function goalPlain(line) {
   if (!line) return '';
-  const needs = (line.needs ?? []).map(([k, n]) => `${NAMES[k].toLowerCase()} ${n}`).join(', ');
+  const needs = (line.needs ?? []).filter(([, n]) => n > 0).map(([k, n]) => `${NAMES[k].toLowerCase()} ${n}`).join(', ');
   return [line.label, needs, line.tail].filter(Boolean).join(' · ');
 }
 

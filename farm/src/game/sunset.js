@@ -34,15 +34,18 @@ export const SUNSET_AFTER_MS = 1400;
 // ms from the start of the scene (spans are [from, to])
 export const SUNSET = Object.freeze({
   camera: [0, 2200], // the camera eases from play to the first shot (an upright screen: the corn's half; a wide one: the whole drawing)
-  dusk: [300, 4300], // the day turns to golden evening
-  fireflies: [1800, 4600], // the fireflies come up, over the corn among other places
+  // v0.33 (the ending as adopted, Tiffany's "Edits #7": she "walks back and sits on the bench next to
+  // Dwight; then the color floods in all at once"): the golden evening and the fireflies come together,
+  // in a second, once she has sat down (v0.25-v0.32: the evening came slowly as she walked there)
+  dusk: [7700, 8500], // the day turns to golden evening, all at once
+  fireflies: [7700, 8600], // the fireflies come up with it, over the corn among other places
   walk: [400, 5200], // she walks to the bench (where Dwight sits)
   travel: [4300, 6900], // an upright screen: the camera goes back across to the bench's half
   sit: [6600, 7700], // she sits down at its free end
   says: [7900, 14000], // v0.27: Dwight, beside her, says his line (data.js DWIGHT_THANKS) in his speech bubble, to the end
-  sign: [8200, 10700], // "The Farm, complete" is pencilled in
-  stamp: [10900, 11400], // the gold 100% comes onto the paper beside it
-  hold: [11400, 14000],
+  sign: [8600, 11100], // "The Farm, complete" is pencilled in (v0.33: once the evening has come; it was 8.2 s)
+  stamp: [11300, 11800], // the gold 100% comes onto the paper beside it
+  hold: [11800, 14000],
   total: 14000,
 });
 export const SUNSET_REDUCED_FADE_MS = 150;
